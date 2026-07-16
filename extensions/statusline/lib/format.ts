@@ -41,7 +41,7 @@ export function formatCache(tokens: TokenTotals, minimal = false): string | unde
 	const hitRate = prompt > 0 ? ((cacheRead / prompt) * 100).toFixed(1) : "0.0";
 	const read = formatTokensCompact(cacheRead);
 	const write = formatTokensCompact(cacheWrite);
-	return minimal ? `R${read} W${write} ${hitRate}%` : `R${read} W${write} CH${hitRate}%`;
+	return minimal ? `r${read} w${write} ${hitRate}%` : `cache r${read} w${write} hit ${hitRate}%`;
 }
 
 export function formatContextText(

@@ -26,7 +26,7 @@ describe("buildWidgetSegments", () => {
 		const texts = segments.map((segment) => segment.text);
 		assert.ok(texts.some((text) => text.includes("demo")));
 		assert.ok(texts.some((text) => text.includes("$0.42")));
-		assert.ok(texts.some((text) => text.includes("R") && text.includes("CH")));
+		assert.ok(texts.some((text) => text.includes("cache") && text.includes("hit")));
 		assert.ok(texts.some((text) => text.includes("ctx") || text.includes("%")));
 		assert.ok(texts.includes("Ready"));
 	});

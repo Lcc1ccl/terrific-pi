@@ -21,8 +21,7 @@ Enter a main-menu loop until the user chooses **Done** or cancels.
 
 Main menu actions:
 
-- Toggle widgets
-- Reorder widgets
+- Widgets (toggle + reorder, Codex-style)
 - Context mode
 - Context bar width
 - Minimal mode
@@ -44,20 +43,18 @@ Print current config text (existing behavior). Do not attempt interactive dialog
 
 ## Submenus
 
-### Toggle widgets
+### Widgets (toggle + reorder)
 
-- Show all known widget ids.
-- Enabled = `● id`, disabled = `○ id`.
-- Selecting toggles immediately.
+Single Codex-style multi-select screen:
+
+- List all known widget ids: enabled first (config order), then disabled (catalog order).
+- `Space` toggles `[x]` / `[ ]`.
+- `↑/↓` (or `j/k`) moves the selection cursor.
+- `←/→` (or `h/l`) swaps the focused item with its neighbor (order of enabled items = footer order).
+- Enter / Esc exits back to the main menu.
 - Constraint: at least one widget must remain enabled.
-- Stay in list until Back/Esc.
-
-### Reorder widgets
-
-- Show only currently enabled widgets in order.
-- Select one, then choose Move up / Move down / Back.
-- Boundary moves are no-ops (optional notify).
-- Each successful move applies immediately.
+- Boundary moves are no-ops.
+- Each successful toggle/move applies immediately (footer + JSON).
 
 ### Context mode
 

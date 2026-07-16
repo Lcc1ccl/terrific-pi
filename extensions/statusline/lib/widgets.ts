@@ -1,3 +1,4 @@
+import { DEFAULT_CONFIG } from "./config.ts";
 import {
 	formatBranchDiff,
 	formatCache,
@@ -7,7 +8,36 @@ import {
 	formatCwd,
 	formatTokensCompact,
 } from "./format.ts";
-import type { StatusSnapshot, StatuslineConfig, WidgetSegment } from "./types.ts";
+import type { StatusSnapshot, StatuslineConfig, WidgetId, WidgetSegment } from "./types.ts";
+
+/** Sample data for the widgets editor preview line. */
+export const PREVIEW_SNAPSHOT: StatusSnapshot = {
+	cwd: "/home/user/proj",
+	sessionName: "session",
+	modelId: "model",
+	thinkingLevel: "high",
+	hasReasoning: true,
+	tokens: { input: 1500, output: 800, cacheRead: 4000, cacheWrite: 500 },
+	cost: 0.42,
+	context: { tokens: 40_000, contextWindow: 100_000, percent: 40 },
+	branch: "main",
+	branchDiff: { additions: 12, deletions: 3 },
+	progress: "task 1/2",
+	runState: "Ready",
+};
+
+export function formatWidgetsPreview(
+	enabled: readonly string[],
+	separator = DEFAULT_CONFIG.separator,
+): string {
+	const widgets = enabled.filter((id): id is WidgetId => typeof id === "string");
+	if (widgets.length === 0) return "(none)";
+	const segments = buildWidgetSegments(PREVIEW_SNAPSHOT, {
+		...DEFAULT_CONFIG,
+		widgets,
+	});
+	return segments.map((segment) => segment.text).join(separator) || "(empty)";
+}
 
 export function buildWidgetSegments(snapshot: StatusSnapshot, config: StatuslineConfig): WidgetSegment[] {
 	const segments: WidgetSegment[] = [];

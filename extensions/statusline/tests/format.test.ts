@@ -33,14 +33,14 @@ describe("formatCache", () => {
 		assert.equal(formatCache({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }), undefined);
 	});
 
-	it("shows R/W and hit rate", () => {
+	it("shows readable r/w and hit rate", () => {
 		assert.equal(
 			formatCache({ input: 100, output: 0, cacheRead: 400, cacheWrite: 100 }),
-			"R400 W100 CH66.7%",
+			"cache r400 w100 hit 66.7%",
 		);
 		assert.equal(
 			formatCache({ input: 100, output: 0, cacheRead: 400, cacheWrite: 100 }, true),
-			"R400 W100 66.7%",
+			"r400 w100 66.7%",
 		);
 	});
 });

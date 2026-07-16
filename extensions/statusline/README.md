@@ -11,7 +11,7 @@ Built for pi's `setFooter` extension API: session metrics, git context, and agen
 - Session name (when set via `/name`)
 - Model + thinking level
 - Token usage (input / output, compact K/M/B/T)
-- Cache metrics (`R` / `W` / `CH`)
+- Cache metrics (`cache r… w… hit …%`)
 - Session cost (`$x.xx`, hidden when zero)
 - Context bar (remaining/used mode)
 - Git branch + branch diff vs default branch (`+N -M`)
@@ -22,7 +22,7 @@ Built for pi's `setFooter` extension API: session metrics, git context, and agen
 ## Default layout
 
 ```text
-~/proj · session · model high · 1.5K in · 0.8K out · R4K W500 CH66.7% · $0.42 · ctx [██████░░░░] 60% · main · +12 -3 · Ready
+~/proj · session · model high · 1.5K in · 0.8K out · cache r4K w500 hit 66.7% · $0.42 · ctx [██████░░░░] 60% · main · +12 -3 · Ready
 ```
 
 ## Install
@@ -88,8 +88,7 @@ Example:
 
 In TUI mode, `/statusline` opens a nested menu to:
 
-- toggle widgets
-- reorder widgets
+- **Widgets** (Codex-style): `Space` toggle, `↑/↓` select, `←/→` move, Enter done
 - set `contextMode`, `contextBarWidth`, `minimal`, `separator`
 - show / reload / reset config
 
@@ -112,6 +111,7 @@ statusline/
 │   ├── render.ts
 │   ├── types.ts
 │   ├── usage.ts
+│   ├── widgets-setup.ts
 │   └── widgets.ts
 └── tests/
 ```

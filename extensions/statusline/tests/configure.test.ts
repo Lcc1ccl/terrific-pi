@@ -2,10 +2,15 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+	buildWidgetEditorItems,
+	enabledFromEditorItems,
 	formatConfigSummary,
+	moveEditorItem,
 	moveWidget,
 	parseContextBarWidth,
 	parseSeparator,
+	swapAdjacent,
+	toggleEditorItem,
 	toggleWidget,
 } from "../lib/configure.ts";
 import type { StatuslineConfig } from "../lib/types.ts";
@@ -46,6 +51,62 @@ describe("moveWidget", () => {
 		assert.equal(moveWidget(["path", "model"], "path", "up").ok, false);
 		assert.equal(moveWidget(["path", "model"], "model", "down").ok, false);
 		assert.equal(moveWidget(["path", "model"], "cost", "up").ok, false);
+	});
+});
+
+describe("swapAdjacent", () => {
+	it("swaps with left/right neighbor and tracks selection", () => {
+		assert.deepEqual(swapAdjacent(["a", "b", "c"], 1, -1), {
+			items: ["b", "a", "c"],
+			index: 0,
+		});
+		assert.deepEqual(swapAdjacent(["a", "b", "c"], 1, 1), {
+			items: ["a", "c", "b"],
+			index: 2,
+		});
+	});
+
+	it("no-ops at list ends", () => {
+		assert.equal(swapAdjacent(["a", "b"], 0, -1), undefined);
+		assert.equal(swapAdjacent(["a", "b"], 1, 1), undefined);
+	});
+});
+
+describe("widget editor items", () => {
+	const catalog = ["path", "model", "cost", "state"] as const;
+
+	it("puts enabled widgets first in config order", () => {
+		const items = buildWidgetEditorItems(["cost", "path"], catalog);
+		assert.deepEqual(items, [
+			{ id: "cost", enabled: true },
+			{ id: "path", enabled: true },
+			{ id: "model", enabled: false },
+			{ id: "state", enabled: false },
+		]);
+		assert.deepEqual(enabledFromEditorItems(items), ["cost", "path"]);
+	});
+
+	it("toggles and refuses disabling the last enabled widget", () => {
+		const items = buildWidgetEditorItems(["path"], catalog);
+		// order: path(on), model(off), cost(off), state(off)
+		const enabled = toggleEditorItem(items, 1); // model
+		assert.equal(enabled.ok, true);
+		if (enabled.ok) {
+			assert.deepEqual(enabledFromEditorItems(enabled.value), ["path", "model"]);
+		}
+
+		const blocked = toggleEditorItem(items, 0); // only path enabled
+		assert.equal(blocked.ok, false);
+	});
+
+	it("moves items and preserves enabled order after swap", () => {
+		const items = buildWidgetEditorItems(["path", "model"], catalog);
+		const moved = moveEditorItem(items, 0, 1);
+		assert.equal(moved.ok, true);
+		if (moved.ok) {
+			assert.equal(moved.value.index, 1);
+			assert.deepEqual(enabledFromEditorItems(moved.value.items), ["model", "path"]);
+		}
 	});
 });
 

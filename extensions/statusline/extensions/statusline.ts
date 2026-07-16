@@ -14,6 +14,7 @@ import {
 	type MutationResult,
 } from "../lib/configure.ts";
 import { renderStatusLine, selectPalette } from "../lib/render.ts";
+import { WidgetsSetupComponent } from "../lib/widgets-setup.ts";
 import type { BranchChangeStats, RunState, StatuslineConfig, StatusSnapshot } from "../lib/types.ts";
 import { aggregateSessionUsage } from "../lib/usage.ts";
 import { buildWidgetSegments } from "../lib/widgets.ts";
@@ -198,6 +199,19 @@ export default function statusline(pi: ExtensionAPI) {
 					ui: {
 						select: (title, items) => ctx.ui.select(title, items),
 						input: (title, value) => ctx.ui.input(title, value),
+						editWidgets: (title, allWidgets, enabled, onChange, onReject) =>
+							ctx.ui.custom<string[] | undefined>((tui, theme, _keybindings, done) =>
+								new WidgetsSetupComponent({
+									title,
+									allWidgets,
+									enabled,
+									theme,
+									onChange: (next) => onChange(next as typeof enabled),
+									onReject,
+									done: (next) => done(next as typeof enabled | undefined),
+									requestRender: () => tui.requestRender(),
+								}),
+							),
 						notify: (message, level) => ctx.ui.notify(message, level),
 					},
 				},

@@ -4,9 +4,22 @@ export type MutationResult<T> =
 	| { ok: true; value: T }
 	| { ok: false; error: string };
 
+export type WidgetEditorItem = {
+	id: WidgetId;
+	enabled: boolean;
+};
+
 export type ConfigureUi = {
 	select(title: string, items: string[]): Promise<string | undefined>;
 	input(title: string, value: string): Promise<string | undefined>;
+	/** Codex-style multi-select: Space toggle, ↑/↓ select, ←/→ move. */
+	editWidgets(
+		title: string,
+		allWidgets: readonly WidgetId[],
+		enabled: WidgetId[],
+		onChange: (enabled: WidgetId[]) => void,
+		onReject?: (error: string) => void,
+	): Promise<WidgetId[] | undefined>;
 	notify(message: string, level?: "info" | "warning" | "error"): void;
 };
 
@@ -30,6 +43,83 @@ export function toggleWidget(widgets: WidgetId[], id: WidgetId): MutationResult<
 	return { ok: true, value: [...widgets, id] };
 }
 
+/** Swap item at index with neighbor. Returns undefined if out of bounds. */
+export function swapAdjacent<T>(
+	items: readonly T[],
+	index: number,
+	delta: -1 | 1,
+): { items: T[]; index: number } | undefined {
+	const target = index + delta;
+	if (index < 0 || index >= items.length || target < 0 || target >= items.length) {
+		return undefined;
+	}
+	const next = [...items];
+	const current = next[index]!;
+	next[index] = next[target]!;
+	next[target] = current;
+	return { items: next, index: target };
+}
+
+/** Enabled widgets first (config order), then disabled (catalog order). */
+export function buildWidgetEditorItems(
+	enabled: readonly string[],
+	allWidgets: readonly string[],
+): WidgetEditorItem[] {
+	const allSet = new Set(allWidgets);
+	const seen = new Set<string>();
+	const items: WidgetEditorItem[] = [];
+
+	for (const id of enabled) {
+		if (!allSet.has(id) || seen.has(id)) continue;
+		seen.add(id);
+		items.push({ id: id as WidgetId, enabled: true });
+	}
+	for (const id of allWidgets) {
+		if (seen.has(id)) continue;
+		seen.add(id);
+		items.push({ id: id as WidgetId, enabled: false });
+	}
+	return items;
+}
+
+export function enabledFromEditorItems(items: readonly WidgetEditorItem[]): WidgetId[] {
+	return items.filter((item) => item.enabled).map((item) => item.id);
+}
+
+export function toggleEditorItem(
+	items: readonly WidgetEditorItem[],
+	index: number,
+): MutationResult<WidgetEditorItem[]> {
+	const current = items[index];
+	if (!current) {
+		return { ok: false, error: "Invalid selection" };
+	}
+
+	if (current.enabled) {
+		const enabledCount = items.reduce((n, item) => n + (item.enabled ? 1 : 0), 0);
+		if (enabledCount <= 1) {
+			return { ok: false, error: "At least one widget must remain enabled" };
+		}
+	}
+
+	const next = items.map((item, i) =>
+		i === index ? { ...item, enabled: !item.enabled } : item,
+	);
+	return { ok: true, value: next };
+}
+
+export function moveEditorItem(
+	items: readonly WidgetEditorItem[],
+	index: number,
+	delta: -1 | 1,
+): MutationResult<{ items: WidgetEditorItem[]; index: number }> {
+	const swapped = swapAdjacent(items, index, delta);
+	if (!swapped) {
+		return { ok: false, error: delta < 0 ? "Already first" : "Already last" };
+	}
+	return { ok: true, value: swapped };
+}
+
 export function moveWidget(
 	widgets: WidgetId[],
 	id: WidgetId,
@@ -40,19 +130,11 @@ export function moveWidget(
 		return { ok: false, error: `Widget not enabled: ${id}` };
 	}
 
-	const target = direction === "up" ? index - 1 : index + 1;
-	if (target < 0) {
-		return { ok: false, error: "Already first" };
+	const swapped = swapAdjacent(widgets, index, direction === "up" ? -1 : 1);
+	if (!swapped) {
+		return { ok: false, error: direction === "up" ? "Already first" : "Already last" };
 	}
-	if (target >= widgets.length) {
-		return { ok: false, error: "Already last" };
-	}
-
-	const next = [...widgets];
-	const current = next[index]!;
-	next[index] = next[target]!;
-	next[target] = current;
-	return { ok: true, value: next };
+	return { ok: true, value: swapped.items };
 }
 
 export function parseContextBarWidth(raw: string): MutationResult<number> {
@@ -108,53 +190,18 @@ function applyOrNotify(
 	deps.ui.notify(success, "info");
 }
 
-async function toggleWidgetsLoop(deps: ConfigureDeps, allWidgets: readonly WidgetId[]): Promise<void> {
-	while (true) {
-		const config = deps.getConfig();
-		const items = [
-			...allWidgets.map((id) => `${config.widgets.includes(id) ? "●" : "○"} ${id}`),
-			"Back",
-		];
-		const choice = await deps.ui.select("Toggle widgets", items);
-		if (!choice || choice === "Back") return;
-
-		const id = allWidgets.find((widget) => choice === `● ${widget}` || choice === `○ ${widget}`);
-		if (!id) continue;
-
-		const toggled = toggleWidget(config.widgets, id);
-		if (!toggled.ok) {
-			deps.ui.notify(toggled.error, "warning");
-			continue;
-		}
-
-		applyOrNotify(deps, { ...config, widgets: toggled.value }, `widgets: ${toggled.value.join(", ")}`);
-	}
-}
-
-async function reorderWidgetsLoop(deps: ConfigureDeps): Promise<void> {
-	while (true) {
-		const config = deps.getConfig();
-		if (config.widgets.length === 0) {
-			deps.ui.notify("No widgets to reorder", "warning");
-			return;
-		}
-
-		const choice = await deps.ui.select("Reorder widgets", [...config.widgets, "Back"]);
-		if (!choice || choice === "Back") return;
-		if (!config.widgets.includes(choice as WidgetId)) continue;
-
-		const id = choice as WidgetId;
-		const action = await deps.ui.select(`Move ${id}`, ["Move up", "Move down", "Back"]);
-		if (!action || action === "Back") continue;
-
-		const moved = moveWidget(config.widgets, id, action === "Move up" ? "up" : "down");
-		if (!moved.ok) {
-			deps.ui.notify(moved.error, "warning");
-			continue;
-		}
-
-		applyOrNotify(deps, { ...config, widgets: moved.value }, `order: ${moved.value.join(", ")}`);
-	}
+async function editWidgetsLoop(deps: ConfigureDeps, allWidgets: readonly WidgetId[]): Promise<void> {
+	const config = deps.getConfig();
+	await deps.ui.editWidgets(
+		"Widgets",
+		allWidgets,
+		[...config.widgets],
+		(widgets) => {
+			const current = deps.getConfig();
+			applyOrNotify(deps, { ...current, widgets }, `widgets: ${widgets.join(", ")}`);
+		},
+		(error) => deps.ui.notify(error, "warning"),
+	);
 }
 
 async function setContextMode(deps: ConfigureDeps): Promise<void> {
@@ -222,8 +269,7 @@ export async function runStatuslineConfigurator(
 		const config = deps.getConfig();
 		const configPath = deps.getConfigPath();
 		const choice = await deps.ui.select(mainMenuTitle(config, configPath), [
-			"Toggle widgets",
-			"Reorder widgets",
+			"Widgets",
 			"Context mode",
 			"Context bar width",
 			"Minimal mode",
@@ -237,11 +283,8 @@ export async function runStatuslineConfigurator(
 		if (!choice || choice === "Done") return;
 
 		switch (choice) {
-			case "Toggle widgets":
-				await toggleWidgetsLoop(deps, allWidgets);
-				break;
-			case "Reorder widgets":
-				await reorderWidgetsLoop(deps);
+			case "Widgets":
+				await editWidgetsLoop(deps, allWidgets);
 				break;
 			case "Context mode":
 				await setContextMode(deps);
