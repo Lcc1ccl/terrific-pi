@@ -12,6 +12,7 @@ export type WidgetId =
 	| "branch"
 	| "branchDiff"
 	| "progress"
+	| "duration"
 	| "state";
 
 export type ContextMode = "remaining" | "used";
@@ -48,6 +49,8 @@ export interface StatusSnapshot {
 	branch?: string | null;
 	branchDiff?: BranchChangeStats;
 	progress?: string;
+	/** Current round LLM ms / session total LLM ms (live). */
+	duration?: { roundMs: number; sessionMs: number };
 	runState: RunState;
 }
 

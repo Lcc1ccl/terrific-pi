@@ -16,6 +16,7 @@ export const WIDGET_IDS = [
 	"branch",
 	"branchDiff",
 	"progress",
+	"duration",
 	"state",
 ] as const satisfies readonly WidgetId[];
 
@@ -33,6 +34,7 @@ export const DEFAULT_CONFIG: StatuslineConfig = {
 		"branch",
 		"branchDiff",
 		"progress",
+		"duration",
 		"state",
 	],
 	contextMode: "remaining",

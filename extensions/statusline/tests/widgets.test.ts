@@ -17,6 +17,7 @@ const baseSnapshot: StatusSnapshot = {
 	branch: "main",
 	branchDiff: { additions: 12, deletions: 3 },
 	progress: "task 1/2",
+	duration: { roundMs: 12_300, sessionMs: 105_000 },
 	runState: "Ready",
 };
 
@@ -53,6 +54,17 @@ describe("buildWidgetSegments", () => {
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
 			["Ready"],
+		);
+	});
+
+	it("renders duration pair", () => {
+		const segments = buildWidgetSegments(baseSnapshot, {
+			...DEFAULT_CONFIG,
+			widgets: ["duration", "state"],
+		});
+		assert.deepEqual(
+			segments.map((segment) => segment.text),
+			["12.3s / 1m45s", "Ready"],
 		);
 	});
 

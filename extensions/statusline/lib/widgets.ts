@@ -1,4 +1,5 @@
 import { DEFAULT_CONFIG } from "./config.ts";
+import { formatDurationPair } from "./duration.ts";
 import {
 	formatBranchDiff,
 	formatCache,
@@ -50,6 +51,7 @@ export const PREVIEW_SNAPSHOT: StatusSnapshot = {
 	branch: "main",
 	branchDiff: { additions: 12, deletions: 3 },
 	progress: "task 1/2",
+	duration: { roundMs: 12_300, sessionMs: 105_000 },
 	runState: "Ready",
 };
 
@@ -139,6 +141,15 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				break;
 			case "progress":
 				if (snapshot.progress) segments.push({ id, accent: "progress", text: snapshot.progress });
+				break;
+			case "duration":
+				if (snapshot.duration) {
+					segments.push({
+						id,
+						accent: "usage",
+						text: formatDurationPair(snapshot.duration.roundMs, snapshot.duration.sessionMs, minimal),
+					});
+				}
 				break;
 			case "state":
 				segments.push({ id, accent: "state", text: snapshot.runState });

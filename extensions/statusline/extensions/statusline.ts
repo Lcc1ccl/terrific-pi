@@ -13,6 +13,7 @@ import {
 	runStatuslineConfigurator,
 	type MutationResult,
 } from "../lib/configure.ts";
+import { LlmDurationTracker } from "../lib/duration.ts";
 import { renderStatusLine, selectPalette } from "../lib/render.ts";
 import { WidgetsSetupComponent } from "../lib/widgets-setup.ts";
 import type { BranchChangeStats, RunState, StatuslineConfig, StatusSnapshot } from "../lib/types.ts";
@@ -36,11 +37,13 @@ export default function statusline(pi: ExtensionAPI) {
 	let runState: RunState = "Ready";
 	let branchChanges: BranchChangeStats | undefined;
 	let gitRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+	let durationTickTimer: ReturnType<typeof setInterval> | undefined;
 	let renderRequest: (() => void) | undefined;
 	let config: StatuslineConfig = { ...DEFAULT_CONFIG, widgets: [...DEFAULT_CONFIG.widgets] };
 	let configPath = resolveRuntimeConfigPath();
 	const activeTools = new Set<string>();
 	const defaultBranchCache = new Map<string, string | null>();
+	const durationTracker = new LlmDurationTracker();
 
 	const requestRender = () => renderRequest?.();
 
@@ -146,6 +149,24 @@ export default function statusline(pi: ExtensionAPI) {
 		requestRender();
 	};
 
+	const stopDurationTick = () => {
+		if (durationTickTimer) {
+			clearInterval(durationTickTimer);
+			durationTickTimer = undefined;
+		}
+	};
+
+	const startDurationTick = () => {
+		if (durationTickTimer) return;
+		durationTickTimer = setInterval(() => {
+			if (!durationTracker.isRunning()) {
+				stopDurationTick();
+				return;
+			}
+			requestRender();
+		}, 250);
+	};
+
 	pi.registerCommand("statusline", {
 		description: "Interactively configure pi statusline (or reload)",
 		handler: async (args, ctx) => {
@@ -216,6 +237,8 @@ export default function statusline(pi: ExtensionAPI) {
 		runState = "Ready";
 		branchChanges = undefined;
 		activeTools.clear();
+		durationTracker.reset();
+		stopDurationTick();
 		reloadConfig();
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
@@ -255,6 +278,7 @@ export default function statusline(pi: ExtensionAPI) {
 						branch: footerData.getGitBranch(),
 						branchDiff: branchChanges,
 						progress: joinExtensionProgress(footerData.getExtensionStatuses()),
+						duration: durationTracker.snapshot(),
 						runState,
 					};
 
@@ -268,10 +292,29 @@ export default function statusline(pi: ExtensionAPI) {
 		scheduleGitRefresh(ctx.cwd, 0);
 	});
 
-	pi.on("agent_start", async () => setRunState("Thinking"));
+	pi.on("agent_start", async () => {
+		durationTracker.startRound();
+		stopDurationTick();
+		setRunState("Thinking");
+	});
 	pi.on("turn_start", async () => setRunState("Thinking"));
+	// Pure LLM wall time: assistant stream only (excludes tools + idle).
+	pi.on("message_start", async (event) => {
+		if (event.message.role !== "assistant") return;
+		durationTracker.startSegment();
+		startDurationTick();
+		requestRender();
+	});
+	pi.on("message_end", async (event) => {
+		if (event.message.role !== "assistant") return;
+		durationTracker.stopSegment();
+		stopDurationTick();
+		requestRender();
+	});
 	pi.on("agent_settled", async (_event, ctx) => {
 		activeTools.clear();
+		durationTracker.endRound();
+		stopDurationTick();
 		setRunState("Ready");
 		scheduleGitRefresh(ctx.cwd, 0);
 	});
@@ -291,6 +334,8 @@ export default function statusline(pi: ExtensionAPI) {
 	pi.on("session_shutdown", async () => {
 		if (gitRefreshTimer) clearTimeout(gitRefreshTimer);
 		gitRefreshTimer = undefined;
+		stopDurationTick();
+		durationTracker.reset();
 		renderRequest = undefined;
 		activeTools.clear();
 	});

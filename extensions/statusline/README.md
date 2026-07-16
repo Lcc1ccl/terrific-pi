@@ -16,13 +16,14 @@ Built for pi's `setFooter` extension API: session metrics, git context, and agen
 - Context bar (remaining/used mode)
 - Git branch + branch diff vs default branch (`+N -M`)
 - Extension task progress statuses
+- LLM duration: current round / session total (assistant stream only)
 - Run state: Ready / Thinking / Working
 - Interactive `/statusline` configurator and `/statusline reload`
 
 ## Default layout
 
 ```text
-~/proj · session · model high · 1.5K in · 0.8K out · 🎯66.7% · $0.42 · ctx [██████░░░░] 60% · main · +12 -3 · Ready
+~/proj · session · model high · 1.5K in · 0.8K out · 🎯66.7% · $0.42 · ctx [██████░░░░] 60% · main · +12 -3 · 12.3s / 1m45s · Ready
 ```
 
 ## Install
@@ -53,6 +54,7 @@ Example:
     "branch",
     "branchDiff",
     "progress",
+    "duration",
     "state"
   ],
   "contextMode": "remaining",
@@ -77,6 +79,7 @@ Example:
 | `branch` | git branch |
 | `branchDiff` | diff vs default branch |
 | `progress` | extension status texts (excludes mode badges like `ponytail`) |
+| `duration` | current-round / session LLM time (`12.3s / 1m45s`); assistant stream only, excludes tools + idle |
 | `state` | Ready / Thinking / Working |
 
 ### Commands
@@ -107,6 +110,7 @@ statusline/
 ├── lib/
 │   ├── config.ts
 │   ├── configure.ts
+│   ├── duration.ts
 │   ├── format.ts
 │   ├── render.ts
 │   ├── types.ts
