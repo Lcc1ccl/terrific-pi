@@ -11,7 +11,7 @@ Built for pi's `setFooter` extension API: session metrics, git context, and agen
 - Session name (when set via `/name`)
 - Model + thinking level
 - Token usage (input / output, compact K/M/B/T)
-- Cache metrics (`↓… ↑… 🎯…%`)
+- Cache hit rate (`🎯…%`)
 - Session cost (`$x.xx`, hidden when zero)
 - Context bar (remaining/used mode)
 - Git branch + branch diff vs default branch (`+N -M`)
@@ -22,7 +22,7 @@ Built for pi's `setFooter` extension API: session metrics, git context, and agen
 ## Default layout
 
 ```text
-~/proj · session · model high · 1.5K in · 0.8K out · ↓4K ↑500 🎯66.7% · $0.42 · ctx [██████░░░░] 60% · main · +12 -3 · Ready
+~/proj · session · model high · 1.5K in · 0.8K out · 🎯66.7% · $0.42 · ctx [██████░░░░] 60% · main · +12 -3 · Ready
 ```
 
 ## Install
@@ -70,7 +70,7 @@ Example:
 | `session` | session display name |
 | `model` | model id + thinking level |
 | `tokens` | input/output totals |
-| `cache` | cache read/write + hit rate |
+| `cache` | cache hit rate |
 | `cost` | session cost USD |
 | `context` | text context percent |
 | `contextBar` | compact context bar + percent |
