@@ -1,11 +1,15 @@
 {
-  "name": "codex-statusline",
-  "version": "1.0.0",
-  "description": "Codex-style statusline footer for pi coding agent (Catppuccin palette, token usage, git branch/diff, run state)",
-  "keywords": ["pi-package", "pi-extension", "statusline", "codex"],
+  "name": "statusline",
+  "version": "1.2.0",
+  "description": "Configurable statusline footer for pi (tokens, cache, cost, context bar, git, run state)",
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "statusline"],
   "license": "MIT",
   "pi": {
-    "extensions": ["./extensions/codex-statusline.ts"]
+    "extensions": ["./extensions/statusline.ts"]
+  },
+  "scripts": {
+    "test": "node --test --experimental-strip-types tests/*.test.ts"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -14,6 +18,7 @@
   },
   "files": [
     "extensions",
+    "lib",
     "package.json",
     "README.md"
   ]

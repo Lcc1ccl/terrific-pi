@@ -7,7 +7,7 @@
 ```
 terrific-pi/
 ├── extensions/          # pi packages / extensions
-│   └── statusline/      # Codex 风格 statusline（首个插件）
+│   └── statusline/      # pi 可配置 statusline（首个插件）
 ├── workflows/           # 工作流与自动化（待补充）
 └── agent/               # agent 配置模板（勿提交密钥）
 ```
@@ -16,7 +16,7 @@ terrific-pi/
 
 | 插件 | 路径 | 说明 |
 |------|------|------|
-| statusline | `extensions/statusline` | Codex 风格底栏：路径、模型、token、git 分支/diff、运行状态 |
+| statusline | `extensions/statusline` | pi 可配置底栏：路径、session、模型、token/cache/cost、context bar、git、运行状态；支持 `/statusline` 交互配置 |
 
 ### 安装 statusline
 

@@ -1,102 +1,24 @@
-import { homedir } from "node:os";
-import { relative, resolve, sep } from "node:path";
-
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 
-type RunState = "Ready" | "Working" | "Thinking";
-type Rgb = readonly [number, number, number];
-type Accent = "model" | "path" | "branch" | "state" | "usage" | "progress";
+import {
+	DEFAULT_CONFIG,
+	loadStatuslineConfig,
+	resolveRuntimeConfigPath,
+	saveStatuslineConfig,
+	WIDGET_IDS,
+} from "../lib/config.ts";
+import {
+	formatConfigSummary,
+	runStatuslineConfigurator,
+	type MutationResult,
+} from "../lib/configure.ts";
+import { renderStatusLine, selectPalette } from "../lib/render.ts";
+import type { BranchChangeStats, RunState, StatuslineConfig, StatusSnapshot } from "../lib/types.ts";
+import { aggregateSessionUsage } from "../lib/usage.ts";
+import { buildWidgetSegments } from "../lib/widgets.ts";
 
-interface BranchChangeStats {
-	additions: number;
-	deletions: number;
-}
-
-interface Palette {
-	model: Rgb;
-	path: Rgb;
-	branch: Rgb;
-	state: Rgb;
-	usage: Rgb;
-	progress: Rgb;
-	separator: Rgb;
-}
-
-// Mirrors openai/codex rust-v0.144.1 status_line_style.rs with its adaptive
-// Catppuccin defaults. Segment colors are softened to 85% saturation below.
-const DARK_PALETTE: Palette = {
-	model: [137, 180, 250],
-	path: [166, 227, 161],
-	branch: [250, 179, 135],
-	state: [203, 166, 247],
-	usage: [249, 226, 175],
-	progress: [166, 227, 161],
-	separator: [118, 129, 140],
-};
-
-const LIGHT_PALETTE: Palette = {
-	model: [30, 102, 245],
-	path: [64, 160, 43],
-	branch: [254, 100, 11],
-	state: [136, 57, 239],
-	usage: [223, 142, 29],
-	progress: [64, 160, 43],
-	separator: [108, 112, 134],
-};
-
-const STATUS_LINE_SEPARATOR = " · ";
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
-
-function softenColor([red, green, blue]: Rgb): Rgb {
-	const luma = Math.floor((77 * red + 150 * green + 29 * blue) / 256);
-	const soften = (channel: number) => Math.floor((channel * 85 + luma * 15 + 50) / 100);
-	return [soften(red), soften(green), soften(blue)];
-}
-
-function foreground([red, green, blue]: Rgb, text: string): string {
-	return `\x1b[38;2;${red};${green};${blue}m${text}\x1b[39m`;
-}
-
-function styled(palette: Palette, accent: Accent, text: string): string {
-	return foreground(softenColor(palette[accent]), text);
-}
-
-function formatTokensCompact(value: number): string {
-	const count = Math.max(0, value);
-	if (count === 0) return "0";
-	if (count < 1_000) return String(count);
-
-	let scaled: number;
-	let suffix: string;
-	if (count >= 1_000_000_000_000) {
-		scaled = count / 1_000_000_000_000;
-		suffix = "T";
-	} else if (count >= 1_000_000_000) {
-		scaled = count / 1_000_000_000;
-		suffix = "B";
-	} else if (count >= 1_000_000) {
-		scaled = count / 1_000_000;
-		suffix = "M";
-	} else {
-		scaled = count / 1_000;
-		suffix = "K";
-	}
-
-	const decimals = scaled < 10 ? 2 : scaled < 100 ? 1 : 0;
-	return `${scaled.toFixed(decimals).replace(/\.0+$|(?<=\.[0-9]*)0+$/g, "")}${suffix}`;
-}
-
-function formatCwd(cwd: string): string {
-	const home = resolve(homedir());
-	const absolute = resolve(cwd);
-	const fromHome = relative(home, absolute);
-	const insideHome = fromHome === "" || (fromHome !== ".." && !fromHome.startsWith(`..${sep}`));
-
-	if (!insideHome) return absolute;
-	return fromHome === "" ? "~" : `~${sep}${fromHome}`;
-}
 
 function sanitizeStatus(text: string): string {
 	return text
@@ -119,18 +41,49 @@ function parseNumstat(output: string): BranchChangeStats {
 	return { additions, deletions };
 }
 
-export default function codexStatusline(pi: ExtensionAPI) {
+export default function statusline(pi: ExtensionAPI) {
 	let runState: RunState = "Ready";
 	let branchChanges: BranchChangeStats | undefined;
 	let gitRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 	let renderRequest: (() => void) | undefined;
+	let config: StatuslineConfig = { ...DEFAULT_CONFIG, widgets: [...DEFAULT_CONFIG.widgets] };
+	let configPath = resolveRuntimeConfigPath();
 	const activeTools = new Set<string>();
 	const defaultBranchCache = new Map<string, string | null>();
 
 	const requestRender = () => renderRequest?.();
 
+	const reloadConfig = () => {
+		configPath = resolveRuntimeConfigPath();
+		config = loadStatuslineConfig(configPath);
+		requestRender();
+	};
+
+	const cloneConfig = (value: StatuslineConfig): StatuslineConfig => ({
+		...value,
+		widgets: [...value.widgets],
+	});
+
+	const applyConfig = (next: StatuslineConfig): MutationResult<void> => {
+		const previous = cloneConfig(config);
+		const candidate = cloneConfig(next);
+		try {
+			saveStatuslineConfig(configPath, candidate);
+			config = candidate;
+			requestRender();
+			return { ok: true, value: undefined };
+		} catch (error) {
+			config = previous;
+			const message = error instanceof Error ? error.message : String(error);
+			return { ok: false, error: `Failed to save config: ${message}` };
+		}
+	};
+
+	const resetConfig = (): MutationResult<void> =>
+		applyConfig(cloneConfig(DEFAULT_CONFIG));
+
 	const git = async (cwd: string, args: string[]): Promise<string | undefined> => {
-		const result = await pi.exec("git", args, { cwd, timeout: 2_000 });
+		const result = await pi.exec("git", ["--no-optional-locks", ...args], { cwd, timeout: 2_000 });
 		return result.code === 0 ? result.stdout.trim() : undefined;
 	};
 
@@ -202,12 +155,64 @@ export default function codexStatusline(pi: ExtensionAPI) {
 		requestRender();
 	};
 
+	pi.registerCommand("statusline", {
+		description: "Interactively configure pi statusline (or reload)",
+		handler: async (args, ctx) => {
+			const action = args.trim().toLowerCase();
+			if (action === "reload") {
+				reloadConfig();
+				ctx.ui.notify(`Statusline config reloaded (${config.widgets.join(", ")})`, "info");
+				return;
+			}
+
+			if (ctx.mode !== "tui") {
+				ctx.ui.notify(
+					[
+						formatConfigSummary(config, configPath),
+						"",
+						"Interactive config requires TUI mode.",
+						"Edit the config file or run /statusline in TUI.",
+						"Env override: PI_STATUSLINE_CONFIG=/path/to.json",
+					].join("\n"),
+					"info",
+				);
+				return;
+			}
+
+			reloadConfig();
+			await runStatuslineConfigurator(
+				{
+					getConfig: () => cloneConfig(config),
+					getConfigPath: () => configPath,
+					applyConfig,
+					reloadConfig: () => {
+						try {
+							reloadConfig();
+							return { ok: true, value: cloneConfig(config) };
+						} catch (error) {
+							const message = error instanceof Error ? error.message : String(error);
+							return { ok: false, error: `Failed to reload config: ${message}` };
+						}
+					},
+					resetConfig,
+					ui: {
+						select: (title, items) => ctx.ui.select(title, items),
+						input: (title, value) => ctx.ui.input(title, value),
+						notify: (message, level) => ctx.ui.notify(message, level),
+					},
+				},
+				WIDGET_IDS,
+			);
+		},
+	});
+
 	pi.on("session_start", async (_event, ctx) => {
 		if (ctx.mode !== "tui") return;
 
 		runState = "Ready";
 		branchChanges = undefined;
 		activeTools.clear();
+		reloadConfig();
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			const localRenderRequest = () => tui.requestRender();
@@ -224,51 +229,39 @@ export default function codexStatusline(pi: ExtensionAPI) {
 				},
 				invalidate() {},
 				render(width: number): string[] {
-					const palette = theme.name?.toLowerCase().includes("light") ? LIGHT_PALETTE : DARK_PALETTE;
-					let totalInput = 0;
-					let totalOutput = 0;
-
-					for (const entry of ctx.sessionManager.getEntries()) {
-						if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-						const message = entry.message as AssistantMessage;
-						totalInput += message.usage.input;
-						totalOutput += message.usage.output;
-					}
-
-					const usage = ctx.getContextUsage();
-					const remaining = usage?.percent === null || usage?.percent === undefined
-						? undefined
-						: Math.max(0, Math.min(100, Math.round(100 - usage.percent)));
-					const model = ctx.model?.id ?? "no-model";
+					const palette = selectPalette(theme.name);
+					const usage = aggregateSessionUsage(ctx.sessionManager.getBranch());
+					const context = ctx.getContextUsage();
 					const thinking = ctx.model?.reasoning ? pi.getThinkingLevel() : "off";
-					const modelWithReasoning = thinking === "off" ? model : `${model} ${thinking}`;
-					const branch = footerData.getGitBranch();
-					const branchDiff = branchChanges
-						? branchChanges.additions === 0 && branchChanges.deletions === 0
-							? "No changes"
-							: `+${branchChanges.additions} -${branchChanges.deletions}`
-						: undefined;
 					const taskProgress = Array.from(footerData.getExtensionStatuses().values())
 						.map(sanitizeStatus)
 						.filter(Boolean)
 						.join(" ");
 
-					const segments = [
-						styled(palette, "path", formatCwd(ctx.cwd)),
-						styled(palette, "model", modelWithReasoning),
-						styled(palette, "usage", `${formatTokensCompact(totalInput)} in`),
-						styled(palette, "usage", `${formatTokensCompact(totalOutput)} out`),
-						remaining === undefined ? undefined : styled(palette, "usage", `Context ${remaining}% left`),
-						branch ? styled(palette, "branch", branch) : undefined,
-						branchDiff ? styled(palette, "branch", branchDiff) : undefined,
-						taskProgress ? styled(palette, "progress", taskProgress) : undefined,
-						styled(palette, "state", runState),
-					].filter((segment): segment is string => Boolean(segment));
+					const snapshot: StatusSnapshot = {
+						cwd: ctx.cwd,
+						sessionName: ctx.sessionManager.getSessionName(),
+						modelId: ctx.model?.id ?? "no-model",
+						thinkingLevel: thinking,
+						hasReasoning: Boolean(ctx.model?.reasoning),
+						tokens: usage.tokens,
+						cost: usage.cost,
+						context: context
+							? {
+								tokens: context.tokens,
+								contextWindow: context.contextWindow,
+								percent: context.percent,
+							}
+							: undefined,
+						branch: footerData.getGitBranch(),
+						branchDiff: branchChanges,
+						progress: taskProgress || undefined,
+						runState,
+					};
 
-					const separator = foreground(palette.separator, STATUS_LINE_SEPARATOR);
-					const ellipsis = foreground(palette.separator, "…");
-					const line = `  ${segments.join(separator)}`;
-					return [truncateToWidth(line, Math.max(1, width), ellipsis)];
+					const segments = buildWidgetSegments(snapshot, config);
+					const line = renderStatusLine(segments, config, palette, width, truncateToWidth);
+					return [line];
 				},
 			};
 		});
@@ -295,6 +288,7 @@ export default function codexStatusline(pi: ExtensionAPI) {
 	pi.on("model_select", async () => requestRender());
 	pi.on("thinking_level_select", async () => requestRender());
 	pi.on("session_compact", async () => requestRender());
+	pi.on("session_info_changed", async () => requestRender());
 	pi.on("session_shutdown", async () => {
 		if (gitRefreshTimer) clearTimeout(gitRefreshTimer);
 		gitRefreshTimer = undefined;
