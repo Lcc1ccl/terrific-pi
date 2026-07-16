@@ -10,6 +10,33 @@ import {
 } from "./format.ts";
 import type { StatusSnapshot, StatuslineConfig, WidgetId, WidgetSegment } from "./types.ts";
 
+const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+
+/** Extension status keys that are mode badges, not task progress. */
+export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail"]);
+
+export function sanitizeStatus(text: string): string {
+	return text
+		.replace(ANSI_PATTERN, "")
+		.replace(/[\r\n\t]/g, " ")
+		.replace(/ +/g, " ")
+		.trim();
+}
+
+/** Join extension statuses for the progress widget, skipping excluded keys. */
+export function joinExtensionProgress(
+	statuses: Iterable<readonly [string, string]>,
+	excluded: ReadonlySet<string> = EXCLUDED_PROGRESS_KEYS,
+): string | undefined {
+	const parts: string[] = [];
+	for (const [key, text] of statuses) {
+		if (excluded.has(key)) continue;
+		const clean = sanitizeStatus(text);
+		if (clean) parts.push(clean);
+	}
+	return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
 /** Sample data for the widgets editor preview line. */
 export const PREVIEW_SNAPSHOT: StatusSnapshot = {
 	cwd: "/home/user/proj",

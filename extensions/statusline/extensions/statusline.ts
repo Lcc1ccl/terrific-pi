@@ -17,17 +17,7 @@ import { renderStatusLine, selectPalette } from "../lib/render.ts";
 import { WidgetsSetupComponent } from "../lib/widgets-setup.ts";
 import type { BranchChangeStats, RunState, StatuslineConfig, StatusSnapshot } from "../lib/types.ts";
 import { aggregateSessionUsage } from "../lib/usage.ts";
-import { buildWidgetSegments } from "../lib/widgets.ts";
-
-const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
-
-function sanitizeStatus(text: string): string {
-	return text
-		.replace(ANSI_PATTERN, "")
-		.replace(/[\r\n\t]/g, " ")
-		.replace(/ +/g, " ")
-		.trim();
-}
+import { buildWidgetSegments, joinExtensionProgress } from "../lib/widgets.ts";
 
 function parseNumstat(output: string): BranchChangeStats {
 	let additions = 0;
@@ -247,11 +237,6 @@ export default function statusline(pi: ExtensionAPI) {
 					const usage = aggregateSessionUsage(ctx.sessionManager.getBranch());
 					const context = ctx.getContextUsage();
 					const thinking = ctx.model?.reasoning ? pi.getThinkingLevel() : "off";
-					const taskProgress = Array.from(footerData.getExtensionStatuses().values())
-						.map(sanitizeStatus)
-						.filter(Boolean)
-						.join(" ");
-
 					const snapshot: StatusSnapshot = {
 						cwd: ctx.cwd,
 						sessionName: ctx.sessionManager.getSessionName(),
@@ -269,7 +254,7 @@ export default function statusline(pi: ExtensionAPI) {
 							: undefined,
 						branch: footerData.getGitBranch(),
 						branchDiff: branchChanges,
-						progress: taskProgress || undefined,
+						progress: joinExtensionProgress(footerData.getExtensionStatuses()),
 						runState,
 					};
 

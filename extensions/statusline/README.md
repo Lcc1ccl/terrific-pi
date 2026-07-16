@@ -76,7 +76,7 @@ Example:
 | `contextBar` | compact context bar + percent |
 | `branch` | git branch |
 | `branchDiff` | diff vs default branch |
-| `progress` | extension status texts |
+| `progress` | extension status texts (excludes mode badges like `ponytail`) |
 | `state` | Ready / Thinking / Working |
 
 ### Commands

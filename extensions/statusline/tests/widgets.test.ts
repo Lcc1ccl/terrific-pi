@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { DEFAULT_CONFIG } from "../lib/config.ts";
-import { buildWidgetSegments } from "../lib/widgets.ts";
+import { buildWidgetSegments, joinExtensionProgress } from "../lib/widgets.ts";
 import type { StatusSnapshot } from "../lib/types.ts";
 
 const baseSnapshot: StatusSnapshot = {
@@ -67,5 +67,21 @@ describe("buildWidgetSegments", () => {
 		assert.ok(texts.some((text) => text.includes("in") === false || /1\.5K.*0\.8K|↑|↓/.test(text) || text.includes("1.5K")));
 		assert.ok(texts.includes("$0.42") || texts.includes("0.42"));
 		assert.ok(texts.some((text) => text === "60%" || text.endsWith("%")));
+	});
+});
+
+describe("joinExtensionProgress", () => {
+	it("joins non-excluded statuses and strips ansi", () => {
+		const statuses = new Map([
+			["ponytail", "\x1b[32m○\x1b[39m 🐴 ponytail: LITE"],
+			["task", "step 1/2"],
+			["other", "  building  "],
+		]);
+		assert.equal(joinExtensionProgress(statuses), "step 1/2 building");
+	});
+
+	it("returns undefined when only excluded/empty remain", () => {
+		assert.equal(joinExtensionProgress(new Map([["ponytail", "active"]])), undefined);
+		assert.equal(joinExtensionProgress(new Map([["task", "   "]])), undefined);
 	});
 });
