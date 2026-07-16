@@ -7,7 +7,7 @@ describe("formatWidgetsPreview", () => {
 	it("renders sample segments for enabled widgets", () => {
 		const preview = formatWidgetsPreview(["path", "cache", "state"]);
 		assert.match(preview, /proj|~/);
-		assert.match(preview, /cache r.*hit/);
+		assert.match(preview, /↓.*🎯/);
 		assert.match(preview, /Ready/);
 	});
 
