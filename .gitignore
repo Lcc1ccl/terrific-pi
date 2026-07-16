@@ -1,0 +1,32 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-lock.yaml
+package-lock.json
+*.tgz
+
+# Secrets & local runtime (never commit)
+.env
+.env.*
+*.pem
+*.key
+auth.json
+**/auth.json
+**/sessions/
+**/*.jsonl
+
+# Build / cache
+dist/
+build/
+.cache/
+coverage/
+.turbo/
