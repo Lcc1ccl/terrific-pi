@@ -6,9 +6,12 @@
 
 ```
 terrific-pi/
-├── extensions/          # pi packages / extensions
-│   ├── statusline/      # pi 可配置 statusline
-│   └── fast/            # OpenAI Priority processing (/fast)
+├── extensions/          # pi packages / extensions（一插件一目录）
+│   ├── statusline/      # 可配置底栏
+│   ├── fast/            # OpenAI Priority processing (/fast)
+│   ├── context/         # /context 上下文占用
+│   ├── mode/            # /mode 工具权限模式
+│   └── btw/             # /btw 旁路问答
 ├── workflows/           # 工作流与自动化（待补充）
 └── agent/               # agent 配置模板（勿提交密钥）
 ```
@@ -17,22 +20,27 @@ terrific-pi/
 
 | 插件 | 路径 | 说明 |
 |------|------|------|
-| statusline | `extensions/statusline` | pi 可配置底栏：路径、session、模型、token/cache/cost、context bar、git、运行状态；支持 `/statusline` 交互配置 |
+| statusline | `extensions/statusline` | 可配置底栏：路径、session、模型、token/cache/cost、context bar、git、运行状态；`/statusline` 交互配置 |
 | fast | `extensions/fast` | `/fast` 开关 OpenAI Priority processing（`service_tier=priority`）；开启后 footer 显示 `⚡` |
+| context | `extensions/context` | `/context` 上下文占用拆解（不调模型、不写 session） |
+| mode | `extensions/mode` | `/mode ask\|plan\|edit\|auto` 工具权限模式；status key `pi-essentials-mode` |
+| btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话） |
+
+> 原 monorepo 包 `vendor/pi-essentials` 已按插件拆入上表三项。配置文件仍兼容 `~/.pi/agent/pi-essentials.json`。
 
 ### 安装
 
 ```bash
-# 本地路径
-pi install /path/to/terrific-pi/extensions/statusline
-pi install /path/to/terrific-pi/extensions/fast
+# settings.json packages（相对 ~/.pi/agent）
+"../vendor/terrific-pi/extensions/statusline"
+"../vendor/terrific-pi/extensions/fast"
+"../vendor/terrific-pi/extensions/context"
+"../vendor/terrific-pi/extensions/mode"
+"../vendor/terrific-pi/extensions/btw"
 
-# 或从 git 安装该子目录包
-pi install git:https://github.com/Lcc1ccl/terrific-pi.git
-# 若 pi 需要子路径，按你本机 pi 版本文档指定 package 子目录
+# 或
+pi install /path/to/terrific-pi/extensions/<name>
 ```
-
-本地已安装路径示例：`~/.pi/extensions/statusline`。
 
 ## 安全约定
 

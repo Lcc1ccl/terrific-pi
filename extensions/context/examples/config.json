@@ -1,0 +1,14 @@
+{
+  "context": {
+    "topEntries": 10
+  },
+  "mode": {
+    "default": "edit",
+    "persistPerSession": true
+  },
+  "btw": {
+    "thinking": "minimal",
+    "maxContextTokens": 80000,
+    "maxOutputTokens": 2000
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "mode",
+  "version": "0.1.0",
+  "description": "Pi /mode tool-permission modes: ask | plan | edit | auto",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "mode"
+  ],
+  "license": "MIT",
+  "pi": {
+    "extensions": [
+      "./extensions/mode.ts"
+    ]
+  },
+  "scripts": {
+    "test": "node --test --experimental-strip-types tests/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "check": "npm run typecheck && npm test"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.10",
+    "@types/node": "^26.0.0",
+    "typescript": "^6.0.3"
+  },
+  "files": [
+    "extensions",
+    "lib",
+    "examples",
+    "package.json",
+    "README.md",
+    "tsconfig.json"
+  ]
+}
