@@ -15,6 +15,8 @@ export type WidgetEditorItem = {
 };
 
 export type ConfigureUi = {
+	/** Top-level selector backed by a wrapping SelectList. */
+	selectMain(title: string, items: string[]): Promise<string | undefined>;
 	select(title: string, items: string[]): Promise<string | undefined>;
 	input(title: string, value: string): Promise<string | undefined>;
 	/** Codex-style multi-select: Space toggle, ↑/↓ select, ←/→ move. */
@@ -279,7 +281,7 @@ export async function runStatuslineConfigurator(
 	while (true) {
 		const config = deps.getConfig();
 		const configPath = deps.getConfigPath();
-		const choice = await deps.ui.select(mainMenuTitle(config, configPath), [
+		const choice = await deps.ui.selectMain(mainMenuTitle(config, configPath), [
 			"Widgets",
 			"Context mode",
 			"Context bar width",

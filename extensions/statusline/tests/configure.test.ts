@@ -161,6 +161,44 @@ describe("formatConfigSummary", () => {
 	});
 });
 
+describe("main menu selector", () => {
+	it("routes the top-level menu through the cyclic selector", async () => {
+		const config: StatuslineConfig = {
+			widgets: ["path"],
+			contextMode: "remaining",
+			contextBarWidth: 10,
+			minimal: false,
+			spacing: 1,
+		};
+		let mainCalls = 0;
+		let nestedCalls = 0;
+
+		await runStatuslineConfigurator({
+			getConfig: () => config,
+			getConfigPath: () => "/tmp/statusline.json",
+			applyConfig: () => ({ ok: true, value: undefined }),
+			reloadConfig: () => ({ ok: true, value: config }),
+			resetConfig: () => ({ ok: true, value: undefined }),
+			ui: {
+				selectMain: async () => {
+					mainCalls += 1;
+					return undefined;
+				},
+				select: async () => {
+					nestedCalls += 1;
+					return undefined;
+				},
+				input: async () => undefined,
+				editWidgets: async () => undefined,
+				notify: () => {},
+			},
+		}, ["path"]);
+
+		assert.equal(mainCalls, 1);
+		assert.equal(nestedCalls, 0);
+	});
+});
+
 describe("widget spacing prompt", () => {
 	it("shows the default, minimum, and maximum values", async () => {
 		const config: StatuslineConfig = {
@@ -181,7 +219,8 @@ describe("widget spacing prompt", () => {
 			reloadConfig: () => ({ ok: true, value: config }),
 			resetConfig: () => ({ ok: true, value: undefined }),
 			ui: {
-				select: async () => choices.shift(),
+				selectMain: async () => choices.shift(),
+				select: async () => undefined,
 				input: async (title, value) => {
 					inputTitle = title;
 					inputValue = value;

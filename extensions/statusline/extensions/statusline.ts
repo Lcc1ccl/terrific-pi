@@ -1,5 +1,5 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { DynamicBorder, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Container, SelectList, Text, truncateToWidth } from "@earendil-works/pi-tui";
 
 import {
 	DEFAULT_CONFIG,
@@ -20,9 +20,11 @@ import type { BranchChangeStats, RunState, StatuslineConfig, StatusSnapshot } fr
 import { aggregateSessionUsage } from "../lib/usage.ts";
 import {
 	buildWidgetSegments,
+	FAST_STATUS_KEY,
 	joinExtensionProgress,
 	MODE_STATUS_KEY,
 	runStateForAssistantEvent,
+	sanitizeStatus,
 } from "../lib/widgets.ts";
 
 function parseNumstat(output: string): BranchChangeStats {
@@ -213,6 +215,37 @@ export default function statusline(pi: ExtensionAPI) {
 					},
 					resetConfig,
 					ui: {
+						selectMain: (title, items) =>
+							ctx.ui.custom<string | undefined>((tui, theme, _keybindings, done) => {
+								const container = new Container();
+								container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+								container.addChild(new Text(theme.fg("accent", theme.bold(title))));
+
+								const selectList = new SelectList(
+									items.map((value) => ({ value, label: value })),
+									items.length,
+									{
+										selectedPrefix: (text) => theme.fg("accent", text),
+										selectedText: (text) => theme.fg("accent", text),
+										description: (text) => theme.fg("muted", text),
+										scrollInfo: (text) => theme.fg("dim", text),
+										noMatch: (text) => theme.fg("warning", text),
+									},
+								);
+								selectList.onSelect = (item) => done(item.value);
+								selectList.onCancel = () => done(undefined);
+								container.addChild(selectList);
+								container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+
+								return {
+									render: (width) => container.render(width),
+									invalidate: () => container.invalidate(),
+									handleInput: (data) => {
+										selectList.handleInput(data);
+										tui.requestRender();
+									},
+								};
+							}),
 						select: (title, items) => ctx.ui.select(title, items),
 						input: (title, value) => ctx.ui.input(title, value),
 						editWidgets: (title, allWidgets, enabled, onChange, onReject) =>
@@ -267,13 +300,15 @@ export default function statusline(pi: ExtensionAPI) {
 					const thinking = ctx.model?.reasoning ? pi.getThinkingLevel() : "off";
 					const extensionStatuses = footerData.getExtensionStatuses();
 					const modeStatus = extensionStatuses.get(MODE_STATUS_KEY);
+					const fastStatus = extensionStatuses.get(FAST_STATUS_KEY);
 					const snapshot: StatusSnapshot = {
 						cwd: ctx.cwd,
 						sessionName: ctx.sessionManager.getSessionName(),
 						modelId: ctx.model?.id ?? "no-model",
 						thinkingLevel: thinking,
 						hasReasoning: Boolean(ctx.model?.reasoning),
-						mode: modeStatus ? modeStatus.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").trim() : undefined,
+						mode: modeStatus ? sanitizeStatus(modeStatus) || undefined : undefined,
+						fast: fastStatus ? sanitizeStatus(fastStatus) || undefined : undefined,
 						tokens: usage.tokens,
 						cost: usage.cost,
 						context: context

@@ -15,6 +15,7 @@ const baseSnapshot: StatusSnapshot = {
 	modelId: "gpt-5",
 	thinkingLevel: "high",
 	hasReasoning: true,
+	fast: "⚡",
 	tokens: { input: 1500, output: 800, cacheRead: 4000, cacheWrite: 500 },
 	cost: 0.42,
 	context: { tokens: 40_000, contextWindow: 100_000, percent: 40 },
@@ -59,6 +60,20 @@ describe("buildWidgetSegments", () => {
 			segments.map((segment) => segment.text),
 			["Ready"],
 		);
+	});
+
+	it("renders fast independently and hides it when inactive", () => {
+		const active = buildWidgetSegments(baseSnapshot, {
+			...DEFAULT_CONFIG,
+			widgets: ["fast", "progress"],
+		});
+		assert.deepEqual(active.map((segment) => segment.text), ["⚡", "task 1/2"]);
+
+		const inactive = buildWidgetSegments(
+			{ ...baseSnapshot, fast: undefined },
+			{ ...DEFAULT_CONFIG, widgets: ["fast"] },
+		);
+		assert.deepEqual(inactive, []);
 	});
 
 	it("uses compact token direction emoji", () => {
@@ -126,6 +141,7 @@ describe("joinExtensionProgress", () => {
 	it("joins non-excluded statuses and strips ansi", () => {
 		const statuses = new Map([
 			["ponytail", "\x1b[32m○\x1b[39m 🐴 ponytail: LITE"],
+			["fast", "⚡"],
 			["task", "step 1/2"],
 			["other", "  building  "],
 		]);
@@ -135,6 +151,7 @@ describe("joinExtensionProgress", () => {
 	it("returns undefined when only excluded/empty remain", () => {
 		assert.equal(joinExtensionProgress(new Map([["ponytail", "active"]])), undefined);
 		assert.equal(joinExtensionProgress(new Map([["pi-essentials-mode", "PLAN"]])), undefined);
+		assert.equal(joinExtensionProgress(new Map([["fast", "⚡"]])), undefined);
 		assert.equal(joinExtensionProgress(new Map([["task", "   "]])), undefined);
 	});
 });

@@ -10,12 +10,13 @@ Built for pi's `setFooter` extension API: session metrics, git context, and agen
 - Path (home-relative `~`)
 - Session name (when set via `/name`)
 - Model + thinking level
+- Execution mode and fast priority badges when active
 - Token usage (`⬆️input` / `⬇️output`, compact K/M/B/T)
 - Cache hit rate (`🎯…%`)
 - Session cost (`$x.xx`, hidden when zero)
 - Context bar (remaining/used mode, no text prefix)
 - Git branch (`main` is `🏠`) + non-empty branch diff (`+N -M`)
-- Extension task progress statuses
+- Extension task progress statuses (mode and fast badges excluded)
 - LLM duration: current round / session total (assistant stream only)
 - Run state: Thinking while reasoning, Working while generating or executing tools, Ready when settled
 - Interactive `/statusline` configurator and `/statusline reload`
@@ -23,7 +24,7 @@ Built for pi's `setFooter` extension API: session metrics, git context, and agen
 ## Default layout
 
 ```text
-~/proj · session · model high · ⬆️1.5K · ⬇️800 · 🎯66.7% · $0.42 · [██████░░░░] 60% · 🏠 · +12 -3 · 12.3s / 1m45s · Ready
+~/proj · session · model high · ⚡ · ⬆️1.5K · ⬇️800 · 🎯66.7% · $0.42 · [██████░░░░] 60% · 🏠 · +12 -3 · 12.3s / 1m45s · Ready
 ```
 
 ## Install
@@ -49,6 +50,7 @@ Example:
     "path",
     "session",
     "model",
+    "fast",
     "tokens",
     "cache",
     "cost",
@@ -73,6 +75,8 @@ Example:
 | `path` | cwd with `~` abbreviation |
 | `session` | session display name |
 | `model` | model id + thinking level |
+| `mode` | active `/mode` badge |
+| `fast` | `⚡` while `/fast` priority processing is on |
 | `tokens` | input/output totals with `⬆️` / `⬇️` prefixes |
 | `cache` | cache hit rate |
 | `cost` | session cost USD |
@@ -80,7 +84,7 @@ Example:
 | `contextBar` | compact context bar + percent |
 | `branch` | git branch (`main` renders as `🏠`) |
 | `branchDiff` | non-empty diff vs default branch |
-| `progress` | extension status texts (excludes mode badges like `ponytail`) |
+| `progress` | extension status texts (excludes dedicated badges such as `mode`, `fast`, and `ponytail`) |
 | `duration` | current-round / session LLM time (`12.3s / 1m45s`); assistant stream only, excludes tools + idle |
 | `state` | Ready / Thinking / Working, driven by agent stream/tool events |
 
@@ -91,7 +95,7 @@ Example:
 /statusline reload   # reload config file
 ```
 
-In TUI mode, `/statusline` opens a nested menu to:
+In TUI mode, `/statusline` opens a nested menu whose top-level selection wraps from first to last and last to first:
 
 - **Widgets** (Codex-style): `Space` toggle, `↑/↓` select, `←/→` move, Enter done
 - set `contextMode`, `contextBarWidth`, `minimal`, and numeric widget spacing (`0`–`4`)

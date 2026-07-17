@@ -10,6 +10,7 @@ import {
 	mergeStatuslineConfig,
 	resolveConfigPath,
 	saveStatuslineConfig,
+	WIDGET_IDS,
 } from "../lib/config.ts";
 
 describe("mergeStatuslineConfig", () => {
@@ -20,6 +21,11 @@ describe("mergeStatuslineConfig", () => {
 	it("uses numeric spacing and does not expose a separator setting", () => {
 		assert.equal(DEFAULT_CONFIG.spacing, 1);
 		assert.equal("separator" in DEFAULT_CONFIG, false);
+	});
+
+	it("registers fast as a dedicated widget and enables it by default", () => {
+		assert.equal(WIDGET_IDS.indexOf("fast"), WIDGET_IDS.indexOf("mode") + 1);
+		assert.equal(DEFAULT_CONFIG.widgets.indexOf("fast"), DEFAULT_CONFIG.widgets.indexOf("model") + 1);
 	});
 
 	it("filters unknown widgets and applies known options", () => {

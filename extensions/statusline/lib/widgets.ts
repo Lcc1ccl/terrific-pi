@@ -14,11 +14,14 @@ import type { RunState, StatusSnapshot, StatuslineConfig, WidgetId, WidgetSegmen
 
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 
-/** Extension status keys that are mode badges, not task progress. */
-export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail", "pi-essentials-mode"]);
+/** Extension status keys that are badges, not task progress. */
+export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail", "pi-essentials-mode", "fast"]);
 
 /** Status key written by pi-essentials /mode. */
 export const MODE_STATUS_KEY = "pi-essentials-mode";
+
+/** Status key written by /fast. */
+export const FAST_STATUS_KEY = "fast";
 
 export function runStateForAssistantEvent(type: string): RunState | undefined {
 	if (type.startsWith("thinking_")) return "Thinking";
@@ -56,6 +59,7 @@ export const PREVIEW_SNAPSHOT: StatusSnapshot = {
 	thinkingLevel: "high",
 	hasReasoning: true,
 	mode: "EDIT",
+	fast: "⚡",
 	tokens: { input: 1500, output: 800, cacheRead: 4000, cacheWrite: 500 },
 	cost: 0.42,
 	context: { tokens: 40_000, contextWindow: 100_000, percent: 40 },
@@ -103,6 +107,11 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 			case "mode":
 				if (snapshot.mode) {
 					segments.push({ id, accent: "state", text: snapshot.mode });
+				}
+				break;
+			case "fast":
+				if (snapshot.fast) {
+					segments.push({ id, accent: "state", text: snapshot.fast });
 				}
 				break;
 			case "tokens": {
