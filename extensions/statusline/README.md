@@ -24,7 +24,7 @@ Built for pi's `setFooter` extension API: session metrics, git context, and agen
 ## Default layout
 
 ```text
-~/proj · session · model high · ⚡ · ⬆️1.5K · ⬇️800 · 🎯66.7% · $0.42 · [██████░░░░] 60% · 🏠 · +12 -3 · 12.3s / 1m45s · Ready
+~/proj · session · model high ·  · ⬆️1.5K · ⬇️800 · 🎯66.7% · $0.42 · [██████░░░░] 60% · 🏠 · +12 -3 · 12.3s / 1m45s · Ready
 ```
 
 ## Install
@@ -76,7 +76,7 @@ Example:
 | `session` | session display name |
 | `model` | model id + thinking level |
 | `mode` | active `/mode` badge |
-| `fast` | `⚡` while `/fast` priority processing is on |
+| `fast` | single-column `` while `/fast` priority processing is on |
 | `tokens` | input/output totals with `⬆️` / `⬇️` prefixes |
 | `cache` | cache hit rate |
 | `cost` | session cost USD |

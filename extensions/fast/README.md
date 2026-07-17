@@ -2,7 +2,7 @@
 
 Toggle OpenAI [Priority processing](https://platform.openai.com/docs/guides/priority-processing) for [pi](https://pi.dev).
 
-Injects `service_tier: "priority"` into Responses / Codex Responses requests. Footer shows `⚡` when enabled.
+Injects `service_tier: "priority"` into Responses / Codex Responses requests. Footer shows the single-column bolt `` when enabled.
 
 ## Usage
 

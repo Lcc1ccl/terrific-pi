@@ -59,7 +59,7 @@ export const PREVIEW_SNAPSHOT: StatusSnapshot = {
 	thinkingLevel: "high",
 	hasReasoning: true,
 	mode: "EDIT",
-	fast: "⚡",
+	fast: "",
 	tokens: { input: 1500, output: 800, cacheRead: 4000, cacheWrite: 500 },
 	cost: 0.42,
 	context: { tokens: 40_000, contextWindow: 100_000, percent: 40 },

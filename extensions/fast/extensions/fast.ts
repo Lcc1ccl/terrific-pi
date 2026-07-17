@@ -18,7 +18,7 @@ function supportsFast(ctx: ExtensionContext): boolean {
 }
 
 function applyStatus(ctx: ExtensionContext, fast: boolean): void {
-	ctx.ui.setStatus("fast", fast ? "⚡" : undefined);
+	ctx.ui.setStatus("fast", fast ? "" : undefined);
 }
 
 export default function (pi: ExtensionAPI) {
