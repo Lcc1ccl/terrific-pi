@@ -11,7 +11,7 @@ Built for pi's `setFooter` extension API: session metrics, git context, and agen
 - Session name (when set via `/name`)
 - Model + thinking level
 - Execution mode and fast priority badges when active
-- Token usage (`⬆️input` / `⬇️output`, compact K/M/B/T)
+- Token usage (`input` / `output`, single-column icons, compact K/M/B/T)
 - Cache hit rate (`🎯…%`)
 - Session cost (`$x.xx`, hidden when zero)
 - Context bar (remaining/used mode, no text prefix)
@@ -24,7 +24,7 @@ Built for pi's `setFooter` extension API: session metrics, git context, and agen
 ## Default layout
 
 ```text
-~/proj · session · model high ·  · ⬆️1.5K · ⬇️800 · 🎯66.7% · $0.42 · [██████░░░░] 60% · 🏠 · +12 -3 · 12.3s / 1m45s · Ready
+~/proj · session · model high ·  · 1.5K · 800 · 🎯66.7% · $0.42 · [██████░░░░] 60% · 🏠 · +12 -3 · 12.3s / 1m45s · Ready
 ```
 
 ## Install
@@ -77,7 +77,7 @@ Example:
 | `model` | model id + thinking level |
 | `mode` | active `/mode` badge |
 | `fast` | single-column `` while `/fast` priority processing is on |
-| `tokens` | input/output totals with `⬆️` / `⬇️` prefixes |
+| `tokens` | input/output totals with single-column `` / `` prefixes |
 | `cache` | cache hit rate |
 | `cost` | session cost USD |
 | `context` | text context percent |

@@ -120,13 +120,13 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				segments.push({
 					id,
 					accent: "usage",
-					text: minimal ? `⬆️${input}/⬇️${output}` : `⬆️${input}`,
+					text: minimal ? `${input}/${output}` : `${input}`,
 				});
 				if (!minimal) {
 					segments.push({
 						id,
 						accent: "usage",
-						text: `⬇️${output}`,
+						text: `${output}`,
 					});
 				}
 				break;

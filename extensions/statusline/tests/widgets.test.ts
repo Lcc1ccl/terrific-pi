@@ -76,14 +76,14 @@ describe("buildWidgetSegments", () => {
 		assert.deepEqual(inactive, []);
 	});
 
-	it("uses compact token direction emoji", () => {
+	it("uses single-column token direction icons", () => {
 		const segments = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,
 			widgets: ["tokens"],
 		});
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
-			["⬆️1.5K", "⬇️800"],
+			["1.5K", "800"],
 		);
 	});
 
