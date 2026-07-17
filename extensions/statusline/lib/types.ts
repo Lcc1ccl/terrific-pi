@@ -4,6 +4,7 @@ export type WidgetId =
 	| "path"
 	| "session"
 	| "model"
+	| "mode"
 	| "tokens"
 	| "cache"
 	| "cost"
@@ -43,6 +44,8 @@ export interface StatusSnapshot {
 	modelId: string;
 	thinkingLevel: string;
 	hasReasoning: boolean;
+	/** Optional execution mode badge from pi-essentials (/mode). */
+	mode?: string;
 	tokens: TokenTotals;
 	cost: number;
 	context?: ContextUsageView;

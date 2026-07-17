@@ -8,6 +8,7 @@ export const WIDGET_IDS = [
 	"path",
 	"session",
 	"model",
+	"mode",
 	"tokens",
 	"cache",
 	"cost",

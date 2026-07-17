@@ -18,7 +18,7 @@ import { renderStatusLine, selectPalette } from "../lib/render.ts";
 import { WidgetsSetupComponent } from "../lib/widgets-setup.ts";
 import type { BranchChangeStats, RunState, StatuslineConfig, StatusSnapshot } from "../lib/types.ts";
 import { aggregateSessionUsage } from "../lib/usage.ts";
-import { buildWidgetSegments, joinExtensionProgress } from "../lib/widgets.ts";
+import { buildWidgetSegments, joinExtensionProgress, MODE_STATUS_KEY } from "../lib/widgets.ts";
 
 function parseNumstat(output: string): BranchChangeStats {
 	let additions = 0;
@@ -260,12 +260,15 @@ export default function statusline(pi: ExtensionAPI) {
 					const usage = aggregateSessionUsage(ctx.sessionManager.getBranch());
 					const context = ctx.getContextUsage();
 					const thinking = ctx.model?.reasoning ? pi.getThinkingLevel() : "off";
+					const extensionStatuses = footerData.getExtensionStatuses();
+					const modeStatus = extensionStatuses.get(MODE_STATUS_KEY);
 					const snapshot: StatusSnapshot = {
 						cwd: ctx.cwd,
 						sessionName: ctx.sessionManager.getSessionName(),
 						modelId: ctx.model?.id ?? "no-model",
 						thinkingLevel: thinking,
 						hasReasoning: Boolean(ctx.model?.reasoning),
+						mode: modeStatus ? modeStatus.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").trim() : undefined,
 						tokens: usage.tokens,
 						cost: usage.cost,
 						context: context
@@ -277,7 +280,7 @@ export default function statusline(pi: ExtensionAPI) {
 							: undefined,
 						branch: footerData.getGitBranch(),
 						branchDiff: branchChanges,
-						progress: joinExtensionProgress(footerData.getExtensionStatuses()),
+						progress: joinExtensionProgress(extensionStatuses),
 						duration: durationTracker.snapshot(),
 						runState,
 					};

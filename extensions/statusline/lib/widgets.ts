@@ -14,7 +14,10 @@ import type { StatusSnapshot, StatuslineConfig, WidgetId, WidgetSegment } from "
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 
 /** Extension status keys that are mode badges, not task progress. */
-export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail"]);
+export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail", "pi-essentials-mode"]);
+
+/** Status key written by pi-essentials /mode. */
+export const MODE_STATUS_KEY = "pi-essentials-mode";
 
 export function sanitizeStatus(text: string): string {
 	return text
@@ -45,6 +48,7 @@ export const PREVIEW_SNAPSHOT: StatusSnapshot = {
 	modelId: "model",
 	thinkingLevel: "high",
 	hasReasoning: true,
+	mode: "EDIT",
 	tokens: { input: 1500, output: 800, cacheRead: 4000, cacheWrite: 500 },
 	cost: 0.42,
 	context: { tokens: 40_000, contextWindow: 100_000, percent: 40 },
@@ -89,6 +93,11 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				segments.push({ id, accent: "model", text });
 				break;
 			}
+			case "mode":
+				if (snapshot.mode) {
+					segments.push({ id, accent: "state", text: snapshot.mode });
+				}
+				break;
 			case "tokens": {
 				const input = formatTokensCompact(snapshot.tokens.input);
 				const output = formatTokensCompact(snapshot.tokens.output);

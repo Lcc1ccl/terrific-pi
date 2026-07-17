@@ -94,6 +94,7 @@ describe("joinExtensionProgress", () => {
 
 	it("returns undefined when only excluded/empty remain", () => {
 		assert.equal(joinExtensionProgress(new Map([["ponytail", "active"]])), undefined);
+		assert.equal(joinExtensionProgress(new Map([["pi-essentials-mode", "PLAN"]])), undefined);
 		assert.equal(joinExtensionProgress(new Map([["task", "   "]])), undefined);
 	});
 });
