@@ -26,6 +26,8 @@ Notes:
 - Not a thinking-level control (`Shift+Tab` / `/thinking` is separate)
 - Priority pricing is roughly 2× standard (gpt-5.5 ~2.5× in pi-ai accounting)
 - Session-local only (off after restart)
+- Injects into the outbound request body only; third-party proxies must forward `service_tier` for real Priority processing
+- Status badge reflects the local toggle, not whether the provider actually served priority
 
 ## Install
 

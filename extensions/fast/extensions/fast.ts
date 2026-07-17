@@ -12,8 +12,28 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 const FAST_APIS = new Set(["openai-responses", "openai-codex-responses", "azure-openai-responses"]);
 
+/** Pure helper — inject service_tier into a provider payload object. */
+export function injectPriority(payload: unknown): unknown | undefined {
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+	const body = payload as Record<string, unknown>;
+	// Mutate in place so callers that ignore the return still see the field
+	// (event.payload shares the original params reference in pi-ai).
+	body.service_tier = "priority";
+	return body;
+}
+
+function modelApi(ctx: ExtensionContext): string | undefined {
+	try {
+		const api = ctx.model?.api;
+		return typeof api === "string" ? api : undefined;
+	} catch {
+		// Stale extension ctx must not block toggle/request paths.
+		return undefined;
+	}
+}
+
 function supportsFast(ctx: ExtensionContext): boolean {
-	const api = ctx.model?.api;
+	const api = modelApi(ctx);
 	return typeof api === "string" && FAST_APIS.has(api);
 }
 
@@ -57,11 +77,10 @@ export default function (pi: ExtensionAPI) {
 		applyStatus(ctx, fast);
 	});
 
-	pi.on("before_provider_request", (event, ctx) => {
+	// Do not gate on supportsFast here: a missing/stale ctx.model used to
+	// silently skip injection while the status badge still showed ON.
+	pi.on("before_provider_request", (event) => {
 		if (!fast) return;
-		if (!supportsFast(ctx)) return;
-		const payload = event.payload;
-		if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
-		return { ...(payload as Record<string, unknown>), service_tier: "priority" };
+		return injectPriority(event.payload);
 	});
 }
