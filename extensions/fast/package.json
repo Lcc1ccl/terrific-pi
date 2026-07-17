@@ -1,0 +1,19 @@
+{
+  "name": "fast",
+  "version": "1.0.0",
+  "description": "Toggle OpenAI Priority processing via /fast (service_tier=priority)",
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "openai", "fast", "service-tier"],
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./extensions/fast.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "files": [
+    "extensions",
+    "package.json",
+    "README.md"
+  ]
+}
