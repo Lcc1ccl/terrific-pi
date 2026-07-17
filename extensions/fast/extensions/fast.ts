@@ -11,6 +11,11 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const FAST_APIS = new Set(["openai-responses", "openai-codex-responses", "azure-openai-responses"]);
+const FAST_ENTRY_TYPE = "fast-state";
+
+interface FastState {
+	enabled: boolean;
+}
 
 /** Pure helper — inject service_tier into a provider payload object. */
 export function injectPriority(payload: unknown): unknown | undefined {
@@ -41,11 +46,23 @@ function applyStatus(ctx: ExtensionContext, fast: boolean): void {
 	ctx.ui.setStatus("fast", fast ? "" : undefined);
 }
 
+function readPersistedFast(ctx: ExtensionContext): boolean | undefined {
+	const branch = ctx.sessionManager.getBranch();
+	for (let i = branch.length - 1; i >= 0; i--) {
+		const entry = branch[i]!;
+		if (entry.type !== "custom" || entry.customType !== FAST_ENTRY_TYPE) continue;
+		const data = entry.data as FastState | undefined;
+		if (data && typeof data.enabled === "boolean") return data.enabled;
+	}
+	return undefined;
+}
+
 export default function (pi: ExtensionAPI) {
 	let fast = false;
 
 	const setFast = (ctx: ExtensionContext, next: boolean) => {
 		fast = next;
+		pi.appendEntry<FastState>(FAST_ENTRY_TYPE, { enabled: fast });
 		applyStatus(ctx, fast);
 		if (fast && !supportsFast(ctx)) {
 			ctx.ui.notify(
@@ -73,8 +90,17 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.on("session_start", async (_event, ctx) => {
+	const restoreFast = (ctx: ExtensionContext) => {
+		fast = readPersistedFast(ctx) ?? false;
 		applyStatus(ctx, fast);
+	};
+
+	pi.on("session_start", async (_event, ctx) => {
+		restoreFast(ctx);
+	});
+
+	pi.on("session_tree", async (_event, ctx) => {
+		restoreFast(ctx);
 	});
 
 	// Do not gate on supportsFast here: a missing/stale ctx.model used to
