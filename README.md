@@ -12,8 +12,12 @@ terrific-pi/
 │   ├── context/         # /context 上下文占用
 │   ├── mode/            # /mode 工具权限模式
 │   └── btw/             # /btw 旁路问答
+├── agent/               # 可公开配置模板（勿提交密钥）
+├── scripts/
+│   ├── pack.sh          # 按仓库内容打离线包
+│   └── install.sh       # 离线安装 / 同步 packages
 ├── workflows/           # 工作流与自动化（待补充）
-└── agent/               # agent 配置模板（勿提交密钥）
+└── dist/                # pack 产出（gitignore）
 ```
 
 ## 已收录插件
@@ -30,6 +34,29 @@ terrific-pi/
 
 ### 安装
 
+#### 离线一键（推荐）
+
+源机器（有仓库）：
+
+```bash
+./scripts/pack.sh
+# -> dist/terrific-pi-<utc>-<sha>.tar.gz
+```
+
+目标机器（可无网）：
+
+```bash
+tar -xzf terrific-pi-*.tar.gz
+cd terrific-pi-*/
+./install.sh
+# 或：./scripts/install.sh /path/to/archive.tar.gz
+```
+
+默认安装到 `~/.pi/vendor/terrific-pi`，并合并 `~/.pi/agent/settings.json` 的 `packages`。
+覆盖已有安装：`FORCE=1 ./install.sh`。自定义根目录：`PI_HOME=/path ./install.sh`。
+
+#### 开发机相对路径
+
 ```bash
 # settings.json packages（相对 ~/.pi/agent）
 "../vendor/terrific-pi/extensions/statusline"
@@ -37,9 +64,6 @@ terrific-pi/
 "../vendor/terrific-pi/extensions/context"
 "../vendor/terrific-pi/extensions/mode"
 "../vendor/terrific-pi/extensions/btw"
-
-# 或
-pi install /path/to/terrific-pi/extensions/<name>
 ```
 
 ## 安全约定
@@ -50,6 +74,9 @@ pi install /path/to/terrific-pi/extensions/<name>
 
 ## 开发约定
 
+完整规范见根目录 [`AGENTS.md`](./AGENTS.md)（开发前检索、插件结构、提交、离线打包）。
+
 - 文本文件统一使用 `LF` 换行
 - 每个 extension 保持独立可安装的 pi package 结构（含 `package.json` 与 `pi.extensions`）
 - 新增插件放在 `extensions/<name>/`，并在本 README 表格中登记
+- **开发前**先扫官方文档与社区实现，避免重复造轮子
