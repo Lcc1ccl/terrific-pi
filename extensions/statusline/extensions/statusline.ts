@@ -18,7 +18,12 @@ import { renderStatusLine, selectPalette } from "../lib/render.ts";
 import { WidgetsSetupComponent } from "../lib/widgets-setup.ts";
 import type { BranchChangeStats, RunState, StatuslineConfig, StatusSnapshot } from "../lib/types.ts";
 import { aggregateSessionUsage } from "../lib/usage.ts";
-import { buildWidgetSegments, joinExtensionProgress, MODE_STATUS_KEY } from "../lib/widgets.ts";
+import {
+	buildWidgetSegments,
+	joinExtensionProgress,
+	MODE_STATUS_KEY,
+	runStateForAssistantEvent,
+} from "../lib/widgets.ts";
 
 function parseNumstat(output: string): BranchChangeStats {
 	let additions = 0;
@@ -313,6 +318,11 @@ export default function statusline(pi: ExtensionAPI) {
 		durationTracker.stopSegment();
 		stopDurationTick();
 		requestRender();
+	});
+	pi.on("message_update", async (event) => {
+		if (activeTools.size > 0) return;
+		const state = runStateForAssistantEvent(event.assistantMessageEvent.type);
+		if (state) setRunState(state);
 	});
 	pi.on("agent_settled", async (_event, ctx) => {
 		activeTools.clear();

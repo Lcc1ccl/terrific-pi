@@ -9,7 +9,8 @@ import {
 	formatCwd,
 	formatTokensCompact,
 } from "./format.ts";
-import type { StatusSnapshot, StatuslineConfig, WidgetId, WidgetSegment } from "./types.ts";
+import { formatWidgetSeparator } from "./render.ts";
+import type { RunState, StatusSnapshot, StatuslineConfig, WidgetId, WidgetSegment } from "./types.ts";
 
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 
@@ -18,6 +19,12 @@ export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail", "pi-essentials-mode"]
 
 /** Status key written by pi-essentials /mode. */
 export const MODE_STATUS_KEY = "pi-essentials-mode";
+
+export function runStateForAssistantEvent(type: string): RunState | undefined {
+	if (type.startsWith("thinking_")) return "Thinking";
+	if (type.startsWith("text_") || type.startsWith("toolcall_")) return "Working";
+	return undefined;
+}
 
 export function sanitizeStatus(text: string): string {
 	return text
@@ -61,7 +68,7 @@ export const PREVIEW_SNAPSHOT: StatusSnapshot = {
 
 export function formatWidgetsPreview(
 	enabled: readonly string[],
-	separator = DEFAULT_CONFIG.separator,
+	spacing = DEFAULT_CONFIG.spacing,
 ): string {
 	const widgets = enabled.filter((id): id is WidgetId => typeof id === "string");
 	if (widgets.length === 0) return "(none)";
@@ -69,7 +76,7 @@ export function formatWidgetsPreview(
 		...DEFAULT_CONFIG,
 		widgets,
 	});
-	return segments.map((segment) => segment.text).join(separator) || "(empty)";
+	return segments.map((segment) => segment.text).join(formatWidgetSeparator(spacing)) || "(empty)";
 }
 
 export function buildWidgetSegments(snapshot: StatusSnapshot, config: StatuslineConfig): WidgetSegment[] {
@@ -104,13 +111,13 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				segments.push({
 					id,
 					accent: "usage",
-					text: minimal ? `${input}/${output}` : `${input} in`,
+					text: minimal ? `⬆️${input}/⬇️${output}` : `⬆️${input}`,
 				});
 				if (!minimal) {
 					segments.push({
 						id,
 						accent: "usage",
-						text: `${output} out`,
+						text: `⬇️${output}`,
 					});
 				}
 				break;
@@ -135,17 +142,19 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 					snapshot.context?.percent,
 					config.contextBarWidth,
 					config.contextMode,
-					minimal,
 				);
 				if (text) segments.push({ id, accent: "usage", text });
 				break;
 			}
 			case "branch":
-				if (snapshot.branch) segments.push({ id, accent: "branch", text: snapshot.branch });
+				if (snapshot.branch) {
+					segments.push({ id, accent: "branch", text: snapshot.branch === "main" ? "🏠" : snapshot.branch });
+				}
 				break;
 			case "branchDiff":
 				if (snapshot.branchDiff) {
-					segments.push({ id, accent: "branch", text: formatBranchDiff(snapshot.branchDiff) });
+					const text = formatBranchDiff(snapshot.branchDiff);
+					if (text) segments.push({ id, accent: "branch", text });
 				}
 				break;
 			case "progress":

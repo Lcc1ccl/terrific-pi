@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+	formatBranchDiff,
 	formatCache,
 	formatContextBar,
 	formatContextText,
@@ -55,10 +56,16 @@ describe("formatContextText", () => {
 });
 
 describe("formatContextBar", () => {
-	it("renders compact bar with remaining percent", () => {
-		assert.equal(formatContextBar(40, 10, "remaining"), "ctx [██████░░░░] 60%");
-		assert.equal(formatContextBar(40, 10, "used", true), "[████░░░░░░] 40%");
+	it("renders the bar without a ctx label", () => {
+		assert.equal(formatContextBar(40, 10, "remaining"), "[██████░░░░] 60%");
+		assert.equal(formatContextBar(40, 10, "used"), "[████░░░░░░] 40%");
 		assert.equal(formatContextBar(null, 10, "remaining"), undefined);
+	});
+});
+
+describe("formatBranchDiff", () => {
+	it("hides an empty diff", () => {
+		assert.equal(formatBranchDiff({ additions: 0, deletions: 0 }), undefined);
 	});
 });
 

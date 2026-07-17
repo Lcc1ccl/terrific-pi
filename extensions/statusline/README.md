@@ -6,24 +6,24 @@ Built for pi's `setFooter` extension API: session metrics, git context, and agen
 
 ## Features
 
-- Configurable widget order (JSON)
+- Configurable widget order and numeric spacing (JSON)
 - Path (home-relative `~`)
 - Session name (when set via `/name`)
 - Model + thinking level
-- Token usage (input / output, compact K/M/B/T)
+- Token usage (`⬆️input` / `⬇️output`, compact K/M/B/T)
 - Cache hit rate (`🎯…%`)
 - Session cost (`$x.xx`, hidden when zero)
-- Context bar (remaining/used mode)
-- Git branch + branch diff vs default branch (`+N -M`)
+- Context bar (remaining/used mode, no text prefix)
+- Git branch (`main` is `🏠`) + non-empty branch diff (`+N -M`)
 - Extension task progress statuses
 - LLM duration: current round / session total (assistant stream only)
-- Run state: Ready / Thinking / Working
+- Run state: Thinking while reasoning, Working while generating or executing tools, Ready when settled
 - Interactive `/statusline` configurator and `/statusline reload`
 
 ## Default layout
 
 ```text
-~/proj · session · model high · 1.5K in · 0.8K out · 🎯66.7% · $0.42 · ctx [██████░░░░] 60% · main · +12 -3 · 12.3s / 1m45s · Ready
+~/proj · session · model high · ⬆️1.5K · ⬇️800 · 🎯66.7% · $0.42 · [██████░░░░] 60% · 🏠 · +12 -3 · 12.3s / 1m45s · Ready
 ```
 
 ## Install
@@ -40,6 +40,8 @@ Optional config file:
 - override: `PI_STATUSLINE_CONFIG=/path/to.json`
 
 Example:
+
+`spacing` is the number of terminal space cells placed on each side of the fixed `·` separator. Default: `1`; minimum: `0`; maximum: `4`. The separator itself is always present and is not configurable.
 
 ```json
 {
@@ -60,7 +62,7 @@ Example:
   "contextMode": "remaining",
   "contextBarWidth": 10,
   "minimal": false,
-  "separator": " · "
+  "spacing": 1
 }
 ```
 
@@ -71,16 +73,16 @@ Example:
 | `path` | cwd with `~` abbreviation |
 | `session` | session display name |
 | `model` | model id + thinking level |
-| `tokens` | input/output totals |
+| `tokens` | input/output totals with `⬆️` / `⬇️` prefixes |
 | `cache` | cache hit rate |
 | `cost` | session cost USD |
 | `context` | text context percent |
 | `contextBar` | compact context bar + percent |
-| `branch` | git branch |
-| `branchDiff` | diff vs default branch |
+| `branch` | git branch (`main` renders as `🏠`) |
+| `branchDiff` | non-empty diff vs default branch |
 | `progress` | extension status texts (excludes mode badges like `ponytail`) |
 | `duration` | current-round / session LLM time (`12.3s / 1m45s`); assistant stream only, excludes tools + idle |
-| `state` | Ready / Thinking / Working |
+| `state` | Ready / Thinking / Working, driven by agent stream/tool events |
 
 ### Commands
 
@@ -92,7 +94,7 @@ Example:
 In TUI mode, `/statusline` opens a nested menu to:
 
 - **Widgets** (Codex-style): `Space` toggle, `↑/↓` select, `←/→` move, Enter done
-- set `contextMode`, `contextBarWidth`, `minimal`, `separator`
+- set `contextMode`, `contextBarWidth`, `minimal`, and numeric widget spacing (`0`–`4`)
 - show / reload / reset config
 
 Each successful change is written immediately to the config file and the footer refreshes.

@@ -62,7 +62,7 @@ export interface StatuslineConfig {
 	contextMode: ContextMode;
 	contextBarWidth: number;
 	minimal: boolean;
-	separator: string;
+	spacing: number;
 }
 
 export interface WidgetSegment {

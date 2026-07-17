@@ -23,6 +23,10 @@ export const WIDGET_IDS = [
 
 const WIDGET_ID_SET = new Set<string>(WIDGET_IDS);
 
+export const DEFAULT_WIDGET_SPACING = 1;
+export const MIN_WIDGET_SPACING = 0;
+export const MAX_WIDGET_SPACING = 4;
+
 export const DEFAULT_CONFIG: StatuslineConfig = {
 	widgets: [
 		"path",
@@ -41,7 +45,7 @@ export const DEFAULT_CONFIG: StatuslineConfig = {
 	contextMode: "remaining",
 	contextBarWidth: 10,
 	minimal: false,
-	separator: " · ",
+	spacing: DEFAULT_WIDGET_SPACING,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -64,21 +68,26 @@ function asPositiveInt(value: unknown): number | undefined {
 	return rounded > 0 ? rounded : undefined;
 }
 
+function asWidgetSpacing(value: unknown): number | undefined {
+	if (typeof value !== "number" || !Number.isInteger(value)) return undefined;
+	return value >= MIN_WIDGET_SPACING && value <= MAX_WIDGET_SPACING ? value : undefined;
+}
+
 export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 	if (!isRecord(raw)) return { ...DEFAULT_CONFIG, widgets: [...DEFAULT_CONFIG.widgets] };
 
 	const widgets = asWidgetIds(raw.widgets);
 	const contextMode = asContextMode(raw.contextMode);
 	const contextBarWidth = asPositiveInt(raw.contextBarWidth);
-	const separator = typeof raw.separator === "string" && raw.separator.length > 0 ? raw.separator : undefined;
 	const minimal = typeof raw.minimal === "boolean" ? raw.minimal : undefined;
+	const spacing = asWidgetSpacing(raw.spacing);
 
 	return {
 		widgets: widgets && widgets.length > 0 ? widgets : [...DEFAULT_CONFIG.widgets],
 		contextMode: contextMode ?? DEFAULT_CONFIG.contextMode,
 		contextBarWidth: contextBarWidth ?? DEFAULT_CONFIG.contextBarWidth,
 		minimal: minimal ?? DEFAULT_CONFIG.minimal,
-		separator: separator ?? DEFAULT_CONFIG.separator,
+		spacing: spacing ?? DEFAULT_CONFIG.spacing,
 	};
 }
 
@@ -98,7 +107,7 @@ export function saveStatuslineConfig(path: string, config: StatuslineConfig): vo
 		contextMode: config.contextMode,
 		contextBarWidth: config.contextBarWidth,
 		minimal: config.minimal,
-		separator: config.separator,
+		spacing: config.spacing,
 	};
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`, "utf8");

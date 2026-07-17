@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { DEFAULT_CONFIG } from "../lib/config.ts";
-import { buildWidgetSegments, joinExtensionProgress } from "../lib/widgets.ts";
+import {
+	buildWidgetSegments,
+	joinExtensionProgress,
+	runStateForAssistantEvent,
+} from "../lib/widgets.ts";
 import type { StatusSnapshot } from "../lib/types.ts";
 
 const baseSnapshot: StatusSnapshot = {
@@ -57,6 +61,33 @@ describe("buildWidgetSegments", () => {
 		);
 	});
 
+	it("uses compact token direction emoji", () => {
+		const segments = buildWidgetSegments(baseSnapshot, {
+			...DEFAULT_CONFIG,
+			widgets: ["tokens"],
+		});
+		assert.deepEqual(
+			segments.map((segment) => segment.text),
+			["⬆️1.5K", "⬇️800"],
+		);
+	});
+
+	it("renders main as home", () => {
+		const segments = buildWidgetSegments(baseSnapshot, {
+			...DEFAULT_CONFIG,
+			widgets: ["branch"],
+		});
+		assert.deepEqual(segments.map((segment) => segment.text), ["🏠"]);
+	});
+
+	it("hides branch changes when the diff is empty", () => {
+		const segments = buildWidgetSegments(
+			{ ...baseSnapshot, branchDiff: { additions: 0, deletions: 0 } },
+			{ ...DEFAULT_CONFIG, widgets: ["branchDiff"] },
+		);
+		assert.deepEqual(segments, []);
+	});
+
 	it("renders duration pair", () => {
 		const segments = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,
@@ -79,6 +110,15 @@ describe("buildWidgetSegments", () => {
 		assert.ok(texts.some((text) => text.includes("in") === false || /1\.5K.*0\.8K|↑|↓/.test(text) || text.includes("1.5K")));
 		assert.ok(texts.includes("$0.42") || texts.includes("0.42"));
 		assert.ok(texts.some((text) => text === "60%" || text.endsWith("%")));
+	});
+});
+
+describe("runStateForAssistantEvent", () => {
+	it("maps reasoning and generation events to actual LLM states", () => {
+		assert.equal(runStateForAssistantEvent("thinking_delta"), "Thinking");
+		assert.equal(runStateForAssistantEvent("text_delta"), "Working");
+		assert.equal(runStateForAssistantEvent("toolcall_delta"), "Working");
+		assert.equal(runStateForAssistantEvent("done"), undefined);
 	});
 });
 

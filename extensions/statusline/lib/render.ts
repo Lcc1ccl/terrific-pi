@@ -1,3 +1,4 @@
+import { MAX_WIDGET_SPACING, MIN_WIDGET_SPACING } from "./config.ts";
 import type { Accent, StatuslineConfig, WidgetSegment } from "./types.ts";
 
 export type Rgb = readonly [number, number, number];
@@ -56,6 +57,12 @@ export function selectPalette(themeName: string | undefined): Palette {
 	return themeName?.toLowerCase().includes("light") ? LIGHT_PALETTE : DARK_PALETTE;
 }
 
+export function formatWidgetSeparator(spacing: number): string {
+	const width = Math.max(MIN_WIDGET_SPACING, Math.min(MAX_WIDGET_SPACING, Math.floor(spacing)));
+	const gap = " ".repeat(width);
+	return `${gap}·${gap}`;
+}
+
 export function renderStatusLine(
 	segments: WidgetSegment[],
 	config: StatuslineConfig,
@@ -63,7 +70,7 @@ export function renderStatusLine(
 	width: number,
 	truncate: (text: string, maxWidth: number, ellipsis: string) => string,
 ): string {
-	const separator = foreground(palette.separator, config.separator);
+	const separator = foreground(palette.separator, formatWidgetSeparator(config.spacing));
 	const ellipsis = foreground(palette.separator, "…");
 	const colored = segments.map((segment) => styled(palette, segment.accent, segment.text));
 	const line = `  ${colored.join(separator)}`;

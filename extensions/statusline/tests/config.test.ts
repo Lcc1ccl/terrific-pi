@@ -17,19 +17,33 @@ describe("mergeStatuslineConfig", () => {
 		assert.deepEqual(mergeStatuslineConfig({}), DEFAULT_CONFIG);
 	});
 
+	it("uses numeric spacing and does not expose a separator setting", () => {
+		assert.equal(DEFAULT_CONFIG.spacing, 1);
+		assert.equal("separator" in DEFAULT_CONFIG, false);
+	});
+
 	it("filters unknown widgets and applies known options", () => {
 		const merged = mergeStatuslineConfig({
 			widgets: ["path", "nope", "cost", "contextBar"],
 			contextMode: "used",
 			contextBarWidth: 8,
 			minimal: true,
+			spacing: 2,
 			separator: " | ",
 		});
 		assert.deepEqual(merged.widgets, ["path", "cost", "contextBar"]);
 		assert.equal(merged.contextMode, "used");
 		assert.equal(merged.contextBarWidth, 8);
 		assert.equal(merged.minimal, true);
-		assert.equal(merged.separator, " | ");
+		assert.equal(merged.spacing, 2);
+		assert.equal("separator" in merged, false);
+	});
+
+	it("falls back for non-integer or out-of-range spacing", () => {
+		for (const spacing of [-1, 5, 1.5, "1"]) {
+			const merged = mergeStatuslineConfig({ spacing });
+			assert.equal(merged.spacing, 1);
+		}
 	});
 
 	it("falls back when widgets become empty", () => {
@@ -47,6 +61,7 @@ describe("loadStatuslineConfig", () => {
 		assert.deepEqual(loaded.widgets, ["path", "cost"]);
 		assert.equal(loaded.minimal, true);
 		assert.equal(loaded.contextMode, DEFAULT_CONFIG.contextMode);
+		assert.equal(loaded.spacing, 1);
 	});
 
 	it("returns defaults for missing or invalid files", () => {
@@ -75,7 +90,7 @@ describe("saveStatuslineConfig", () => {
 			contextMode: "used" as const,
 			contextBarWidth: 8,
 			minimal: true,
-			separator: " | ",
+			spacing: 2,
 		};
 
 		saveStatuslineConfig(nested, { ...config, widgets: [...config.widgets] });
@@ -87,14 +102,14 @@ describe("saveStatuslineConfig", () => {
 			contextMode: "used",
 			contextBarWidth: 8,
 			minimal: true,
-			separator: " | ",
+			spacing: 2,
 		});
 		assert.deepEqual(loadStatuslineConfig(nested), {
 			widgets: ["path", "cost"],
 			contextMode: "used",
 			contextBarWidth: 8,
 			minimal: true,
-			separator: " | ",
+			spacing: 2,
 		});
 	});
 });

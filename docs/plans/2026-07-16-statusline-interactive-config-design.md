@@ -25,13 +25,13 @@ Main menu actions:
 - Context mode
 - Context bar width
 - Minimal mode
-- Separator
+- Widget spacing
 - Show config
 - Reload from file
 - Reset to defaults
 - Done
 
-Header of the menu should summarize current config (widgets, contextMode, bar width, minimal, separator, config path).
+Header of the menu should summarize current config (widgets, contextMode, bar width, minimal, spacing with default/min/max, config path).
 
 ### `/statusline reload`
 
@@ -71,12 +71,12 @@ Select `remaining` or `used`.
 
 Select on/off.
 
-### Separator
+### Widget spacing
 
-`ctx.ui.input` with current value prefilled.
+`ctx.ui.input` with the current numeric value prefilled. The title shows default `1`, minimum `0`, and maximum `4`.
 
-- Empty string rejected
-- Whitespace/symbols allowed
+- Valid: integer `0`–`4`, measured in terminal space cells on each side
+- The `·` separator is fixed and cannot be removed or changed
 
 ### Show / Reload / Reset / Done
 
@@ -102,7 +102,7 @@ Add `saveStatuslineConfig(path, config)`:
 
 - Create parent directory if missing
 - Pretty-print JSON with 2-space indent and trailing newline
-- Stable key order: `widgets`, `contextMode`, `contextBarWidth`, `minimal`, `separator`
+- Stable key order: `widgets`, `contextMode`, `contextBarWidth`, `minimal`, `spacing`
 
 Path resolution remains `resolveRuntimeConfigPath()`:
 
@@ -117,7 +117,7 @@ Extract mutation helpers so UI is thin:
 - `toggleWidget(widgets, id)`
 - `moveWidget(widgets, id, "up" | "down")`
 - `parseContextBarWidth(raw)`
-- `parseSeparator(raw)`
+- `parseWidgetSpacing(raw)`
 - optional small helpers for menu labels
 
 Interactive loop lives in `lib/configure.ts` (or similar) and receives a UI adapter + apply callback.
@@ -128,7 +128,7 @@ Interactive loop lives in `lib/configure.ts` (or similar) and receives a UI adap
 |------|----------|
 | Non-TUI interactive entry | Text dump of config |
 | Save failure | Error notify; config unchanged |
-| Invalid width / empty separator | Error notify; no change |
+| Invalid width / spacing outside `0`–`4` | Error notify; no change |
 | Disable last widget | Warning; no change |
 | Esc cancel on select/input | Return to parent; no side effects |
 
@@ -157,5 +157,5 @@ docs/plans/
 
 1. Unit: save + load roundtrip
 2. Unit: toggle/move constraints and boundaries
-3. Unit: width/separator validation
+3. Unit: width/spacing validation and immutable separator rendering
 4. Manual: `/statusline` in TUI toggles widget and footer updates; file on disk matches

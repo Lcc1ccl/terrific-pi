@@ -59,7 +59,6 @@ export function formatContextBar(
 	percent: number | null | undefined,
 	width: number,
 	mode: ContextMode,
-	minimal = false,
 ): string | undefined {
 	if (percent === null || percent === undefined || Number.isNaN(percent)) return undefined;
 	const barWidth = Math.max(4, Math.min(40, Math.floor(width || 10)));
@@ -71,7 +70,7 @@ export function formatContextBar(
 	const label = mode === "used"
 		? `${Math.round(used)}%`
 		: `${Math.max(0, Math.min(100, Math.round(100 - used)))}%`;
-	return minimal ? `[${bar}] ${label}` : `ctx [${bar}] ${label}`;
+	return `[${bar}] ${label}`;
 }
 
 export function formatCwd(cwd: string): string {
@@ -90,7 +89,7 @@ export function formatTokensPair(input: number, output: number, minimal = false)
 	return minimal ? `${left}/${right}` : `${left} in · ${right} out`;
 }
 
-export function formatBranchDiff(stats: { additions: number; deletions: number }): string {
-	if (stats.additions === 0 && stats.deletions === 0) return "No changes";
+export function formatBranchDiff(stats: { additions: number; deletions: number }): string | undefined {
+	if (stats.additions === 0 && stats.deletions === 0) return undefined;
 	return `+${stats.additions} -${stats.deletions}`;
 }

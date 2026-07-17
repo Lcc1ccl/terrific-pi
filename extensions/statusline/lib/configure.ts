@@ -1,3 +1,8 @@
+import {
+	DEFAULT_WIDGET_SPACING,
+	MAX_WIDGET_SPACING,
+	MIN_WIDGET_SPACING,
+} from "./config.ts";
 import type { ContextMode, StatuslineConfig, WidgetId } from "./types.ts";
 
 export type MutationResult<T> =
@@ -149,11 +154,14 @@ export function parseContextBarWidth(raw: string): MutationResult<number> {
 	return { ok: true, value };
 }
 
-export function parseSeparator(raw: string): MutationResult<string> {
-	if (raw.length === 0) {
-		return { ok: false, error: "Separator cannot be empty" };
-	}
-	return { ok: true, value: raw };
+export function parseWidgetSpacing(raw: string): MutationResult<number> {
+	const trimmed = raw.trim();
+	const error = `Spacing must be an integer from ${MIN_WIDGET_SPACING} to ${MAX_WIDGET_SPACING}`;
+	if (!/^\d+$/.test(trimmed)) return { ok: false, error };
+	const value = Number.parseInt(trimmed, 10);
+	return value >= MIN_WIDGET_SPACING && value <= MAX_WIDGET_SPACING
+		? { ok: true, value }
+		: { ok: false, error };
 }
 
 export function formatConfigSummary(config: StatuslineConfig, configPath: string): string {
@@ -162,7 +170,7 @@ export function formatConfigSummary(config: StatuslineConfig, configPath: string
 		`contextMode: ${config.contextMode}`,
 		`contextBarWidth: ${config.contextBarWidth}`,
 		`minimal: ${config.minimal}`,
-		`separator: ${JSON.stringify(config.separator)}`,
+		`spacing: ${config.spacing} (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
 		`config: ${configPath}`,
 	].join("\n");
 }
@@ -172,7 +180,7 @@ function mainMenuTitle(config: StatuslineConfig, configPath: string): string {
 		"Statusline Config",
 		`widgets: ${config.widgets.join(", ")}`,
 		`contextMode: ${config.contextMode} · bar: ${config.contextBarWidth} · minimal: ${config.minimal}`,
-		`separator: ${JSON.stringify(config.separator)}`,
+		`spacing: ${config.spacing} (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
 		`config: ${configPath}`,
 	].join("\n");
 }
@@ -247,18 +255,21 @@ async function setMinimalMode(deps: ConfigureDeps): Promise<void> {
 	applyOrNotify(deps, { ...config, minimal }, `minimal: ${minimal}`);
 }
 
-async function setSeparator(deps: ConfigureDeps): Promise<void> {
+async function setWidgetSpacing(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
-	const raw = await deps.ui.input("Separator", config.separator);
+	const raw = await deps.ui.input(
+		`Widget spacing per side (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
+		String(config.spacing),
+	);
 	if (raw === undefined) return;
 
-	const parsed = parseSeparator(raw);
+	const parsed = parseWidgetSpacing(raw);
 	if (!parsed.ok) {
 		deps.ui.notify(parsed.error, "error");
 		return;
 	}
 
-	applyOrNotify(deps, { ...config, separator: parsed.value }, `separator: ${JSON.stringify(parsed.value)}`);
+	applyOrNotify(deps, { ...config, spacing: parsed.value }, `spacing: ${parsed.value}`);
 }
 
 export async function runStatuslineConfigurator(
@@ -273,7 +284,7 @@ export async function runStatuslineConfigurator(
 			"Context mode",
 			"Context bar width",
 			"Minimal mode",
-			"Separator",
+			"Widget spacing",
 			"Show config",
 			"Reload from file",
 			"Reset to defaults",
@@ -295,8 +306,8 @@ export async function runStatuslineConfigurator(
 			case "Minimal mode":
 				await setMinimalMode(deps);
 				break;
-			case "Separator":
-				await setSeparator(deps);
+			case "Widget spacing":
+				await setWidgetSpacing(deps);
 				break;
 			case "Show config":
 				deps.ui.notify(formatConfigSummary(config, configPath), "info");

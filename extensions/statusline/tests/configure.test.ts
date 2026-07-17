@@ -8,7 +8,8 @@ import {
 	moveEditorItem,
 	moveWidget,
 	parseContextBarWidth,
-	parseSeparator,
+	parseWidgetSpacing,
+	runStatuslineConfigurator,
 	swapAdjacent,
 	toggleEditorItem,
 	toggleWidget,
@@ -126,15 +127,17 @@ describe("parseContextBarWidth", () => {
 	});
 });
 
-describe("parseSeparator", () => {
-	it("accepts non-empty separators including spaces", () => {
-		assert.deepEqual(parseSeparator(" · "), { ok: true, value: " · " });
-		assert.deepEqual(parseSeparator(" | "), { ok: true, value: " | " });
-		assert.deepEqual(parseSeparator("  "), { ok: true, value: "  " });
+describe("parseWidgetSpacing", () => {
+	it("accepts integers from 0 to 4", () => {
+		assert.deepEqual(parseWidgetSpacing("0"), { ok: true, value: 0 });
+		assert.deepEqual(parseWidgetSpacing(" 1 "), { ok: true, value: 1 });
+		assert.deepEqual(parseWidgetSpacing("4"), { ok: true, value: 4 });
 	});
 
-	it("rejects empty separators", () => {
-		assert.equal(parseSeparator("").ok, false);
+	it("rejects values outside 0 to 4", () => {
+		for (const raw of ["-1", "5", "1.5", "abc", ""]) {
+			assert.equal(parseWidgetSpacing(raw).ok, false);
+		}
 	});
 });
 
@@ -145,14 +148,51 @@ describe("formatConfigSummary", () => {
 			contextMode: "remaining",
 			contextBarWidth: 10,
 			minimal: false,
-			separator: " · ",
+			spacing: 1,
 		};
 		const summary = formatConfigSummary(config, "/tmp/statusline.json");
 		assert.match(summary, /widgets: path, cost/);
 		assert.match(summary, /contextMode: remaining/);
 		assert.match(summary, /contextBarWidth: 10/);
 		assert.match(summary, /minimal: false/);
-		assert.match(summary, /separator: " · "/);
+		assert.match(summary, /spacing: 1 \(default 1, min 0, max 4\)/);
+		assert.doesNotMatch(summary, /separator:/);
 		assert.match(summary, /config: \/tmp\/statusline\.json/);
+	});
+});
+
+describe("widget spacing prompt", () => {
+	it("shows the default, minimum, and maximum values", async () => {
+		const config: StatuslineConfig = {
+			widgets: ["path"],
+			contextMode: "remaining",
+			contextBarWidth: 10,
+			minimal: false,
+			spacing: 1,
+		};
+		const choices = ["Widget spacing", "Done"];
+		let inputTitle: string | undefined;
+		let inputValue: string | undefined;
+
+		await runStatuslineConfigurator({
+			getConfig: () => config,
+			getConfigPath: () => "/tmp/statusline.json",
+			applyConfig: () => ({ ok: true, value: undefined }),
+			reloadConfig: () => ({ ok: true, value: config }),
+			resetConfig: () => ({ ok: true, value: undefined }),
+			ui: {
+				select: async () => choices.shift(),
+				input: async (title, value) => {
+					inputTitle = title;
+					inputValue = value;
+					return undefined;
+				},
+				editWidgets: async () => undefined,
+				notify: () => {},
+			},
+		}, ["path"]);
+
+		assert.equal(inputTitle, "Widget spacing per side (default 1, min 0, max 4)");
+		assert.equal(inputValue, "1");
 	});
 });
