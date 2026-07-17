@@ -157,7 +157,8 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 			}
 			case "branch":
 				if (snapshot.branch) {
-					segments.push({ id, accent: "branch", text: snapshot.branch === "main" ? "🏠" : snapshot.branch });
+					const isDefault = snapshot.branch === "main" || snapshot.branch === "master";
+					segments.push({ id, accent: "branch", text: isDefault ? "🏠" : snapshot.branch });
 				}
 				break;
 			case "branchDiff":

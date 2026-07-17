@@ -15,7 +15,7 @@ Built for pi's `setFooter` extension API: session metrics, git context, and agen
 - Cache hit rate (`🎯…%`)
 - Session cost (`$x.xx`, hidden when zero)
 - Context bar (remaining/used mode, no text prefix)
-- Git branch (`main` is `🏠`) + non-empty branch diff (`+N -M`)
+- Git branch (`main`/`master` is `🏠`) + non-empty branch diff (`+N -M`)
 - Extension task progress statuses (mode and fast badges excluded)
 - LLM duration: current round / session total (assistant stream only)
 - Run state: Thinking while reasoning, Working while generating or executing tools, Ready when settled
@@ -82,7 +82,7 @@ Example:
 | `cost` | session cost USD |
 | `context` | text context percent |
 | `contextBar` | compact context bar + percent |
-| `branch` | git branch (`main` renders as `🏠`) |
+| `branch` | git branch (`main`/`master` renders as `🏠`) |
 | `branchDiff` | non-empty diff vs default branch |
 | `progress` | extension status texts (excludes dedicated badges such as `mode`, `fast`, and `ponytail`) |
 | `duration` | current-round / session LLM time (`12.3s / 1m45s`); assistant stream only, excludes tools + idle |

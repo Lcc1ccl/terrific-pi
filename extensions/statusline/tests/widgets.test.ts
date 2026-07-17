@@ -95,6 +95,14 @@ describe("buildWidgetSegments", () => {
 		assert.deepEqual(segments.map((segment) => segment.text), ["🏠"]);
 	});
 
+	it("renders master as home", () => {
+		const segments = buildWidgetSegments(
+			{ ...baseSnapshot, branch: "master" },
+			{ ...DEFAULT_CONFIG, widgets: ["branch"] },
+		);
+		assert.deepEqual(segments.map((segment) => segment.text), ["🏠"]);
+	});
+
 	it("hides branch changes when the diff is empty", () => {
 		const segments = buildWidgetSegments(
 			{ ...baseSnapshot, branchDiff: { additions: 0, deletions: 0 } },
