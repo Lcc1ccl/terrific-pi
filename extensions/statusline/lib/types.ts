@@ -1,4 +1,4 @@
-export type RunState = "Ready" | "Working" | "Thinking";
+export type RunState = "Ready" | "Working" | "Thinking" | "Waiting";
 
 export type StatuslineLayout = "single" | "stacked";
 export type IconMode = "emoji" | "plain";

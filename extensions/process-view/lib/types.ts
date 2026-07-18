@@ -4,6 +4,8 @@ import { type Static, Type } from "typebox";
 export const PROCESS_ENTRY_TYPE = "process-view-state-v1";
 export const PROCESS_CONTEXT_TYPE = "process-view-context";
 export const PROCESS_WIDGET_KEY = "terrific-pi:process-view";
+/** Statusline key for waiting/blocked process state. */
+export const PROCESS_STATUS_KEY = "process";
 
 export type ProcessStatus = "running" | "waiting" | "blocked" | "completed" | "interrupted";
 export type StepStatus = "pending" | "active" | "done" | "failed";

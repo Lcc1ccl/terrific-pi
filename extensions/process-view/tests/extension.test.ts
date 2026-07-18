@@ -6,6 +6,7 @@ import { createPersistedState, normalizeProcessUpdate, syncProcessTelemetry } fr
 import {
 	PROCESS_CONTEXT_TYPE,
 	PROCESS_ENTRY_TYPE,
+	PROCESS_STATUS_KEY,
 	PROCESS_WIDGET_KEY,
 	type ProcessSnapshot,
 	type ProcessUpdateInput,
@@ -53,6 +54,7 @@ function createHarness(options: HarnessOptions = {}) {
 	const notifications: Array<{ message: string; type?: string }> = [];
 	const hiddenLabels: Array<string | undefined> = [];
 	const widgetCalls: Array<{ key: string; content: unknown }> = [];
+	const statusCalls: Array<{ key: string; value: string | undefined }> = [];
 	const shortcuts: unknown[] = [];
 	let tool: any;
 	let command: any;
@@ -80,8 +82,8 @@ function createHarness(options: HarnessOptions = {}) {
 		notify(message: string, type?: string) {
 			notifications.push({ message, type });
 		},
-		setStatus() {
-			throw new Error("setStatus must not be called");
+		setStatus(key: string, value: string | undefined) {
+			statusCalls.push({ key, value });
 		},
 		setFooter() {
 			throw new Error("setFooter must not be called");
@@ -126,6 +128,7 @@ function createHarness(options: HarnessOptions = {}) {
 		notifications,
 		hiddenLabels,
 		widgetCalls,
+		statusCalls,
 		shortcuts,
 		get tool() { return tool; },
 		get command() { return command; },
@@ -372,6 +375,21 @@ describe("request, branch, and context lifecycle", () => {
 		await harness.emit("agent_settled");
 		assert.equal(harness.currentWidget, undefined);
 		assert.equal(latestSnapshot(harness.entries)?.status, "completed");
+	});
+
+	it("publishes waiting/blocked footer status for statusline and clears it when idle", async () => {
+		const harness = createHarness();
+		await execute(harness, { ...runningInput(), status: "waiting" });
+		assert.deepEqual(harness.statusCalls.at(-1), { key: PROCESS_STATUS_KEY, value: "waiting" });
+
+		await execute(harness, { ...runningInput(), status: "blocked", blocker: "Need decision" });
+		assert.deepEqual(harness.statusCalls.at(-1), { key: PROCESS_STATUS_KEY, value: "blocked" });
+
+		await execute(harness, completedInput());
+		assert.deepEqual(harness.statusCalls.at(-1), { key: PROCESS_STATUS_KEY, value: undefined });
+
+		await harness.emit("session_shutdown", { reason: "quit" });
+		assert.deepEqual(harness.statusCalls.at(-1), { key: PROCESS_STATUS_KEY, value: undefined });
 	});
 });
 

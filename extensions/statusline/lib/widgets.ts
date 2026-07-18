@@ -34,7 +34,7 @@ import type {
 import { WIDGET_PRIORITY } from "./types.ts";
 
 /** Extension status keys that have dedicated widgets. */
-export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail", "pi-essentials-mode", "fast"]);
+export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail", "pi-essentials-mode", "fast", "process"]);
 
 /** Metadata-only tools that should not appear in footer activity. */
 export const EXCLUDED_TOOL_ACTIVITY_NAMES = new Set(["process_update"]);
@@ -49,10 +49,26 @@ export const MODE_STATUS_KEY = "pi-essentials-mode";
 /** Status key written by /fast. */
 export const FAST_STATUS_KEY = "fast";
 
+/** Status key written by process-view while waiting/blocked. */
+export const PROCESS_STATUS_KEY = "process";
+
 export function runStateForAssistantEvent(type: string): RunState | undefined {
 	if (type.startsWith("thinking_")) return "Thinking";
 	if (type.startsWith("text_") || type.startsWith("toolcall_")) return "Working";
 	return undefined;
+}
+
+/** Promote Ready → Waiting when process-view is paused on subagent/external work. */
+export function resolveRunState(
+	runState: RunState,
+	extensionStatuses?: ReadonlyMap<string, string> | Iterable<readonly [string, string]>,
+): RunState {
+	if (runState !== "Ready" || !extensionStatuses) return runState;
+	const processStatus = extensionStatuses instanceof Map
+		? extensionStatuses.get(PROCESS_STATUS_KEY)
+		: new Map(extensionStatuses).get(PROCESS_STATUS_KEY);
+	const status = processStatus ? sanitizeStatus(processStatus).toLowerCase() : "";
+	return status === "waiting" || status === "blocked" ? "Waiting" : runState;
 }
 
 export function sanitizeStatus(text: string): string {
@@ -293,7 +309,9 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 					? "dim"
 					: snapshot.runState === "Thinking"
 						? thinkingLevelTone(snapshot.thinkingLevel)
-						: "active";
+						: snapshot.runState === "Waiting"
+							? "muted"
+							: "active";
 				segments.push({
 					id,
 					accent: "state",

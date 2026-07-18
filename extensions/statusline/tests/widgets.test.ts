@@ -4,8 +4,11 @@ import { describe, it } from "node:test";
 import { DEFAULT_CONFIG } from "../lib/config.ts";
 import {
 	buildWidgetSegments,
+	EXCLUDED_PROGRESS_KEYS,
 	EXCLUDED_TOOL_ACTIVITY_NAMES,
 	joinExtensionProgress,
+	PROCESS_STATUS_KEY,
+	resolveRunState,
 	runStateForAssistantEvent,
 	shouldTrackToolActivity,
 } from "../lib/widgets.ts";
@@ -152,6 +155,7 @@ describe("buildWidgetSegments", () => {
 			["Ready", "dim"],
 			["Working", "active"],
 			["Thinking", "thinkingHigh"],
+			["Waiting", "muted"],
 		] as const) {
 			const [state] = buildWidgetSegments(
 				{ ...baseSnapshot, runState },
@@ -276,6 +280,14 @@ describe("runStateForAssistantEvent", () => {
 		assert.equal(runStateForAssistantEvent("text_delta"), "Working");
 		assert.equal(runStateForAssistantEvent("toolcall_delta"), "Working");
 		assert.equal(runStateForAssistantEvent("done"), undefined);
+	});
+
+	it("promotes Ready to Waiting while process-view is waiting or blocked", () => {
+		assert.equal(resolveRunState("Ready", new Map([[PROCESS_STATUS_KEY, "waiting"]])), "Waiting");
+		assert.equal(resolveRunState("Ready", new Map([[PROCESS_STATUS_KEY, "blocked"]])), "Waiting");
+		assert.equal(resolveRunState("Thinking", new Map([[PROCESS_STATUS_KEY, "waiting"]])), "Thinking");
+		assert.equal(resolveRunState("Ready", new Map([[PROCESS_STATUS_KEY, "running"]])), "Ready");
+		assert.ok(EXCLUDED_PROGRESS_KEYS.has(PROCESS_STATUS_KEY));
 	});
 });
 

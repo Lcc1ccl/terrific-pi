@@ -21,6 +21,7 @@ import {
 import {
 	PROCESS_CONTEXT_TYPE,
 	PROCESS_ENTRY_TYPE,
+	PROCESS_STATUS_KEY,
 	PROCESS_WIDGET_KEY,
 	ProcessUpdateParams,
 	type PersistedProcessState,
@@ -35,6 +36,7 @@ const PROMPT_GUIDELINES = [
 	"Use process_update for work with at least three meaningful user-visible steps; skip it for simple answers or one-step work.",
 	"Call process_update only when the task starts, a step changes, work blocks, or the task completes; never use it to narrate private reasoning.",
 	"Keep process_update to at most five outcome-oriented steps and mark completed only after requested verification is actually run.",
+	"In process_update, use status waiting when paused for a subagent or external process; use blocked when user input is required.",
 ];
 
 function cloneSnapshot(snapshot: ProcessSnapshot): ProcessSnapshot {
@@ -127,7 +129,19 @@ export default function processView(pi: ExtensionAPI) {
 		durationTickTimer.unref();
 	};
 
+	const syncFooterStatus = (ctx: ExtensionContext) => {
+		if (!ctx.hasUI) return;
+		const status = state.snapshot?.status;
+		const value = status === "waiting" || status === "blocked" ? status : undefined;
+		try {
+			ctx.ui.setStatus(PROCESS_STATUS_KEY, value);
+		} catch (error) {
+			notifyUiFailure(ctx, error);
+		}
+	};
+
 	const refreshWidget = (ctx: ExtensionContext) => {
+		syncFooterStatus(ctx);
 		if (ctx.mode !== "tui") {
 			stopDurationTick();
 			return;
@@ -436,10 +450,13 @@ export default function processView(pi: ExtensionAPI) {
 			);
 			if (!appendSystemState(paused, ctx)) state = paused;
 		}
-		if (ctx.mode === "tui") {
+		if (ctx.hasUI) {
 			try {
-				if (widgetMounted) ctx.ui.setWidget(PROCESS_WIDGET_KEY, undefined);
-				ctx.ui.setHiddenThinkingLabel();
+				ctx.ui.setStatus(PROCESS_STATUS_KEY, undefined);
+				if (ctx.mode === "tui") {
+					if (widgetMounted) ctx.ui.setWidget(PROCESS_WIDGET_KEY, undefined);
+					ctx.ui.setHiddenThinkingLabel();
+				}
 			} catch {}
 		}
 		widgetMounted = false;

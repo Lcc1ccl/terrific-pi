@@ -31,6 +31,7 @@ import {
 	FAST_STATUS_KEY,
 	joinExtensionProgress,
 	MODE_STATUS_KEY,
+	resolveRunState,
 	runStateForAssistantEvent,
 	sanitizeStatus,
 	shouldTrackToolActivity,
@@ -446,7 +447,7 @@ export default function statusline(pi: ExtensionAPI) {
 						branchDiff: branchChanges,
 						progress: joinExtensionProgress(extensionStatuses),
 						duration: durationTracker.snapshot(),
-						runState,
+						runState: resolveRunState(runState, extensionStatuses),
 						quota: config.widgets.includes("quota") ? quotaMonitor.getSnapshot() : undefined,
 						quotaStatus: config.widgets.includes("quota") ? quotaMonitor.getStatus() : undefined,
 						environment: config.widgets.includes("environment") ? environment : undefined,
@@ -513,7 +514,7 @@ export default function statusline(pi: ExtensionAPI) {
 		toolCallNames.set(event.toolCallId, event.toolName);
 		const stats = ensureTool(event.toolName);
 		stats.active += 1;
-		setRunState("Working");
+		setRunState("Waiting");
 	});
 	pi.on("tool_execution_end", async (event, ctx) => {
 		if (!shouldTrackToolActivity(event.toolName)) return;
@@ -524,7 +525,7 @@ export default function statusline(pi: ExtensionAPI) {
 		stats.active = Math.max(0, stats.active - 1);
 		if (event.isError) stats.error += 1;
 		else stats.success += 1;
-		setRunState(activeTools.size > 0 ? "Working" : "Thinking");
+		setRunState(activeTools.size > 0 ? "Waiting" : "Thinking");
 		scheduleGitRefresh(ctx.cwd);
 	});
 	pi.on("model_select", async (_event, ctx) => {

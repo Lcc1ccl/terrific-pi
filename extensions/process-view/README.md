@@ -98,7 +98,7 @@ Remove the field or set it to `false` to roll back. The extension never edits se
 
 ## Integration
 
-- `statusline`: `process_update` is metadata and is excluded from footer `toolActivity`; business tools remain counted.
+- `statusline`: `process_update` is metadata and is excluded from footer `toolActivity`; business tools remain counted. Waiting/blocked process state is published on the `process` status key so footer `state` shows Waiting.
 - `mode`: ask/plan may remove the custom tool. Passive HUD telemetry still works, and Process View does not widen permissions.
 - `fast`: no provider request or header changes.
 - `context`: only the bounded one-shot lifecycle reminder described above.
