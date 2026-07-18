@@ -328,19 +328,27 @@ export function formatToolActivity(
 	const ok = iconMode === "plain" ? "ok" : "✓";
 	const err = iconMode === "plain" ? "error" : "✗";
 	const parts: SegmentPart[] = [];
+	let totalErrors = 0;
+
+	const pushEntry = (
+		icon: string,
+		tone: "active" | "error" | "success",
+		count: number,
+		name?: string,
+	) => {
+		if (parts.length > 0) parts.push({ text: " · ", tone: "dim" });
+		parts.push({ text: `${icon} `, tone });
+		if (name) parts.push({ text: `${name} `, tone: "label" });
+		parts.push({ text: `x${count}`, tone: "value" });
+	};
 
 	for (const name of names) {
 		const entry = activity[name]!;
-		const pushEntry = (icon: string, tone: "active" | "error" | "success", count: number) => {
-			if (parts.length > 0) parts.push({ text: " · ", tone: "dim" });
-			parts.push({ text: `${icon} `, tone });
-			parts.push({ text: `${name} `, tone: "label" });
-			parts.push({ text: `x${count}`, tone: "value" });
-		};
-		if (entry.active > 0) pushEntry("…", "active", entry.active);
-		if (entry.error > 0) pushEntry(err, "error", entry.error);
-		if (entry.success > 0) pushEntry(ok, "success", entry.success);
+		totalErrors += entry.error;
+		if (entry.active > 0) pushEntry("…", "active", entry.active, name);
+		if (entry.success > 0) pushEntry(ok, "success", entry.success, name);
 	}
+	if (totalErrors > 0) pushEntry(err, "error", totalErrors);
 
 	return parts.length > 0 ? content(parts) : undefined;
 }

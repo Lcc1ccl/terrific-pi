@@ -19,7 +19,7 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 - Context bar (remaining/used mode)
 - Native OAuth **quota** for official Claude / Codex only
 - Environment counts (context files / skills / tools) after first agent start
-- Current agent-run tool activity aggregates (active / success / error)
+- Current agent-run tool activity aggregates (per-tool active/success + total errors)
 - Git branch (`main`/`master` is `🏠` in emoji mode) + committed branch diff (`+N -M`)
 - Extension statuses (dedicated mode, fast, and ponytail statuses excluded)
 - Agent duration: current request / current process active total (includes tools and child pi processes)
@@ -154,7 +154,7 @@ The footer follows the active pi theme rather than maintaining separate RGB pale
 | `branchDiff` | committed line diff from merge-base to `HEAD` vs default branch |
 | `quota` | native OAuth Claude/Codex usage windows, including loading/first-load error state |
 | `environment` | context files / skills / tools counts (low-contrast / dim) |
-| `toolActivity` | current agent-run per-tool active/success/error counts; metadata-only `process_update` is excluded |
+| `toolActivity` | current agent-run per-tool active/success counts plus one aggregated error total; metadata-only `process_update` is excluded |
 | `progress` | extension status texts (excludes dedicated badges) |
 | `duration` | current-request / current-process active time (`🕒` prefix in emoji mode); includes tools and child pi processes, excludes idle between requests |
 | `state` | Ready / Thinking / Working |

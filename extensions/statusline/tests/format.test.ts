@@ -170,18 +170,20 @@ describe("formatEnvironment", () => {
 });
 
 describe("formatToolActivity", () => {
-	it("uses emoji or plain labels with name/value split", () => {
+	it("keeps per-tool success and aggregates errors", () => {
 		const activity = {
-			Read: { active: 0, success: 6, error: 0 },
-			Bash: { active: 0, success: 0, error: 1 },
+			Read: { active: 0, success: 6, error: 1 },
+			Bash: { active: 0, success: 3, error: 2 },
+			Write: { active: 0, success: 1, error: 1 },
 		};
-		assert.equal(formatToolActivity(activity, "emoji")?.text, "✗ Bash x1 · ✓ Read x6");
-		assert.equal(formatToolActivity(activity, "plain")?.text, "error Bash x1 · ok Read x6");
+		assert.equal(formatToolActivity(activity, "emoji")?.text, "✓ Bash x3 · ✓ Read x6 · ✓ Write x1 · ✗ x4");
+		assert.equal(formatToolActivity(activity, "plain")?.text, "ok Bash x3 · ok Read x6 · ok Write x1 · error x4");
 		const parts = formatToolActivity(activity, "emoji")?.parts ?? [];
 		assert.ok(parts.some((part) => part.tone === "label" && part.text.includes("Bash")));
-		assert.ok(parts.some((part) => part.tone === "value" && part.text === "x1"));
 		assert.ok(parts.some((part) => part.tone === "success" && part.text.includes("✓")));
-		assert.ok(parts.some((part) => part.tone === "value" && part.text === "x6"));
+		assert.ok(parts.some((part) => part.tone === "error" && part.text.includes("✗")));
+		assert.ok(parts.some((part) => part.tone === "value" && part.text === "x4"));
+		assert.equal(parts.filter((part) => part.tone === "label").length, 3);
 	});
 
 	it("reserves accent for active tools", () => {
