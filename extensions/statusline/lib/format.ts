@@ -342,13 +342,14 @@ export function formatToolActivity(
 		parts.push({ text: `x${count}`, tone: "value" });
 	};
 
+	for (const name of names) totalErrors += activity[name]!.error;
+	if (totalErrors > 0) pushEntry(err, "error", totalErrors, "total");
+
 	for (const name of names) {
 		const entry = activity[name]!;
-		totalErrors += entry.error;
 		if (entry.active > 0) pushEntry("…", "active", entry.active, name);
 		if (entry.success > 0) pushEntry(ok, "success", entry.success, name);
 	}
-	if (totalErrors > 0) pushEntry(err, "error", totalErrors);
 
 	return parts.length > 0 ? content(parts) : undefined;
 }
