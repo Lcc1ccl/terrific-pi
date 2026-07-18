@@ -16,8 +16,11 @@ import {
 	createTombstone,
 	interruptSnapshot,
 	normalizeProcessUpdate,
+	recordAssistantUsage,
 	restoreProcessState,
 	settleSnapshot,
+	stepElapsedMs,
+	syncProcessTelemetry,
 } from "../lib/state.ts";
 
 const NOW = 1_726_000_000_000;
@@ -167,14 +170,103 @@ describe("normalizeProcessUpdate", () => {
 	});
 });
 
+describe("process telemetry", () => {
+	it("tracks active step time across continuation, transitions, waiting, and resume", () => {
+		const firstSnapshot = snapshot();
+		const first = syncProcessTelemetry(undefined, undefined, firstSnapshot, NOW);
+		assert.equal(first.steps[1].activeSince, NOW);
+
+		const continued = syncProcessTelemetry(firstSnapshot, first, firstSnapshot, NOW + 5_000);
+		assert.equal(continued.steps[1].activeSince, NOW);
+
+		const nextSnapshot: ProcessSnapshot = {
+			...firstSnapshot,
+			steps: [
+				{ text: "Inspect current state", status: "done" },
+				{ text: "Apply changes", status: "done" },
+				{ text: "Run checks", status: "active" },
+			],
+			updatedAt: NOW + 10_000,
+		};
+		const advanced = syncProcessTelemetry(firstSnapshot, continued, nextSnapshot, NOW + 10_000);
+		assert.equal(advanced.steps[1].activeMs, 10_000);
+		assert.equal(advanced.steps[1].activeSince, undefined);
+		assert.equal(advanced.steps[2].activeSince, NOW + 10_000);
+
+		const waitingSnapshot: ProcessSnapshot = { ...nextSnapshot, status: "waiting", updatedAt: NOW + 15_000 };
+		const waiting = syncProcessTelemetry(nextSnapshot, advanced, waitingSnapshot, NOW + 15_000);
+		assert.equal(waiting.steps[2].activeMs, 5_000);
+		assert.equal(waiting.steps[2].activeSince, undefined);
+
+		const resumedSnapshot = { ...nextSnapshot, updatedAt: NOW + 20_000 };
+		const resumed = syncProcessTelemetry(waitingSnapshot, waiting, resumedSnapshot, NOW + 20_000);
+		assert.equal(resumed.steps[2].activeMs, 5_000);
+		assert.equal(resumed.steps[2].activeSince, NOW + 20_000);
+		assert.equal(stepElapsedMs(resumed.steps[2], NOW + 23_000), 8_000);
+	});
+
+	it("attributes real assistant usage and models to the active step", () => {
+		const currentSnapshot = snapshot();
+		const initial = syncProcessTelemetry(undefined, undefined, currentSnapshot, NOW);
+		const recorded = recordAssistantUsage(initial, currentSnapshot, {
+			provider: "openai",
+			model: "gpt-5.6-sol",
+			usage: {
+				input: 30_000,
+				output: 1_500,
+				cacheRead: 22_000,
+				cacheWrite: 400,
+				cost: { total: 0.25 },
+			},
+		});
+
+		assert.equal(recorded.turns, 1);
+		assert.deepEqual(recorded.models, ["openai/gpt-5.6-sol"]);
+		assert.deepEqual(recorded.usage, {
+			input: 30_000,
+			output: 1_500,
+			cacheRead: 22_000,
+			cacheWrite: 400,
+			cost: 0.25,
+		});
+		assert.equal(recorded.steps[1].turns, 1);
+		assert.deepEqual(recorded.steps[1].models, ["openai/gpt-5.6-sol"]);
+		assert.equal(recorded.steps[1].usage.output, 1_500);
+	});
+
+	it("carries pre-snapshot assistant usage into the first active task", () => {
+		const pending = recordAssistantUsage(undefined, undefined, {
+			provider: "openai",
+			model: "gpt-5.6-sol",
+			usage: {
+				input: 8_000,
+				output: 500,
+				cacheRead: 6_000,
+				cacheWrite: 0,
+				cost: { total: 0.08 },
+			},
+		});
+		const first = syncProcessTelemetry(undefined, pending, snapshot(), NOW);
+
+		assert.equal(first.turns, 1);
+		assert.equal(first.usage.input, 8_000);
+		assert.equal(first.steps[1].turns, 1);
+		assert.equal(first.steps[1].usage.output, 500);
+		assert.deepEqual(first.steps[1].models, ["openai/gpt-5.6-sol"]);
+	});
+});
+
 describe("branch state", () => {
 	it("restores the last state from the current branch", () => {
 		const first = createPersistedState(snapshot(), "compact");
-		const latest = createPersistedState({ ...snapshot(), title: "Latest" }, "full");
+		const latestSnapshot = { ...snapshot(), title: "Latest" };
+		const telemetry = syncProcessTelemetry(undefined, undefined, latestSnapshot, NOW);
+		const latest = createPersistedState(latestSnapshot, "full", telemetry);
 		const restored = restoreProcessState([entry(first), { type: "message" }, entry(latest)]);
 		assert.equal(restored.corrupted, false);
 		assert.equal(restored.state.viewMode, "full");
 		assert.equal(restored.state.snapshot?.title, "Latest");
+		assert.equal(restored.state.telemetry?.steps[1]?.activeSince, NOW);
 	});
 
 	it("lets a tombstone prevent older state from reviving", () => {

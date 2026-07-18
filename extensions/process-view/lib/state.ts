@@ -8,7 +8,10 @@ import {
 	type ProcessSnapshot,
 	type ProcessStatus,
 	type ProcessStep,
+	type ProcessStepTelemetry,
+	type ProcessTelemetry,
 	type ProcessUpdateInput,
+	type ProcessUsage,
 	type ProcessViewMode,
 	type StepStatus,
 } from "./types.ts";
@@ -17,6 +20,7 @@ const PROCESS_STATUSES = new Set<ProcessStatus>(["running", "waiting", "blocked"
 const STEP_STATUSES = new Set<StepStatus>(["pending", "active", "done", "failed"]);
 const ARTIFACT_KINDS = new Set<ArtifactKind>(["file", "test", "screenshot", "url", "commit", "report"]);
 const VIEW_MODES = new Set<ProcessViewMode>(["compact", "full", "off"]);
+const MAX_TRACKED_MODELS = 8;
 
 export class ProcessUpdateError extends Error {
 	constructor(message: string) {
@@ -30,6 +34,156 @@ export function sanitizeProcessText(value: string): string {
 		.replace(/[\u0000-\u001f\u007f]/g, " ")
 		.replace(/\s+/gu, " ")
 		.trim();
+}
+
+function emptyUsage(): ProcessUsage {
+	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+}
+
+function cloneUsage(usage: ProcessUsage): ProcessUsage {
+	return { ...usage };
+}
+
+function emptyTelemetry(): ProcessTelemetry {
+	return { turns: 0, usage: emptyUsage(), models: [], steps: [] };
+}
+
+function cloneTelemetry(telemetry: ProcessTelemetry): ProcessTelemetry {
+	return {
+		turns: telemetry.turns,
+		usage: cloneUsage(telemetry.usage),
+		models: [...telemetry.models],
+		steps: telemetry.steps.map((step) => ({
+			...step,
+			usage: cloneUsage(step.usage),
+			models: [...step.models],
+		})),
+	};
+}
+
+function emptyStepTelemetry(text: string): ProcessStepTelemetry {
+	return { text, activeMs: 0, turns: 0, usage: emptyUsage(), models: [] };
+}
+
+function appendModel(models: string[], model: string | undefined): void {
+	if (!model || models.includes(model)) return;
+	if (models.length === MAX_TRACKED_MODELS) models.shift();
+	models.push(model);
+}
+
+function nonnegative(value: unknown): number {
+	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function addUsage(target: ProcessUsage, source: Partial<ProcessUsage>): void {
+	target.input += nonnegative(source.input);
+	target.output += nonnegative(source.output);
+	target.cacheRead += nonnegative(source.cacheRead);
+	target.cacheWrite += nonnegative(source.cacheWrite);
+	target.cost += nonnegative(source.cost);
+}
+
+export function stepElapsedMs(step: ProcessStepTelemetry | undefined, now = Date.now()): number | undefined {
+	if (!step) return undefined;
+	return step.activeMs + (step.activeSince === undefined ? 0 : Math.max(0, now - step.activeSince));
+}
+
+export function syncProcessTelemetry(
+	previousSnapshot: ProcessSnapshot | undefined,
+	previousTelemetry: ProcessTelemetry | undefined,
+	nextSnapshot: ProcessSnapshot,
+	now = Date.now(),
+): ProcessTelemetry {
+	const previous = previousTelemetry ? cloneTelemetry(previousTelemetry) : emptyTelemetry();
+	const used = new Set<number>();
+	const sourceIndexes = nextSnapshot.steps.map((step, index) => {
+		const exact = previous.steps.findIndex((candidate, candidateIndex) =>
+			!used.has(candidateIndex) && candidate.text === step.text);
+		const sourceIndex = exact >= 0
+			? exact
+			: previous.steps[index] && !used.has(index)
+				? index
+				: -1;
+		if (sourceIndex >= 0) used.add(sourceIndex);
+		return sourceIndex;
+	});
+	const steps = nextSnapshot.steps.map((step, index) => {
+		const source = previous.steps[sourceIndexes[index] ?? -1];
+		return source
+			? { ...source, text: step.text, usage: cloneUsage(source.usage), models: [...source.models] }
+			: emptyStepTelemetry(step.text);
+	});
+	const previousActive = previousSnapshot?.status === "running"
+		? previousSnapshot.steps.findIndex((step) => step.status === "active")
+		: -1;
+	const nextActive = nextSnapshot.status === "running"
+		? nextSnapshot.steps.findIndex((step) => step.status === "active")
+		: -1;
+
+	for (let index = 0; index < steps.length; index += 1) {
+		const step = steps[index]!;
+		const continuing = index === nextActive
+			&& sourceIndexes[index] === previousActive
+			&& previousActive >= 0
+			&& step.activeSince !== undefined;
+		if (step.activeSince !== undefined && !continuing) {
+			step.activeMs += Math.max(0, now - step.activeSince);
+			delete step.activeSince;
+		}
+	}
+	if (nextActive >= 0 && steps[nextActive]!.activeSince === undefined) {
+		steps[nextActive]!.activeSince = now;
+	}
+	if (!previousSnapshot && previous.steps.length === 0 && previous.turns > 0 && nextActive >= 0) {
+		const active = steps[nextActive]!;
+		active.turns += previous.turns;
+		addUsage(active.usage, previous.usage);
+		for (const model of previous.models) appendModel(active.models, model);
+	}
+
+	return { ...previous, steps };
+}
+
+interface AssistantUsageLike {
+	provider?: string;
+	model?: string;
+	usage?: {
+		input?: number;
+		output?: number;
+		cacheRead?: number;
+		cacheWrite?: number;
+		cost?: { total?: number };
+	};
+}
+
+export function recordAssistantUsage(
+	telemetry: ProcessTelemetry | undefined,
+	snapshot: ProcessSnapshot | undefined,
+	message: AssistantUsageLike,
+): ProcessTelemetry {
+	const next = telemetry ? cloneTelemetry(telemetry) : emptyTelemetry();
+	const model = message.provider && message.model
+		? sanitizeProcessText(`${message.provider}/${message.model}`).slice(0, 160)
+		: undefined;
+	const usage: Partial<ProcessUsage> = {
+		input: message.usage?.input,
+		output: message.usage?.output,
+		cacheRead: message.usage?.cacheRead,
+		cacheWrite: message.usage?.cacheWrite,
+		cost: message.usage?.cost?.total,
+	};
+	next.turns += 1;
+	addUsage(next.usage, usage);
+	appendModel(next.models, model);
+
+	const activeIndex = snapshot?.steps.findIndex((step) => step.status === "active") ?? -1;
+	const active = next.steps[activeIndex];
+	if (active) {
+		active.turns += 1;
+		addUsage(active.usage, usage);
+		appendModel(active.models, model);
+	}
+	return next;
 }
 
 function requiredText(value: string, field: string, maxLength: number): string {
@@ -145,6 +299,54 @@ function isArtifact(value: unknown): value is ProcessArtifact {
 		&& isOptionalCleanText(value.ref, 200);
 }
 
+function isNonnegativeNumber(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isUsage(value: unknown): value is ProcessUsage {
+	return isRecord(value)
+		&& isNonnegativeNumber(value.input)
+		&& isNonnegativeNumber(value.output)
+		&& isNonnegativeNumber(value.cacheRead)
+		&& isNonnegativeNumber(value.cacheWrite)
+		&& isNonnegativeNumber(value.cost);
+}
+
+export function isProcessTelemetry(value: unknown, snapshot: ProcessSnapshot): value is ProcessTelemetry {
+	if (!isRecord(value)
+		|| !Number.isInteger(value.turns)
+		|| !isNonnegativeNumber(value.turns)
+		|| !isUsage(value.usage)
+		|| !Array.isArray(value.models)
+		|| value.models.length > MAX_TRACKED_MODELS
+		|| !value.models.every((model) => isCleanText(model, 160, true))
+		|| !Array.isArray(value.steps)
+		|| value.steps.length !== snapshot.steps.length) {
+		return false;
+	}
+	let activeTimers = 0;
+	for (let index = 0; index < value.steps.length; index += 1) {
+		const step = value.steps[index];
+		if (!isRecord(step)
+			|| step.text !== snapshot.steps[index]?.text
+			|| !isNonnegativeNumber(step.activeMs)
+			|| (step.activeSince !== undefined && !isNonnegativeNumber(step.activeSince))
+			|| !Number.isInteger(step.turns)
+			|| !isNonnegativeNumber(step.turns)
+			|| !isUsage(step.usage)
+			|| !Array.isArray(step.models)
+			|| step.models.length > MAX_TRACKED_MODELS
+			|| !step.models.every((model) => isCleanText(model, 160, true))) {
+			return false;
+		}
+		if (step.activeSince !== undefined) {
+			activeTimers += 1;
+			if (snapshot.status !== "running" || snapshot.steps[index]?.status !== "active") return false;
+		}
+	}
+	return activeTimers <= 1;
+}
+
 export function isProcessSnapshot(value: unknown): value is ProcessSnapshot {
 	if (!isRecord(value)
 		|| value.version !== 1
@@ -182,18 +384,22 @@ export function isPersistedProcessState(value: unknown): value is PersistedProce
 		|| typeof value.cleared !== "boolean") {
 		return false;
 	}
-	if (value.cleared && value.snapshot !== undefined) return false;
-	return value.snapshot === undefined || isProcessSnapshot(value.snapshot);
+	if (value.cleared) return value.snapshot === undefined && value.telemetry === undefined;
+	if (value.snapshot === undefined) return value.telemetry === undefined;
+	if (!isProcessSnapshot(value.snapshot)) return false;
+	return value.telemetry === undefined || isProcessTelemetry(value.telemetry, value.snapshot);
 }
 
 export function createPersistedState(
 	snapshot: ProcessSnapshot | undefined,
 	viewMode: ProcessViewMode,
+	telemetry?: ProcessTelemetry,
 ): PersistedProcessState {
 	return {
 		version: 1,
 		viewMode,
 		...(snapshot ? { snapshot: cloneSnapshot(snapshot) } : {}),
+		...(snapshot && telemetry ? { telemetry: cloneTelemetry(telemetry) } : {}),
 		cleared: false,
 	};
 }
@@ -216,7 +422,7 @@ export function restoreProcessState(entries: readonly unknown[]): RestoreResult 
 		}
 		return {
 			state: entry.data.snapshot
-				? createPersistedState(entry.data.snapshot, entry.data.viewMode)
+				? createPersistedState(entry.data.snapshot, entry.data.viewMode, entry.data.telemetry)
 				: { ...entry.data },
 			corrupted: false,
 		};

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import processView from "../extensions/process-view.ts";
-import { normalizeProcessUpdate, createPersistedState } from "../lib/state.ts";
+import { createPersistedState, normalizeProcessUpdate, syncProcessTelemetry } from "../lib/state.ts";
 import {
 	PROCESS_CONTEXT_TYPE,
 	PROCESS_ENTRY_TYPE,
@@ -44,6 +44,7 @@ interface HarnessOptions {
 	mode?: "tui" | "print" | "rpc" | "json";
 	branch?: unknown[];
 	throwWidget?: boolean;
+	toolsExpanded?: boolean;
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -58,6 +59,7 @@ function createHarness(options: HarnessOptions = {}) {
 	let failAppend = false;
 	let currentWidget: any;
 	let renderRequests = 0;
+	let toolsExpanded = options.toolsExpanded ?? false;
 
 	const ui = {
 		setWidget(key: string, content: unknown) {
@@ -71,6 +73,9 @@ function createHarness(options: HarnessOptions = {}) {
 		},
 		setHiddenThinkingLabel(label?: string) {
 			hiddenLabels.push(label);
+		},
+		getToolsExpanded() {
+			return toolsExpanded;
 		},
 		notify(message: string, type?: string) {
 			notifications.push({ message, type });
@@ -127,6 +132,7 @@ function createHarness(options: HarnessOptions = {}) {
 		get currentWidget() { return currentWidget; },
 		get renderRequests() { return renderRequests; },
 		setFailAppend(value: boolean) { failAppend = value; },
+		setToolsExpanded(value: boolean) { toolsExpanded = value; },
 		async emit(name: string, event: any = {}) {
 			let result: unknown;
 			for (const handler of handlers.get(name) ?? []) {
@@ -161,10 +167,39 @@ describe("process-view registration and tool", () => {
 		const harness = createHarness();
 		const result = await execute(harness);
 		assert.match(result.content[0].text, /Process state updated: 1\/3 running/);
-		assert.deepEqual(harness.entries[0].data.snapshot, result.details);
+		const { telemetry, ...detailsSnapshot } = result.details;
+		assert.deepEqual(harness.entries[0].data.snapshot, detailsSnapshot);
+		assert.deepEqual(harness.entries[0].data.telemetry, telemetry);
 		assert.equal(harness.entries[0].customType, PROCESS_ENTRY_TYPE);
 		assert.equal(harness.widgetCalls[0]?.key, PROCESS_WIDGET_KEY);
 		assert.ok(harness.currentWidget.render(100).join("\n").includes("Implement process view"));
+	});
+
+	it("includes assistant usage emitted before the first process snapshot", async () => {
+		const harness = createHarness();
+		await harness.emit("before_agent_start", { prompt: "implement process view" });
+		await harness.emit("message_end", {
+			message: {
+				role: "assistant",
+				content: [],
+				api: "openai-responses",
+				provider: "openai",
+				model: "gpt-5.6-sol",
+				usage: {
+					input: 8_000,
+					output: 500,
+					cacheRead: 6_000,
+					cacheWrite: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.08 },
+				},
+				stopReason: "toolUse",
+				timestamp: Date.now(),
+			},
+		});
+		const result = await execute(harness);
+		assert.equal(result.details.telemetry.turns, 1);
+		assert.equal(result.details.telemetry.usage.input, 8_000);
+		assert.equal(result.details.telemetry.steps[1].turns, 1);
 	});
 
 	it("throws semantic errors without state, entry, or UI changes", async () => {
@@ -250,6 +285,21 @@ describe("request, branch, and context lifecycle", () => {
 		assert.deepEqual(print.widgetCalls, []);
 		assert.deepEqual(print.hiddenLabels, []);
 		assert.equal((await execute(print)).details.status, "running");
+	});
+
+	it("pauses a stale running timer when restoring an idle session", async () => {
+		const snapshot = normalizeProcessUpdate(runningInput(), undefined, 1_000);
+		const stored = createPersistedState(
+			snapshot,
+			"compact",
+			syncProcessTelemetry(undefined, undefined, snapshot, 1_000),
+		);
+		const harness = createHarness({ branch: [{ type: "custom", customType: PROCESS_ENTRY_TYPE, data: stored }] });
+		await harness.emit("session_start", { reason: "resume" });
+		const restored = harness.entries.at(-1)?.data;
+		assert.equal(restored.snapshot.status, "waiting");
+		assert.equal(restored.telemetry.steps[1].activeSince, undefined);
+		assert.equal(restored.telemetry.steps[1].activeMs, 0);
 	});
 
 	it("writes a request tombstone and consumes the previous task reminder once", async () => {
@@ -341,6 +391,40 @@ describe("commands and passive telemetry", () => {
 		assert.deepEqual(harness.entries.at(-1)?.data, { version: 1, viewMode: "off", cleared: true });
 	});
 
+	it("follows native tool expansion and records task-local assistant usage", async () => {
+		const harness = createHarness();
+		await execute(harness);
+		assert.doesNotMatch(harness.currentWidget.render(110).join("\n"), /Tasks|Runtime/);
+
+		harness.setToolsExpanded(true);
+		assert.match(harness.currentWidget.render(110).join("\n"), /Process View.*Tasks.*Runtime/s);
+
+		await harness.emit("message_end", {
+			message: {
+				role: "assistant",
+				content: [],
+				api: "openai-responses",
+				provider: "openai",
+				model: "gpt-5.6-sol",
+				usage: {
+					input: 30_000,
+					output: 1_500,
+					cacheRead: 22_000,
+					cacheWrite: 400,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.25 },
+				},
+				stopReason: "toolUse",
+				timestamp: Date.now(),
+			},
+		});
+		const expanded = harness.currentWidget.render(110).join("\n");
+		assert.match(expanded, /openai\/gpt-5\.6-sol/);
+		assert.match(expanded, /↑30k.*↓1\.5k.*R22k/);
+
+		await harness.emit("agent_settled");
+		assert.equal(harness.entries.at(-1)?.data.telemetry.turns, 1);
+	});
+
 	it("updates the mounted Widget for passive message and tool events", async () => {
 		const harness = createHarness();
 		await harness.emit("before_agent_start", { prompt: "simple request" });
@@ -354,11 +438,15 @@ describe("commands and passive telemetry", () => {
 		assert.match(harness.currentWidget.render(100).join("\n"), /✓ read a\.ts/);
 	});
 
-	it("cleans Widget and hidden label on shutdown", async () => {
+	it("pauses running telemetry and cleans UI state on shutdown", async () => {
 		const harness = createHarness();
 		await harness.emit("session_start", { reason: "startup" });
-		await harness.emit("before_agent_start", { prompt: "simple" });
+		await harness.emit("before_agent_start", { prompt: "task" });
+		await execute(harness);
 		await harness.emit("session_shutdown", { reason: "reload" });
+		const saved = harness.entries.at(-1)?.data;
+		assert.equal(saved.snapshot.status, "waiting");
+		assert.equal(saved.telemetry.steps[1].activeSince, undefined);
 		assert.equal(harness.widgetCalls.at(-1)?.content, undefined);
 		assert.equal(harness.hiddenLabels.at(-1), undefined);
 	});

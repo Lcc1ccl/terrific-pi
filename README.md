@@ -35,7 +35,7 @@ terrific-pi/
 | context | `extensions/context` | `/context` 上下文占用拆解（不调模型、不写 session） |
 | mode | `extensions/mode` | `/mode ask\|plan\|edit\|auto` 工具权限模式；status key `pi-essentials-mode` |
 | btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话） |
-| process-view | `extensions/process-view` | `process_update` 结构化里程碑、branch-aware 状态与 editor-above 实时工具 HUD；`/process` 控制视图 |
+| process-view | `extensions/process-view` | `process_update` 结构化里程碑、步骤计时与任务级 usage；原生 `Ctrl+O` 展开实时详情面板 |
 
 > 原 monorepo 包 `vendor/pi-essentials` 已按插件拆入上表三项。配置文件仍兼容 `~/.pi/agent/pi-essentials.json`。
 

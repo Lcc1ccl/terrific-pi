@@ -34,6 +34,30 @@ export interface ProcessSnapshot {
 	updatedAt: number;
 }
 
+export interface ProcessUsage {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	cost: number;
+}
+
+export interface ProcessStepTelemetry {
+	text: string;
+	activeMs: number;
+	activeSince?: number;
+	turns: number;
+	usage: ProcessUsage;
+	models: string[];
+}
+
+export interface ProcessTelemetry {
+	turns: number;
+	usage: ProcessUsage;
+	models: string[];
+	steps: ProcessStepTelemetry[];
+}
+
 export type RuntimeStage =
 	| "starting"
 	| "analyzing"
@@ -67,6 +91,7 @@ export interface PersistedProcessState {
 	version: 1;
 	viewMode: ProcessViewMode;
 	snapshot?: ProcessSnapshot;
+	telemetry?: ProcessTelemetry;
 	cleared: boolean;
 }
 
@@ -79,7 +104,10 @@ export interface RuntimeControlState {
 export interface ProcessRenderState {
 	viewMode: ProcessViewMode;
 	snapshot?: ProcessSnapshot;
+	telemetry?: ProcessTelemetry;
 	activity: ActivitySnapshot;
+	expanded: boolean;
+	now: number;
 }
 
 export const ProcessUpdateParams = Type.Object({

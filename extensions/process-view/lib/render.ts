@@ -1,12 +1,14 @@
-import { Text, truncateToWidth, type Component } from "@earendil-works/pi-tui";
+import { Text, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 
-import { isProcessSnapshot, sanitizeProcessText } from "./state.ts";
+import { isProcessSnapshot, isProcessTelemetry, sanitizeProcessText, stepElapsedMs } from "./state.ts";
 import type {
 	ActivitySnapshot,
 	ProcessRenderState,
 	ProcessSnapshot,
 	ProcessStatus,
 	ProcessStep,
+	ProcessStepTelemetry,
+	ProcessTelemetry,
 	RecentToolOutcome,
 	RuntimeStage,
 	ToolActivity,
@@ -52,11 +54,6 @@ function currentStep(snapshot: ProcessSnapshot): ProcessStep | undefined {
 		?? snapshot.steps.at(-1);
 }
 
-function nextStep(snapshot: ProcessSnapshot, current: ProcessStep | undefined): ProcessStep | undefined {
-	const currentIndex = current ? snapshot.steps.indexOf(current) : -1;
-	return snapshot.steps.find((step, index) => index > currentIndex && step.status === "pending");
-}
-
 function stepSymbol(step: ProcessStep): string {
 	if (step.status === "done") return "✓";
 	if (step.status === "active") return "●";
@@ -90,10 +87,22 @@ function fit(lines: string[], width: number): string[] {
 	return lines.map((line) => truncateToWidth(line, width));
 }
 
-function header(snapshot: ProcessSnapshot, theme: ProcessTheme): string {
-	const meta = STATUS_META[snapshot.status];
-	const status = theme.fg(meta.tone, `${meta.symbol} ${meta.label}`);
-	return `${theme.bold(status)} · ${doneCount(snapshot)}/${snapshot.steps.length}  ${snapshot.title}`;
+function formatElapsed(ms: number | undefined): string {
+	if (ms === undefined) return "—";
+	const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
+	if (totalSeconds < 60) return `${totalSeconds}s`;
+	const hours = Math.floor(totalSeconds / 3600);
+	const minutes = Math.floor((totalSeconds % 3600) / 60);
+	const seconds = totalSeconds % 60;
+	const suffix = `${String(minutes).padStart(hours > 0 ? 2 : 1, "0")}m${String(seconds).padStart(2, "0")}s`;
+	return hours > 0 ? `${hours}h${suffix}` : suffix;
+}
+
+function formatTokens(count: number): string {
+	if (count < 1_000) return Math.round(count).toString();
+	if (count < 10_000) return `${(count / 1_000).toFixed(1)}k`;
+	if (count < 1_000_000) return `${Math.round(count / 1_000)}k`;
+	return `${(count / 1_000_000).toFixed(1)}M`;
 }
 
 function detailLine(snapshot: ProcessSnapshot): string | undefined {
@@ -113,57 +122,147 @@ function passiveLines(state: ProcessRenderState, theme: ProcessTheme): string[] 
 	return [`${theme.fg("accent", "●")} ${label}${suffix}`];
 }
 
-function fullLines(state: ProcessRenderState, theme: ProcessTheme): string[] {
-	const snapshot = state.snapshot!;
-	const activity = formatActivity(state.activity);
-	const lines = [header(snapshot, theme)];
-	for (const step of snapshot.steps) lines.push(`  ${stepSymbol(step)} ${step.text}`);
-	if (activity.text) lines.push(activity.active ? `  ↳ ${activity.text}` : `  ${activity.text}`);
-	if (snapshot.status === "blocked" && snapshot.blocker) lines.push(`  Need: ${snapshot.blocker}`);
-	else if (snapshot.update) lines.push(`  Update: ${snapshot.update}`);
-	if (snapshot.verification) lines.push(`  Verification: ${snapshot.verification}`);
-	if (snapshot.artifacts.length > 0) {
-		lines.push(`  Artifacts: ${snapshot.artifacts.map((artifact) => artifact.label).join(" · ")}`);
-	}
-	return lines.slice(0, 9);
+function telemetryForStep(
+	snapshot: ProcessSnapshot,
+	telemetry: ProcessTelemetry | undefined,
+	step: ProcessStep | undefined,
+): ProcessStepTelemetry | undefined {
+	if (!step || !telemetry) return undefined;
+	const index = snapshot.steps.indexOf(step);
+	return telemetry.steps[index]?.text === step.text ? telemetry.steps[index] : undefined;
 }
 
-function wideLines(state: ProcessRenderState, theme: ProcessTheme): string[] {
-	const snapshot = state.snapshot!;
-	const activity = formatActivity(state.activity);
-	const rail = snapshot.steps.map((step) => `${stepSymbol(step)} ${step.text}`).join("  ");
-	const lines = [header(snapshot, theme), `  ${rail}`];
-	if (activity.text) lines.push(activity.active ? `  ↳ ${activity.text}` : `  ${activity.text}`);
-	const detail = detailLine(snapshot);
-	if (detail) lines.push(`  ${detail}`);
-	return lines.slice(0, 4);
-}
-
-function mediumLines(state: ProcessRenderState, theme: ProcessTheme): string[] {
-	const snapshot = state.snapshot!;
-	const current = currentStep(snapshot);
-	const next = nextStep(snapshot, current);
-	const activity = formatActivity(state.activity);
-	const lines = [header(snapshot, theme)];
-	if (current) lines.push(`  Current: ${current.text}${next ? ` · Next: ${next.text}` : ""}`);
-	if (activity.text) lines.push(activity.active ? `  ↳ ${activity.text}` : `  ${activity.text}`);
-	const detail = detailLine(snapshot);
-	if (detail) lines.push(`  ${detail}`);
-	return lines.slice(0, 4);
-}
-
-function narrowLines(state: ProcessRenderState, theme: ProcessTheme): string[] {
+function compactSummary(state: ProcessRenderState, width: number, theme: ProcessTheme): string {
 	const snapshot = state.snapshot!;
 	const meta = STATUS_META[snapshot.status];
 	const current = currentStep(snapshot);
+	const elapsed = formatElapsed(stepElapsedMs(telemetryForStep(snapshot, state.telemetry, current), state.now));
+	const symbol = theme.fg(meta.tone, snapshot.status === "running" ? meta.symbol : `${meta.symbol} ${meta.label}`);
+	const progress = `${doneCount(snapshot)}/${snapshot.steps.length}`;
+	const currentLabel = width >= 90 ? "Now: " : "";
+	const fixed = `${symbol}  · ${progress} · ${currentLabel} · ${elapsed}`;
+	const available = width - visibleWidth(fixed);
+	if (available < 8) return truncateToWidth(`${symbol} ${progress} · ${elapsed}`, width);
+	const goalWidth = Math.max(4, Math.floor(available * 0.52));
+	const currentWidth = Math.max(4, available - goalWidth);
+	const goal = truncateToWidth(snapshot.title, goalWidth, "…");
+	const focus = truncateToWidth(current?.text ?? snapshot.title, currentWidth, "…");
+	return `${symbol} ${goal} · ${progress} · ${currentLabel}${focus} · ${elapsed}`;
+}
+
+function compactLines(state: ProcessRenderState, width: number, theme: ProcessTheme): string[] {
+	const snapshot = state.snapshot!;
+	const lines = [compactSummary(state, width, theme)];
 	const activity = formatActivity(state.activity);
-	const focus = snapshot.status === "blocked" && snapshot.blocker
-		? `Need: ${snapshot.blocker}`
-		: snapshot.status === "interrupted" && snapshot.update
-			? snapshot.update
-			: current?.text ?? snapshot.title;
-	const base = `${theme.fg(meta.tone, meta.symbol)} ${doneCount(snapshot)}/${snapshot.steps.length} ${focus}`;
-	return [`${base}${activity.text ? ` · ${activity.text}` : ""}`];
+	if (activity.text) lines.push(`  ${activity.active ? "↳ " : ""}${activity.text}`);
+	else {
+		const stage = STAGE_LABELS[state.activity.stage];
+		if (stage) lines.push(`  ${stage}`);
+	}
+	const detail = detailLine(snapshot);
+	if (detail) lines.push(`  ${detail}`);
+	return lines.slice(0, width < 72 ? 2 : 3);
+}
+
+function modelSummary(models: readonly string[]): string {
+	if (models.length === 0) return "—";
+	return models.length === 1 ? truncateToWidth(models[0]!, 32, "…") : `${models.length} models`;
+}
+
+function alignColumns(left: string, right: string, width: number): string {
+	if (!right) return truncateToWidth(left, width);
+	const rightWidth = visibleWidth(right);
+	if (rightWidth + 5 >= width) return truncateToWidth(`${left} · ${right}`, width);
+	const boundedLeft = truncateToWidth(left, width - rightWidth - 1, "…");
+	return `${boundedLeft}${" ".repeat(Math.max(1, width - visibleWidth(boundedLeft) - rightWidth))}${right}`;
+}
+
+function boxRow(content: string, width: number, theme: ProcessTheme): string {
+	if (width < 3) return truncateToWidth(content, width);
+	const innerWidth = width - 2;
+	const body = truncateToWidth(content, innerWidth);
+	const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(body)));
+	return `${theme.fg("dim", "│")}${body}${padding}${theme.fg("dim", "│")}`;
+}
+
+function boxBorder(kind: "top" | "section" | "bottom", width: number, theme: ProcessTheme, label = ""): string {
+	if (width < 2) return truncateToWidth(label, width);
+	const [left, right] = kind === "top" ? ["╭", "╮"] : kind === "bottom" ? ["╰", "╯"] : ["├", "┤"];
+	const innerWidth = width - 2;
+	const labelContent = kind === "section" && label ? `─ ${label} ` : "";
+	const content = truncateToWidth(labelContent, innerWidth);
+	const fill = "─".repeat(Math.max(0, innerWidth - visibleWidth(content)));
+	return theme.fg("dim", `${left}${content}${fill}${right}`);
+}
+
+function hasObservedTelemetry(metric: ProcessStepTelemetry | undefined): metric is ProcessStepTelemetry {
+	return Boolean(metric && (
+		metric.activeSince !== undefined
+		|| metric.activeMs > 0
+		|| metric.turns > 0
+		|| metric.models.length > 0
+		|| Object.values(metric.usage).some((value) => value > 0)
+	));
+}
+
+function taskMetrics(metric: ProcessStepTelemetry | undefined, now: number, width: number): string {
+	if (!hasObservedTelemetry(metric)) return "—";
+	const elapsed = formatElapsed(stepElapsedMs(metric, now));
+	const tokens = formatTokens(metric.usage.input + metric.usage.output);
+	if (width < 62) return elapsed;
+	if (width < 88) return `${metric.turns}t · ${tokens} tok · ${elapsed}`;
+	return `${modelSummary(metric.models)} · ${metric.turns}t · ${tokens} tok · ${elapsed}`;
+}
+
+function runtimeLine(telemetry: ProcessTelemetry | undefined): string {
+	if (!telemetry) return "Runtime: telemetry unavailable";
+	const turns = `${telemetry.turns} LLM turn${telemetry.turns === 1 ? "" : "s"}`;
+	const usage = telemetry.usage;
+	const cost = usage.cost > 0 ? ` · $${usage.cost.toFixed(3)}` : "";
+	return `Runtime: ${modelSummary(telemetry.models)} · ${turns} · ↑${formatTokens(usage.input)} ↓${formatTokens(usage.output)} · R${formatTokens(usage.cacheRead)} W${formatTokens(usage.cacheWrite)}${cost}`;
+}
+
+function detailedActivity(state: ProcessRenderState): string | undefined {
+	if (state.activity.activeTools.length > 0) {
+		const shown = state.activity.activeTools.slice(0, 2).map((tool) =>
+			`${formatTool(tool)} ${formatElapsed(Math.max(0, state.now - tool.startedAt))}`);
+		const remaining = state.activity.activeTools.length - shown.length;
+		if (remaining > 0) shown.push(`+${remaining} tool${remaining === 1 ? "" : "s"}`);
+		return `Active: ${shown.join(" · ")}`;
+	}
+	if (state.activity.recentOutcome) return `Recent: ${formatOutcome(state.activity.recentOutcome)}`;
+	const stage = STAGE_LABELS[state.activity.stage];
+	return stage ? `Stage: ${stage}` : undefined;
+}
+
+function detailPanelLines(state: ProcessRenderState, width: number, theme: ProcessTheme): string[] {
+	if (width < 1) return [];
+	const snapshot = state.snapshot!;
+	const meta = STATUS_META[snapshot.status];
+	const progress = `${doneCount(snapshot)}/${snapshot.steps.length}`;
+	const percent = Math.round((doneCount(snapshot) / snapshot.steps.length) * 100);
+	const current = currentStep(snapshot);
+	const currentMetric = telemetryForStep(snapshot, state.telemetry, current);
+	const lines = [boxBorder("top", width, theme)];
+	lines.push(boxRow(` ${theme.bold("Process View")} · ${meta.label} · ${progress} · ${percent}% · ${snapshot.title}`, width, theme));
+	if (current) {
+		lines.push(boxRow(` Current: ${current.text} · ${formatElapsed(stepElapsedMs(currentMetric, state.now))}`, width, theme));
+	}
+	lines.push(boxBorder("section", width, theme, "Tasks"));
+	for (let index = 0; index < snapshot.steps.length; index += 1) {
+		const step = snapshot.steps[index]!;
+		const left = ` ${stepSymbol(step)} ${step.text}`;
+		const right = taskMetrics(state.telemetry?.steps[index], state.now, width);
+		lines.push(boxRow(alignColumns(left, right, Math.max(0, width - 2)), width, theme));
+	}
+	lines.push(boxBorder("section", width, theme, "Runtime"));
+	lines.push(boxRow(` ${runtimeLine(state.telemetry)}`, width, theme));
+	const activity = detailedActivity(state);
+	if (activity) lines.push(boxRow(` ${activity}`, width, theme));
+	const latest = detailLine(snapshot);
+	if (latest) lines.push(boxRow(` ${latest}`, width, theme));
+	lines.push(boxBorder("bottom", width, theme));
+	return lines.slice(0, 15);
 }
 
 export function formatProcessLines(
@@ -173,14 +272,9 @@ export function formatProcessLines(
 ): string[] {
 	if (state.viewMode === "off") return [];
 	if (!state.snapshot) return fit(passiveLines(state, theme), width);
-	const lines = state.viewMode === "full"
-		? fullLines(state, theme)
-		: width >= 100
-			? wideLines(state, theme)
-			: width >= 72
-				? mediumLines(state, theme)
-				: narrowLines(state, theme);
-	return fit(lines, width);
+	return state.viewMode === "full" || state.expanded
+		? detailPanelLines(state, width, theme)
+		: fit(compactLines(state, width, theme), width);
 }
 
 export class ProcessWidget implements Component {
@@ -227,11 +321,21 @@ export function formatToolResultLines(
 	}
 
 	const meta = STATUS_META[snapshot.status];
+	const rawTelemetry = (result.details as { telemetry?: unknown }).telemetry;
+	const telemetry = isProcessTelemetry(rawTelemetry, snapshot) ? rawTelemetry : undefined;
 	const lines = [`${meta.symbol} ${meta.label} · ${done}/${snapshot.steps.length} ${snapshot.title}`];
-	for (const step of snapshot.steps) lines.push(`${stepSymbol(step)} ${step.text}`);
+	for (let index = 0; index < snapshot.steps.length; index += 1) {
+		const step = snapshot.steps[index]!;
+		const metric = telemetry?.steps[index];
+		const elapsed = hasObservedTelemetry(metric)
+			? ` · ${formatElapsed(stepElapsedMs(metric, snapshot.updatedAt))}`
+			: "";
+		lines.push(`${stepSymbol(step)} ${step.text}${elapsed}`);
+	}
 	if (snapshot.update) lines.push(`Update: ${snapshot.update}`);
 	if (snapshot.blocker) lines.push(`Need: ${snapshot.blocker}`);
 	if (snapshot.verification) lines.push(`Verification: ${snapshot.verification}`);
+	if (telemetry) lines.push(runtimeLine(telemetry));
 	if (snapshot.artifacts.length > 0) {
 		lines.push(`Artifacts: ${snapshot.artifacts.map((artifact) => artifact.label).join(" · ")}`);
 	}

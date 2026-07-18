@@ -13,8 +13,10 @@ import {
 	createTombstone,
 	interruptSnapshot,
 	normalizeProcessUpdate,
+	recordAssistantUsage,
 	restoreProcessState,
 	settleSnapshot,
+	syncProcessTelemetry,
 } from "../lib/state.ts";
 import {
 	PROCESS_CONTEXT_TYPE,
@@ -24,6 +26,7 @@ import {
 	type PersistedProcessState,
 	type ProcessRenderState,
 	type ProcessSnapshot,
+	type ProcessTelemetry,
 	type ProcessViewMode,
 	type RuntimeControlState,
 } from "../lib/types.ts";
@@ -63,14 +66,27 @@ export default function processView(pi: ExtensionAPI) {
 	const activity = new ActivityTracker();
 	let widgetMounted = false;
 	let requestWidgetRender: (() => void) | undefined;
+	let durationTickTimer: ReturnType<typeof setInterval> | undefined;
+	let getToolsExpanded: (() => boolean) | undefined;
+	let pendingTelemetry: ProcessTelemetry | undefined;
+	let telemetryDirty = false;
 	let uiFailureNotified = false;
 	let corruptStateNotified = false;
 
-	const renderState = (): ProcessRenderState => ({
-		viewMode: state.viewMode,
-		...(state.snapshot ? { snapshot: state.snapshot } : {}),
-		activity: activity.getSnapshot(),
-	});
+	const renderState = (): ProcessRenderState => {
+		let expanded = false;
+		try {
+			expanded = getToolsExpanded?.() ?? false;
+		} catch {}
+		return {
+			viewMode: state.viewMode,
+			...(state.snapshot ? { snapshot: state.snapshot } : {}),
+			...(state.telemetry ? { telemetry: state.telemetry } : {}),
+			activity: activity.getSnapshot(),
+			expanded,
+			now: Date.now(),
+		};
+	};
 
 	const shouldShowWidget = (): boolean => {
 		if (state.viewMode === "off") return false;
@@ -91,13 +107,38 @@ export default function processView(pi: ExtensionAPI) {
 		} catch {}
 	};
 
+	const stopDurationTick = () => {
+		if (!durationTickTimer) return;
+		clearInterval(durationTickTimer);
+		durationTickTimer = undefined;
+	};
+
+	const syncDurationTick = () => {
+		const running = widgetMounted
+			&& state.viewMode !== "off"
+			&& state.snapshot?.status === "running"
+			&& state.telemetry?.steps.some((step) => step.activeSince !== undefined);
+		if (!running) {
+			stopDurationTick();
+			return;
+		}
+		if (durationTickTimer) return;
+		durationTickTimer = setInterval(() => requestWidgetRender?.(), 1_000);
+		durationTickTimer.unref();
+	};
+
 	const refreshWidget = (ctx: ExtensionContext) => {
-		if (ctx.mode !== "tui") return;
+		if (ctx.mode !== "tui") {
+			stopDurationTick();
+			return;
+		}
+		getToolsExpanded = () => ctx.ui.getToolsExpanded();
 		try {
 			if (!shouldShowWidget()) {
 				if (widgetMounted) ctx.ui.setWidget(PROCESS_WIDGET_KEY, undefined);
 				widgetMounted = false;
 				requestWidgetRender = undefined;
+				stopDurationTick();
 				return;
 			}
 			if (!widgetMounted) {
@@ -117,7 +158,9 @@ export default function processView(pi: ExtensionAPI) {
 			} else {
 				requestWidgetRender?.();
 			}
+			syncDurationTick();
 		} catch (error) {
+			stopDurationTick();
 			notifyUiFailure(ctx, error);
 		}
 	};
@@ -125,6 +168,7 @@ export default function processView(pi: ExtensionAPI) {
 	const appendState = (next: PersistedProcessState) => {
 		pi.appendEntry<PersistedProcessState>(PROCESS_ENTRY_TYPE, next);
 		state = next;
+		telemetryDirty = false;
 	};
 
 	const appendSystemState = (next: PersistedProcessState, ctx: ExtensionContext): boolean => {
@@ -143,7 +187,20 @@ export default function processView(pi: ExtensionAPI) {
 		state = restored.state;
 		control = { requestStarted: false };
 		activity.reset();
+		pendingTelemetry = undefined;
+		telemetryDirty = false;
+		getToolsExpanded = ctx.mode === "tui" ? () => ctx.ui.getToolsExpanded() : undefined;
 		uiFailureNotified = false;
+		if (!restored.corrupted && state.snapshot?.status === "running") {
+			const running = state.snapshot;
+			const waiting = settleSnapshot(running);
+			const paused = createPersistedState(
+				waiting,
+				state.viewMode,
+				syncProcessTelemetry(running, state.telemetry, waiting, running.updatedAt),
+			);
+			if (!appendSystemState(paused, ctx)) state = paused;
+		}
 		if (restored.corrupted) {
 			try {
 				pi.appendEntry<PersistedProcessState>(PROCESS_ENTRY_TYPE, state);
@@ -170,15 +227,23 @@ export default function processView(pi: ExtensionAPI) {
 		renderShell: "self",
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const snapshot = normalizeProcessUpdate(params, state.snapshot);
-			const next = createPersistedState(snapshot, state.viewMode);
+			const now = Date.now();
+			const snapshot = normalizeProcessUpdate(params, state.snapshot, now);
+			const telemetry = syncProcessTelemetry(
+				state.snapshot,
+				state.telemetry ?? (state.snapshot ? undefined : pendingTelemetry),
+				snapshot,
+				now,
+			);
+			const next = createPersistedState(snapshot, state.viewMode, telemetry);
 			appendState(next);
+			pendingTelemetry = undefined;
 			control.requestStarted = true;
 			refreshWidget(ctx);
 			const done = snapshot.steps.filter((step) => step.status === "done").length;
 			return {
 				content: [{ type: "text", text: `Process state updated: ${done}/${snapshot.steps.length} ${snapshot.status}` }],
-				details: snapshot,
+				details: { ...snapshot, telemetry },
 			};
 		},
 
@@ -204,6 +269,7 @@ export default function processView(pi: ExtensionAPI) {
 				try {
 					appendState(next);
 					control.pendingContextReminder = undefined;
+					pendingTelemetry = undefined;
 					activity.reset();
 					refreshWidget(ctx);
 				} catch (error) {
@@ -215,7 +281,7 @@ export default function processView(pi: ExtensionAPI) {
 			if (action === "compact" || action === "full" || action === "off") {
 				const mode = action as ProcessViewMode;
 				const next = state.snapshot
-					? createPersistedState(state.snapshot, mode)
+					? createPersistedState(state.snapshot, mode, state.telemetry)
 					: state.cleared
 						? createTombstone(mode)
 						: createPersistedState(undefined, mode);
@@ -248,6 +314,7 @@ export default function processView(pi: ExtensionAPI) {
 	pi.on("before_agent_start", async (_event, ctx) => {
 		control.requestStarted = true;
 		control.pendingStopReason = undefined;
+		pendingTelemetry = undefined;
 		if (isUnfinished(state.snapshot)) control.pendingContextReminder = cloneSnapshot(state.snapshot);
 		if (state.snapshot) appendSystemState(createTombstone(state.viewMode), ctx);
 		activity.beginRequest();
@@ -285,6 +352,25 @@ export default function processView(pi: ExtensionAPI) {
 		refreshWidget(ctx);
 	});
 
+	pi.on("message_end", async (event, ctx) => {
+		if (event.message.role !== "assistant") return;
+		if (!state.snapshot) {
+			if (control.requestStarted) {
+				pendingTelemetry = recordAssistantUsage(pendingTelemetry, undefined, event.message);
+			}
+			return;
+		}
+		const telemetry = state.telemetry
+			?? syncProcessTelemetry(undefined, undefined, state.snapshot);
+		state = createPersistedState(
+			state.snapshot,
+			state.viewMode,
+			recordAssistantUsage(telemetry, state.snapshot, event.message),
+		);
+		telemetryDirty = true;
+		refreshWidget(ctx);
+	});
+
 	pi.on("tool_execution_start", async (event, ctx) => {
 		activity.startTool(event.toolCallId, event.toolName, event.args, ctx.cwd);
 		refreshWidget(ctx);
@@ -306,22 +392,50 @@ export default function processView(pi: ExtensionAPI) {
 
 	pi.on("agent_settled", async (_event, ctx) => {
 		const snapshot = state.snapshot;
+		const now = Date.now();
 		if (snapshot && control.pendingStopReason && snapshot.status !== "completed") {
+			const interrupted = interruptSnapshot(snapshot, control.pendingStopReason, now);
 			appendSystemState(
-				createPersistedState(interruptSnapshot(snapshot, control.pendingStopReason), state.viewMode),
+				createPersistedState(
+					interrupted,
+					state.viewMode,
+					syncProcessTelemetry(snapshot, state.telemetry, interrupted, now),
+				),
 				ctx,
 			);
 		} else if (snapshot?.status === "running") {
-			appendSystemState(createPersistedState(settleSnapshot(snapshot), state.viewMode), ctx);
+			const settled = settleSnapshot(snapshot, now);
+			appendSystemState(
+				createPersistedState(
+					settled,
+					state.viewMode,
+					syncProcessTelemetry(snapshot, state.telemetry, settled, now),
+				),
+				ctx,
+			);
+		} else if (snapshot && telemetryDirty) {
+			appendSystemState(createPersistedState(snapshot, state.viewMode, state.telemetry), ctx);
 		}
 		control.pendingStopReason = undefined;
 		control.requestStarted = false;
+		pendingTelemetry = undefined;
 		const finalStatus = state.snapshot?.status;
 		activity.settle(finalStatus === "waiting" || finalStatus === "blocked" || finalStatus === "interrupted");
 		refreshWidget(ctx);
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
+		if (state.snapshot?.status === "running") {
+			const running = state.snapshot;
+			const now = Date.now();
+			const waiting = settleSnapshot(running, now);
+			const paused = createPersistedState(
+				waiting,
+				state.viewMode,
+				syncProcessTelemetry(running, state.telemetry, waiting, now),
+			);
+			if (!appendSystemState(paused, ctx)) state = paused;
+		}
 		if (ctx.mode === "tui") {
 			try {
 				if (widgetMounted) ctx.ui.setWidget(PROCESS_WIDGET_KEY, undefined);
@@ -330,7 +444,11 @@ export default function processView(pi: ExtensionAPI) {
 		}
 		widgetMounted = false;
 		requestWidgetRender = undefined;
+		getToolsExpanded = undefined;
+		stopDurationTick();
 		activity.reset();
+		pendingTelemetry = undefined;
+		telemetryDirty = false;
 		control = { requestStarted: false };
 	});
 }

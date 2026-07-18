@@ -14,6 +14,25 @@ const plainTheme: ProcessTheme = {
 	fg: (_color, text) => text,
 	bold: (text) => text,
 };
+const NOW = 1_726_000_000_000;
+
+function usage(input = 0, output = 0, cacheRead = 0, cacheWrite = 0, cost = 0) {
+	return { input, output, cacheRead, cacheWrite, cost };
+}
+
+function telemetry() {
+	return {
+		turns: 3,
+		usage: usage(43_000, 2_400, 31_000, 500, 0.42),
+		models: ["openai/gpt-5.6-sol"],
+		steps: [
+			{ text: "Inspect naming", activeMs: 12_000, turns: 1, usage: usage(12_000, 600, 9_000), models: ["openai/gpt-5.6-sol"] },
+			{ text: "Apply changes", activeMs: 0, activeSince: NOW, turns: 2, usage: usage(31_000, 1_800, 22_000, 500, 0.42), models: ["openai/gpt-5.6-sol"] },
+			{ text: "Validate workbook", activeMs: 0, turns: 0, usage: usage(), models: [] },
+			{ text: "Summarize results", activeMs: 0, turns: 0, usage: usage(), models: [] },
+		],
+	};
+}
 
 function snapshot(overrides: Partial<ProcessSnapshot> = {}): ProcessSnapshot {
 	return {
@@ -41,16 +60,19 @@ function state(overrides: Partial<ProcessRenderState> = {}): ProcessRenderState 
 	return {
 		viewMode: "compact",
 		snapshot: snapshot(),
+		telemetry: telemetry(),
+		expanded: false,
+		now: NOW + 65_000,
 		activity: {
 			stage: "running_tools",
 			activeTools: [
-				{ callId: "1", toolName: "edit", label: "Bonus_Config.xlsx", startedAt: 1 },
-				{ callId: "2", toolName: "bash", label: "bash", startedAt: 2 },
-				{ callId: "3", toolName: "read", label: "revision.md", startedAt: 3 },
+				{ callId: "1", toolName: "edit", label: "Bonus_Config.xlsx", startedAt: NOW + 61_000 },
+				{ callId: "2", toolName: "bash", label: "bash", startedAt: NOW + 63_000 },
+				{ callId: "3", toolName: "read", label: "revision.md", startedAt: NOW + 64_000 },
 			],
 		},
 		...overrides,
-	};
+	} as ProcessRenderState;
 }
 
 function assertFits(lines: string[], width: number): void {
@@ -72,38 +94,69 @@ describe("formatProcessLines", () => {
 		const lines = formatProcessLines({
 			viewMode: "compact",
 			activity: { stage: "analyzing", activeTools: [] },
+			expanded: false,
+			now: NOW,
 		}, 80, plainTheme);
 		assert.deepEqual(lines, ["● Analyzing request"]);
 		assert.deepEqual(formatProcessLines({
 			viewMode: "compact",
 			activity: { stage: "settled", activeTools: [] },
+			expanded: false,
+			now: NOW,
 		}, 80, plainTheme), []);
 	});
 
-	it("uses a wide rail, activity aggregation, and update", () => {
+	it("puts the goal, task progress, current task, and elapsed time on the first compact line", () => {
 		const lines = formatProcessLines(state(), 120, plainTheme);
-		assert.match(lines[0] ?? "", /Running.*1\/4.*Update reward configuration/);
-		assert.match(lines[1] ?? "", /✓ Inspect naming.*● Apply changes.*○ Validate workbook/);
-		assert.match(lines[2] ?? "", /edit Bonus_Config\.xlsx.*bash.*\+1 tool/);
-		assert.match(lines[3] ?? "", /Update: Located the conflicting configuration/);
+		assert.match(lines[0] ?? "", /Update reward configuration.*1\/4.*Apply changes.*1m05s/);
+		assert.doesNotMatch(lines.join("\n"), /✓ Inspect naming.*○ Validate workbook/);
+		assert.match(lines[1] ?? "", /edit Bonus_Config\.xlsx.*bash.*\+1 tool/);
+		assert.match(lines[2] ?? "", /Update: Located the conflicting configuration/);
 	});
 
-	it("uses Current and Next in medium layouts", () => {
-		const lines = formatProcessLines(state(), 80, plainTheme);
-		assert.match(lines[1] ?? "", /Current: Apply changes.*Next: Validate workbook/);
-		assert.match(lines[2] ?? "", /edit Bonus_Config\.xlsx/);
-	});
-
-	it("uses one stable line in narrow layouts", () => {
+	it("keeps progress and elapsed time visible in narrow compact layouts", () => {
 		const lines = formatProcessLines(state({
 			activity: {
 				stage: "running_tools",
-				activeTools: [{ callId: "1", toolName: "edit", label: "a.ts", startedAt: 1 }],
+				activeTools: [{ callId: "1", toolName: "edit", label: "a.ts", startedAt: NOW + 64_000 }],
 			},
 		}), 60, plainTheme);
-		assert.equal(lines.length, 1);
-		assert.match(lines[0] ?? "", /^● 1\/4 Apply changes/);
-		assert.match(lines[0] ?? "", /edit a\.ts/);
+		assert.ok(lines.length <= 2);
+		assert.match(lines[0] ?? "", /1\/4/);
+		assert.match(lines[0] ?? "", /1m05s/);
+		assertFits(lines, 60);
+	});
+
+	it("uses native tool expansion for a responsive live task and runtime panel", () => {
+		for (const width of [1, 2, 3, 8, 20, 40, 60, 72, 80, 100, 120]) {
+			const responsive = formatProcessLines(state({ expanded: true } as Partial<ProcessRenderState>), width, plainTheme);
+			assertFits(responsive, width);
+			assert.ok(responsive.length <= 15);
+		}
+		const lines = formatProcessLines(state({ expanded: true } as Partial<ProcessRenderState>), 110, plainTheme);
+		assertFits(lines, 110);
+		assert.ok(lines.length <= 15);
+		assert.match(lines.join("\n"), /Process View.*Running.*1\/4/);
+		assert.match(lines.join("\n"), /Tasks/);
+		assert.match(lines.join("\n"), /Runtime/);
+		assert.match(lines.join("\n"), /openai\/gpt-5\.6-sol/);
+		assert.match(lines.join("\n"), /↑43k.*↓2\.4k.*R31k/);
+		assert.match(lines.join("\n"), /Inspect naming.*12s/);
+		assert.match(lines.join("\n"), /Apply changes.*1m05s/);
+		assert.doesNotMatch(lines.join("\n"), /Summarize results.*0t/);
+	});
+
+	it("keeps step elapsed time visible with a long model identifier", () => {
+		const model = `provider/${"model-".repeat(30)}`;
+		const base = telemetry();
+		const longModelTelemetry = {
+			...base,
+			models: [model],
+			steps: base.steps.map((step) => ({ ...step, models: step.models.length > 0 ? [model] : [] })),
+		};
+		const lines = formatProcessLines(state({ expanded: true, telemetry: longModelTelemetry }), 100, plainTheme);
+		const activeTask = lines.find((line) => line.includes("Apply changes")) ?? "";
+		assert.match(activeTask, /1m05s/);
 	});
 
 	it("prioritizes blocked and interrupted reasons", () => {
@@ -117,7 +170,7 @@ describe("formatProcessLines", () => {
 			snapshot: snapshot({ status: "blocked", blocker: "Choose the target sheet" }),
 			activity: { stage: "settled", activeTools: [] },
 		}), 60, plainTheme);
-		assert.match(narrowBlocked[0] ?? "", /Choose the target sheet/);
+		assert.match(narrowBlocked.join("\n"), /Choose the target sheet/);
 
 		const interrupted = formatProcessLines(state({
 			snapshot: snapshot({ status: "interrupted", update: "Run stopped after an error" }),
@@ -147,7 +200,7 @@ describe("formatProcessLines", () => {
 		assert.match(failure, /! bash/);
 	});
 
-	it("renders full mode with all steps and no more than nine lines", () => {
+	it("pins the detail panel in full mode", () => {
 		const lines = formatProcessLines(state({
 			viewMode: "full",
 			snapshot: snapshot({
@@ -158,8 +211,11 @@ describe("formatProcessLines", () => {
 			activity: { stage: "settled", activeTools: [] },
 		}), 100, plainTheme);
 		assertFits(lines, 100);
-		assert.ok(lines.length <= 9);
-		assert.equal(lines.filter((line) => /Inspect naming|Apply changes|Validate workbook|Summarize results/.test(line)).length, 4);
+		assert.ok(lines.length <= 15);
+		for (const text of ["Inspect naming", "Apply changes", "Validate workbook", "Summarize results"]) {
+			assert.match(lines.join("\n"), new RegExp(text));
+		}
+		assert.match(lines.join("\n"), /Process View/);
 		assert.match(lines.join("\n"), /Verification: Workbook checks passed/);
 	});
 
@@ -189,8 +245,16 @@ describe("formatToolResultLines", () => {
 			steps: snapshot().steps.map((step) => ({ ...step, status: "done" })),
 			verification: "Workbook checks passed",
 		});
-		const lines = formatToolResultLines({ content: [], details: completed }, true, false);
+		const archivedTelemetry = telemetry();
+		archivedTelemetry.steps[1]!.activeMs = 65_000;
+		delete archivedTelemetry.steps[1]!.activeSince;
+		const lines = formatToolResultLines({
+			content: [],
+			details: { ...completed, telemetry: archivedTelemetry },
+		}, true, false);
 		assert.equal(lines.slice(1).filter((line) => line.startsWith("✓ ")).length, 4);
+		assert.match(lines.join("\n"), /Apply changes.*1m05s/);
+		assert.match(lines.join("\n"), /Runtime: openai\/gpt-5\.6-sol.*↑43k.*↓2\.4k/);
 		assert.match(lines.join("\n"), /Verification: Workbook checks passed/);
 		assert.match(lines.join("\n"), /Artifacts: Bonus_Config\.xlsx · revision\.md/);
 		assert.doesNotMatch(lines.join("\n"), /\/secret\//);
