@@ -109,6 +109,7 @@ describe("buildWidgetSegments", () => {
 			widgets: ["fast", "progress"],
 		});
 		assert.deepEqual(active.map((segment) => segment.text), ["", "task 1/2"]);
+		assert.equal(active[0]?.parts?.[0]?.tone, "warn");
 
 		const inactive = buildWidgetSegments(
 			{ ...baseSnapshot, fast: undefined },
@@ -176,13 +177,18 @@ describe("buildWidgetSegments", () => {
 		assert.deepEqual(segments.map((segment) => segment.text), ["🏠"]);
 	});
 
-	it("shows an unavailable marker when context usage is unknown", () => {
+	it("shows an unavailable marker when context usage is missing or unknown after compaction", () => {
 		for (const widget of ["context", "contextBar"] as const) {
-			const segments = buildWidgetSegments(
-				{ ...baseSnapshot, context: undefined },
-				{ ...DEFAULT_CONFIG, widgets: [widget] },
-			);
-			assert.deepEqual(segments.map((segment) => segment.text), ["Context ?"]);
+			for (const context of [
+				undefined,
+				{ tokens: null, contextWindow: 100_000, percent: null },
+			]) {
+				const segments = buildWidgetSegments(
+					{ ...baseSnapshot, context },
+					{ ...DEFAULT_CONFIG, widgets: [widget] },
+				);
+				assert.deepEqual(segments.map((segment) => segment.text), ["Context ?"]);
+			}
 		}
 	});
 
@@ -283,17 +289,18 @@ describe("shouldTrackToolActivity", () => {
 });
 
 describe("joinExtensionProgress", () => {
-	it("keeps generic modes and strips ANSI and OSC controls", () => {
+	it("filters dedicated statuses and strips ANSI and OSC controls", () => {
 		const statuses = new Map([
 			["ponytail", "\x1b[32mponytail: LITE\x1b[39m"],
 			["fast", ""],
 			["task", "\x1b]8;;https://example.com\x07step 1/2\x1b]8;;\x07"],
 			["other", "  building  "],
 		]);
-		assert.equal(joinExtensionProgress(statuses), "ponytail: LITE step 1/2 building");
+		assert.equal(joinExtensionProgress(statuses), "step 1/2 building");
 	});
 
 	it("returns undefined when only dedicated or empty statuses remain", () => {
+		assert.equal(joinExtensionProgress(new Map([["ponytail", "ponytail: LITE"]])), undefined);
 		assert.equal(joinExtensionProgress(new Map([["pi-essentials-mode", "PLAN"]])), undefined);
 		assert.equal(joinExtensionProgress(new Map([["fast", ""]])), undefined);
 		assert.equal(joinExtensionProgress(new Map([["task", "   "]])), undefined);

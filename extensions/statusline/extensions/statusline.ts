@@ -484,6 +484,7 @@ export default function statusline(pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_start", async () => {
+		resetToolActivity();
 		durationTracker.startRound();
 		stopDurationTick();
 		setRunState("Thinking");

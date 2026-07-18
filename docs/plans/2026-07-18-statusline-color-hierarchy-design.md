@@ -54,8 +54,8 @@ Thinking tokens remain owned by pi so custom themes continue to work:
 - Model id and normal numeric values: `text`; thinking level: matching native thinking token.
 - Path, session, mode, branch, labels, and inactive glyphs: `muted`.
 - Separators, empty bars, environment metadata, and `Ready`: `dim`.
-- `Working`, active tools, and live progress: `accent`; `Thinking`: current thinking token.
-- Routine tool success: `muted`; failures: `error`; git `+` / `-` signs retain success/error semantics while counts stay neutral.
+- `Working`, active tools, and live progress: `accent`; `Thinking`: current thinking token; fast emoji: `warning`.
+- Tool success/failure glyphs: `success` / `error`; names stay muted and counts stay neutral; git `+` / `-` signs retain success/error semantics.
 
 ## Cross-extension Integration
 

@@ -163,7 +163,7 @@ export function fitSegmentsToWidth(
 				dropIndex = i;
 			}
 		}
-		if (dropIndex < 0 || dropPriority <= 5) break;
+		if (dropIndex < 0 || dropPriority < 5) break;
 		current = current.filter((_, index) => index !== dropIndex);
 	}
 

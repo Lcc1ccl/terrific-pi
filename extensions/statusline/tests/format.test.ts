@@ -11,6 +11,7 @@ import {
 	formatCwd,
 	formatDurationContent,
 	formatEnvironment,
+	formatFastBadge,
 	formatModelContent,
 	formatQuota,
 	formatTokenDirection,
@@ -179,12 +180,20 @@ describe("formatToolActivity", () => {
 		const parts = formatToolActivity(activity, "emoji")?.parts ?? [];
 		assert.ok(parts.some((part) => part.tone === "label" && part.text.includes("Bash")));
 		assert.ok(parts.some((part) => part.tone === "value" && part.text === "x1"));
-		assert.ok(parts.some((part) => part.tone === "muted" && part.text.includes("✓")));
+		assert.ok(parts.some((part) => part.tone === "success" && part.text.includes("✓")));
+		assert.ok(parts.some((part) => part.tone === "value" && part.text === "x6"));
 	});
 
 	it("reserves accent for active tools", () => {
 		const parts = formatToolActivity({ Bash: { active: 1, success: 0, error: 0 } }, "emoji")?.parts ?? [];
 		assert.ok(parts.some((part) => part.tone === "active" && part.text.includes("…")));
+	});
+});
+
+describe("formatFastBadge", () => {
+	it("uses the warning tone for the emoji badge", () => {
+		assert.equal(formatFastBadge("", "emoji")?.parts[0]?.tone, "warn");
+		assert.equal(formatFastBadge("", "plain")?.parts[0]?.tone, "label");
 	});
 });
 

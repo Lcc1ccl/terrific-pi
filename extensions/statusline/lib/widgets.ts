@@ -34,7 +34,7 @@ import type {
 import { WIDGET_PRIORITY } from "./types.ts";
 
 /** Extension status keys that have dedicated widgets. */
-export const EXCLUDED_PROGRESS_KEYS = new Set(["pi-essentials-mode", "fast"]);
+export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail", "pi-essentials-mode", "fast"]);
 
 /** Metadata-only tools that should not appear in footer activity. */
 export const EXCLUDED_TOOL_ACTIVITY_NAMES = new Set(["process_update"]);
@@ -341,7 +341,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 					const hasActiveOrError = Object.values(snapshot.toolActivity).some(
 						(entry) => entry.active > 0 || entry.error > 0,
 					);
-					pushContent(segments, id, "progress", body, hasActiveOrError ? 20 : priority);
+					pushContent(segments, id, "progress", body, hasActiveOrError ? 4 : priority);
 				}
 				break;
 			}

@@ -19,9 +19,9 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 - Context bar (remaining/used mode)
 - Native OAuth **quota** for official Claude / Codex only
 - Environment counts (context files / skills / tools) after first agent start
-- Tool activity aggregates (active / success / error)
+- Current agent-run tool activity aggregates (active / success / error)
 - Git branch (`main`/`master` is `🏠` in emoji mode) + committed branch diff (`+N -M`)
-- Extension statuses (dedicated mode and fast badges excluded)
+- Extension statuses (dedicated mode, fast, and ponytail statuses excluded)
 - LLM duration: current round / current process total (assistant stream only)
 - Run state: Thinking / Working / Ready
 - Interactive `/statusline` configurator and `/statusline reload`
@@ -130,8 +130,8 @@ ok Read x6 · ok Bash x3 │ time 12.3s / 1m45s │ Ready
 The footer follows the active pi theme rather than maintaining separate RGB palettes:
 
 - normal values use `text`; labels and supporting metadata use `muted`; separators and tertiary metadata use `dim`
-- `accent` is reserved for active work; routine successes stay muted, while failures use `error`
-- context and quota bars remain neutral; only percentages use `warning` above 70% and `error` above 90%, matching pi's native footer thresholds
+- tool status glyphs use `accent` / `success` / `error`; names stay muted and counts stay neutral
+- fast emoji uses `warning` (gold/yellow); context and quota bars stay neutral, with only high percentages colored
 - thinking levels use `thinkingOff` through `thinkingMax`, the same tokens as pi's editor border
 
 `plain` mode is recommended for a restrained HUD because terminal emoji retain their own colors.
@@ -154,12 +154,12 @@ The footer follows the active pi theme rather than maintaining separate RGB pale
 | `branchDiff` | committed line diff from merge-base to `HEAD` vs default branch |
 | `quota` | native OAuth Claude/Codex usage windows, including loading/first-load error state |
 | `environment` | context files / skills / tools counts (low-contrast / dim) |
-| `toolActivity` | per-tool active/success/error counts; metadata-only `process_update` is excluded |
+| `toolActivity` | current agent-run per-tool active/success/error counts; metadata-only `process_update` is excluded |
 | `progress` | extension status texts (excludes dedicated badges) |
 | `duration` | current-round / current-process LLM time (`🕒` prefix in emoji mode) |
 | `state` | Ready / Thinking / Working |
 
-`toolActivity` counts business tools only. Process View's `process_update` publishes session metadata and is ignored at both tool start and tool end, preventing duplicate progress in the footer and editor-above HUD.
+`toolActivity` resets at each agent run and counts business tools only. Process View's `process_update` publishes session metadata and is ignored at both tool start and tool end, preventing duplicate progress in the footer and editor-above HUD.
 
 ### Quota eligibility (strict)
 
@@ -216,8 +216,8 @@ Each successful change is atomically written to the config file and the footer r
 | path, model, context | live pi context; unavailable context renders as `Context ?` |
 | tokens, cache, cost | assistant usage entries on the active session branch; refreshed after assistant completion and branch/tree changes |
 | branch | pi footer data; branch diff is local Git committed-line data only and excludes the working tree |
-| mode, fast, progress | pi extension status map; the renderer removes terminal control sequences from every dynamic segment |
-| duration, tools, environment | process-local event aggregates; they are not restored from session history |
+| mode, fast, progress | pi extension status map; dedicated mode/fast/ponytail statuses are excluded from progress, and terminal controls are removed |
+| duration, tools, environment | process-local event data; tool counts reset per agent run and are not restored from session history |
 | quota | official provider account usage endpoints; account-level, cached, and independent of active-branch totals |
 
 ## Structure

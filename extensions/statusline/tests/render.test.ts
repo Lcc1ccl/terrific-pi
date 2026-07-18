@@ -142,6 +142,27 @@ describe("responsive fitting", () => {
 		);
 		assert.deepEqual(fitted.map((segment) => segment.id), ["contextBar"]);
 	});
+
+	it("keeps live tool activity ahead of the generic working state", () => {
+		const snapshot = {
+			...hudSnapshot,
+			runState: "Working" as const,
+			toolActivity: {
+				bash: { active: 1, success: 110, error: 13 },
+				read: { active: 0, success: 80, error: 2 },
+			},
+		};
+		const config = { ...DEFAULT_CONFIG, widgets: ["toolActivity", "state"] as const };
+		const built = buildWidgetSegments(snapshot, { ...config, widgets: [...config.widgets] });
+		const fitted = fitSegmentsToWidth(
+			built,
+			{ ...config, widgets: [...config.widgets] },
+			TEST_THEME,
+			30,
+			plainVisibleWidth,
+		);
+		assert.deepEqual(fitted.map((segment) => segment.id), ["toolActivity"]);
+	});
 });
 
 describe("terminal safety", () => {

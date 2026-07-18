@@ -239,8 +239,8 @@ export function formatFastBadge(value: string | undefined, iconMode: IconMode = 
 	if (iconMode === "plain") {
 		return content([{ text: "fast", tone: "label" }]);
 	}
-	// Keep extension glyph; ensure trailing space only when more text follows (icon-only here).
-	return content([{ text: value, tone: "icon" }]);
+	// Warning maps to the active theme's gold/yellow emphasis.
+	return content([{ text: value, tone: "warn" }]);
 }
 
 export function formatQuotaWindowLabel(windowSeconds: number | undefined, fallback: string): string {
@@ -331,7 +331,7 @@ export function formatToolActivity(
 
 	for (const name of names) {
 		const entry = activity[name]!;
-		const pushEntry = (icon: string, tone: "active" | "error" | "muted", count: number) => {
+		const pushEntry = (icon: string, tone: "active" | "error" | "success", count: number) => {
 			if (parts.length > 0) parts.push({ text: " · ", tone: "dim" });
 			parts.push({ text: `${icon} `, tone });
 			parts.push({ text: `${name} `, tone: "label" });
@@ -339,7 +339,7 @@ export function formatToolActivity(
 		};
 		if (entry.active > 0) pushEntry("…", "active", entry.active);
 		if (entry.error > 0) pushEntry(err, "error", entry.error);
-		if (entry.success > 0) pushEntry(ok, "muted", entry.success);
+		if (entry.success > 0) pushEntry(ok, "success", entry.success);
 	}
 
 	return parts.length > 0 ? content(parts) : undefined;
