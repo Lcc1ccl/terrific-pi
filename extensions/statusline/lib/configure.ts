@@ -1,6 +1,9 @@
 import {
+	DEFAULT_CONTEXT_BAR_WIDTH,
 	DEFAULT_WIDGET_SPACING,
+	MAX_CONTEXT_BAR_WIDTH,
 	MAX_WIDGET_SPACING,
+	MIN_CONTEXT_BAR_WIDTH,
 	MIN_WIDGET_SPACING,
 } from "./config.ts";
 import type { ContextMode, IconMode, StatuslineConfig, StatuslineLayout, WidgetId } from "./types.ts";
@@ -146,14 +149,12 @@ export function moveWidget(
 
 export function parseContextBarWidth(raw: string): MutationResult<number> {
 	const trimmed = raw.trim();
-	if (!/^\d+$/.test(trimmed)) {
-		return { ok: false, error: "Width must be an integer from 1 to 40" };
-	}
+	const error = `Width must be an integer from ${MIN_CONTEXT_BAR_WIDTH} to ${MAX_CONTEXT_BAR_WIDTH} (default ${DEFAULT_CONTEXT_BAR_WIDTH})`;
+	if (!/^\d+$/.test(trimmed)) return { ok: false, error };
 	const value = Number.parseInt(trimmed, 10);
-	if (value < 1 || value > 40) {
-		return { ok: false, error: "Width must be an integer from 1 to 40" };
-	}
-	return { ok: true, value };
+	return value >= MIN_CONTEXT_BAR_WIDTH && value <= MAX_CONTEXT_BAR_WIDTH
+		? { ok: true, value }
+		: { ok: false, error };
 }
 
 export function parseWidgetSpacing(raw: string): MutationResult<number> {
@@ -172,7 +173,7 @@ export function formatConfigSummary(config: StatuslineConfig, configPath: string
 		`layout: ${config.layout}`,
 		`iconMode: ${config.iconMode}`,
 		`contextMode: ${config.contextMode}`,
-		`contextBarWidth: ${config.contextBarWidth}`,
+		`contextBarWidth: ${config.contextBarWidth} (default ${DEFAULT_CONTEXT_BAR_WIDTH}, min ${MIN_CONTEXT_BAR_WIDTH}, max ${MAX_CONTEXT_BAR_WIDTH})`,
 		`minimal: ${config.minimal}`,
 		`spacing: ${config.spacing} (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
 		`config: ${configPath}`,
@@ -184,7 +185,7 @@ function mainMenuTitle(config: StatuslineConfig, configPath: string): string {
 		"Statusline Config",
 		`widgets: ${config.widgets.join(", ")}`,
 		`layout: ${config.layout} · iconMode: ${config.iconMode}`,
-		`contextMode: ${config.contextMode} · bar: ${config.contextBarWidth} · minimal: ${config.minimal}`,
+		`contextMode: ${config.contextMode} · bar: ${config.contextBarWidth} (default ${DEFAULT_CONTEXT_BAR_WIDTH}) · minimal: ${config.minimal}`,
 		`spacing: ${config.spacing} (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
 		`config: ${configPath}`,
 	].join("\n");
@@ -262,7 +263,10 @@ async function setContextMode(deps: ConfigureDeps): Promise<void> {
 
 async function setContextBarWidth(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
-	const raw = await deps.ui.input("Context bar width (1-40)", String(config.contextBarWidth));
+	const raw = await deps.ui.input(
+		`Context bar width (default ${DEFAULT_CONTEXT_BAR_WIDTH}, min ${MIN_CONTEXT_BAR_WIDTH}, max ${MAX_CONTEXT_BAR_WIDTH})`,
+		String(config.contextBarWidth),
+	);
 	if (raw === undefined) return;
 
 	const parsed = parseContextBarWidth(raw);

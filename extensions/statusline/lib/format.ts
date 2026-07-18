@@ -1,7 +1,52 @@
 import { homedir } from "node:os";
 import { relative, resolve, sep } from "node:path";
 
-import type { ContextMode, IconMode, QuotaSnapshot, TokenTotals, ToolActivity } from "./types.ts";
+import type {
+	ContextMode,
+	IconMode,
+	QuotaSnapshot,
+	SegmentPart,
+	SegmentTone,
+	TokenTotals,
+	ToolActivity,
+} from "./types.ts";
+
+export type SegmentContent = {
+	text: string;
+	parts: SegmentPart[];
+};
+
+/** Used-percent thresholds for bar fill color (independent of remaining/used display mode). */
+export const BAR_WARN_USED_PERCENT = 60;
+export const BAR_ERROR_USED_PERCENT = 85;
+
+function content(parts: SegmentPart[]): SegmentContent {
+	return {
+		text: parts.map((part) => part.text).join(""),
+		parts,
+	};
+}
+
+export function barFillTone(usedPercent: number): SegmentTone {
+	const used = Math.max(0, Math.min(100, usedPercent));
+	if (used >= BAR_ERROR_USED_PERCENT) return "error";
+	if (used >= BAR_WARN_USED_PERCENT) return "warn";
+	return "bar";
+}
+
+export function formatBarParts(usedPercent: number, filledRatio: number, width: number): SegmentPart[] {
+	const barWidth = Math.max(4, Math.min(40, Math.floor(width || 10)));
+	const ratio = Math.max(0, Math.min(1, filledRatio));
+	const filled = Math.max(0, Math.min(barWidth, Math.round(ratio * barWidth)));
+	const empty = barWidth - filled;
+	const fillTone = barFillTone(usedPercent);
+	return [
+		{ text: "[", tone: "dim" },
+		{ text: "█".repeat(filled), tone: fillTone },
+		{ text: "░".repeat(empty), tone: "dim" },
+		{ text: "] ", tone: "dim" },
+	];
+}
 
 export function formatTokensCompact(value: number): string {
 	const count = Math.max(0, value);
@@ -28,60 +73,79 @@ export function formatTokensCompact(value: number): string {
 	return `${scaled.toFixed(decimals).replace(/\.0+$|(?<=\.[0-9]*)0+$/g, "")}${suffix}`;
 }
 
-export function formatCost(value: number, minimal = false): string {
+export function formatCost(value: number, minimal = false): SegmentContent {
 	const amount = Math.max(0, value).toFixed(2);
-	return minimal ? amount : `$${amount}`;
+	if (minimal) return content([{ text: amount, tone: "value" }]);
+	return content([
+		{ text: "$", tone: "label" },
+		{ text: amount, tone: "value" },
+	]);
 }
 
 export function formatCache(
 	tokens: TokenTotals,
 	minimal = false,
 	iconMode: IconMode = "emoji",
-): string | undefined {
+): SegmentContent | undefined {
 	const { input, cacheRead, cacheWrite } = tokens;
 	if (cacheRead <= 0 && cacheWrite <= 0) return undefined;
 
 	const prompt = input + cacheRead + cacheWrite;
 	const hitRate = prompt > 0 ? ((cacheRead / prompt) * 100).toFixed(1) : "0.0";
-	if (minimal) return `${hitRate}%`;
-	return iconMode === "plain" ? `cache ${hitRate}%` : `🎯${hitRate}%`;
+	const value = `${hitRate}%`;
+	if (minimal) return content([{ text: value, tone: "value" }]);
+	if (iconMode === "plain") {
+		return content([
+			{ text: "cache ", tone: "label" },
+			{ text: value, tone: "value" },
+		]);
+	}
+	return content([
+		{ text: "🎯 ", tone: "icon" },
+		{ text: value, tone: "value" },
+	]);
 }
 
 export function formatContextText(
 	percent: number | null | undefined,
 	mode: ContextMode,
 	minimal = false,
-): string | undefined {
+): SegmentContent | undefined {
 	if (percent === null || percent === undefined || Number.isNaN(percent)) return undefined;
 	const used = Math.max(0, Math.min(100, Math.round(percent)));
 	const remaining = Math.max(0, Math.min(100, 100 - used));
 	const value = mode === "used" ? used : remaining;
-	if (minimal) return `${value}%`;
-	return mode === "used" ? `Context ${value}% used` : `Context ${value}% left`;
+	if (minimal) return content([{ text: `${value}%`, tone: "value" }]);
+	const suffix = mode === "used" ? "% used" : "% left";
+	return content([
+		{ text: "Context ", tone: "label" },
+		{ text: `${value}${suffix}`, tone: "value" },
+	]);
 }
 
 export function formatBar(filledRatio: number, width: number): string {
-	const barWidth = Math.max(4, Math.min(40, Math.floor(width || 10)));
-	const ratio = Math.max(0, Math.min(1, filledRatio));
-	const filled = Math.max(0, Math.min(barWidth, Math.round(ratio * barWidth)));
-	const empty = barWidth - filled;
-	return `${"█".repeat(filled)}${"░".repeat(empty)}`;
+	const parts = formatBarParts(0, filledRatio, width);
+	// Keep a plain bar body without brackets for callers that only need glyphs.
+	return `${parts[1]?.text ?? ""}${parts[2]?.text ?? ""}`;
 }
 
 export function formatContextBar(
 	percent: number | null | undefined,
 	width: number,
 	mode: ContextMode,
-): string | undefined {
+): SegmentContent | undefined {
 	if (percent === null || percent === undefined || Number.isNaN(percent)) return undefined;
 	const barWidth = Math.max(4, Math.min(40, Math.floor(width || 10)));
 	const used = Math.max(0, Math.min(100, percent));
 	const filledRatio = mode === "used" ? used / 100 : (100 - used) / 100;
-	const bar = formatBar(filledRatio, barWidth);
 	const label = mode === "used"
 		? `${Math.round(used)}%`
 		: `${Math.max(0, Math.min(100, Math.round(100 - used)))}%`;
-	return `[${bar}] ${label}`;
+	return content([
+		{ text: "Context ", tone: "label" },
+		...formatBarParts(used, filledRatio, barWidth),
+		{ text: label, tone: "value" },
+	]);
 }
 
 export function formatCwd(cwd: string): string {
@@ -104,28 +168,71 @@ export function formatTokenDirection(
 	direction: "in" | "out",
 	value: number,
 	iconMode: IconMode = "emoji",
-): string {
+): SegmentContent {
 	const compact = formatTokensCompact(value);
 	if (iconMode === "plain") {
-		return direction === "in" ? `in ${compact}` : `out ${compact}`;
+		return content([
+			{ text: direction === "in" ? "in " : "out ", tone: "label" },
+			{ text: compact, tone: "value" },
+		]);
 	}
-	return direction === "in" ? `${compact}` : `${compact}`;
+	return content([
+		{ text: direction === "in" ? "🔼 " : "🔽 ", tone: "icon" },
+		{ text: compact, tone: "value" },
+	]);
 }
 
-export function formatBranch(branch: string, iconMode: IconMode = "emoji"): string {
+export function formatTokenPairMinimal(
+	input: number,
+	output: number,
+	iconMode: IconMode = "emoji",
+): SegmentContent {
+	const left = formatTokensCompact(input);
+	const right = formatTokensCompact(output);
+	if (iconMode === "plain") {
+		return content([
+			{ text: "in ", tone: "label" },
+			{ text: left, tone: "value" },
+			{ text: "/", tone: "label" },
+			{ text: "out ", tone: "label" },
+			{ text: right, tone: "value" },
+		]);
+	}
+	return content([
+		{ text: "🔼 ", tone: "icon" },
+		{ text: left, tone: "value" },
+		{ text: "/", tone: "label" },
+		{ text: "🔽 ", tone: "icon" },
+		{ text: right, tone: "value" },
+	]);
+}
+
+export function formatBranch(branch: string, iconMode: IconMode = "emoji"): SegmentContent {
 	const isDefault = branch === "main" || branch === "master";
-	if (isDefault && iconMode === "emoji") return "🏠";
-	return branch;
+	if (isDefault && iconMode === "emoji") {
+		return content([{ text: "🏠", tone: "icon" }]);
+	}
+	return content([{ text: branch, tone: "value" }]);
 }
 
-export function formatBranchDiff(stats: { additions: number; deletions: number }): string | undefined {
+export function formatBranchDiff(stats: { additions: number; deletions: number }): SegmentContent | undefined {
 	if (stats.additions === 0 && stats.deletions === 0) return undefined;
-	return `+${stats.additions} -${stats.deletions}`;
+	return content([
+		{ text: "+", tone: "success" },
+		{ text: String(stats.additions), tone: "value" },
+		{ text: " ", tone: "dim" },
+		{ text: "-", tone: "error" },
+		{ text: String(stats.deletions), tone: "value" },
+	]);
 }
 
-export function formatFastBadge(value: string | undefined, iconMode: IconMode = "emoji"): string | undefined {
+export function formatFastBadge(value: string | undefined, iconMode: IconMode = "emoji"): SegmentContent | undefined {
 	if (!value) return undefined;
-	return iconMode === "plain" ? "fast" : value;
+	if (iconMode === "plain") {
+		return content([{ text: "fast", tone: "label" }]);
+	}
+	// Keep extension glyph; ensure trailing space only when more text follows (icon-only here).
+	return content([{ text: value, tone: "icon" }]);
 }
 
 export function formatQuotaWindowLabel(windowSeconds: number | undefined, fallback: string): string {
@@ -144,15 +251,23 @@ export function formatQuotaWindowLabel(windowSeconds: number | undefined, fallba
 
 export function formatQuotaBar(usedPercent: number, width: number): string {
 	const clamped = Math.max(0, Math.min(100, usedPercent));
-	const bar = formatBar(clamped / 100, width);
-	return `[${bar}] ${Math.round(clamped)}%`;
+	const parts = formatBarParts(clamped, clamped / 100, width);
+	return `${parts.map((part) => part.text).join("")}${Math.round(clamped)}%`;
+}
+
+export function formatQuotaBarParts(usedPercent: number, width: number): SegmentPart[] {
+	const clamped = Math.max(0, Math.min(100, usedPercent));
+	return [
+		...formatBarParts(clamped, clamped / 100, width),
+		{ text: `${Math.round(clamped)}%`, tone: "value" },
+	];
 }
 
 export function formatQuota(
 	snapshot: QuotaSnapshot,
 	iconMode: IconMode = "emoji",
 	barWidth = 6,
-): string | undefined {
+): SegmentContent | undefined {
 	const now = Date.now();
 	const windows = snapshot.windows.filter((window) => {
 		if (!Number.isFinite(window.usedPercent)) return false;
@@ -161,47 +276,93 @@ export function formatQuota(
 	});
 	if (windows.length === 0) return undefined;
 
-	const prefix = iconMode === "plain" ? "usage" : "📊";
-	const parts = windows.map((window) => {
+	const parts: SegmentPart[] = [];
+	if (iconMode === "plain") {
+		parts.push({ text: "usage ", tone: "label" });
+	} else {
+		parts.push({ text: "📊 ", tone: "icon" });
+	}
+
+	windows.forEach((window, index) => {
+		if (index > 0) parts.push({ text: " · ", tone: "dim" });
 		const label = window.label || formatQuotaWindowLabel(window.windowSeconds, window.id);
-		return `${label} ${formatQuotaBar(window.usedPercent, barWidth)}`;
+		parts.push({ text: `${label} `, tone: "label" });
+		parts.push(...formatQuotaBarParts(window.usedPercent, barWidth));
 	});
-	const body = parts.join(" · ");
-	const staleMark = snapshot.stale ? " ~" : "";
-	return `${prefix} ${body}${staleMark}`;
+	if (snapshot.stale) parts.push({ text: " ~", tone: "dim" });
+	return content(parts);
 }
 
 export function formatEnvironment(counts: {
 	contextFiles: number;
 	skills: number;
 	tools: number;
-}): string {
-	return `${counts.contextFiles} context files · ${counts.skills} skills · ${counts.tools} tools`;
+}): SegmentContent {
+	return content([
+		{ text: String(counts.contextFiles), tone: "dim" },
+		{ text: " context files", tone: "dim" },
+		{ text: " · ", tone: "dim" },
+		{ text: String(counts.skills), tone: "dim" },
+		{ text: " skills", tone: "dim" },
+		{ text: " · ", tone: "dim" },
+		{ text: String(counts.tools), tone: "dim" },
+		{ text: " tools", tone: "dim" },
+	]);
 }
 
 export function formatToolActivity(
 	activity: Record<string, ToolActivity>,
 	iconMode: IconMode = "emoji",
-): string | undefined {
+): SegmentContent | undefined {
 	const names = Object.keys(activity).sort((a, b) => a.localeCompare(b));
 	if (names.length === 0) return undefined;
 
 	const ok = iconMode === "plain" ? "ok" : "✓";
 	const err = iconMode === "plain" ? "error" : "✗";
-	const parts: string[] = [];
+	const parts: SegmentPart[] = [];
 
 	for (const name of names) {
 		const entry = activity[name]!;
-		if (entry.active > 0) {
-			parts.push(`… ${name} x${entry.active}`);
-		}
-		if (entry.error > 0) {
-			parts.push(`${err} ${name} x${entry.error}`);
-		}
-		if (entry.success > 0) {
-			parts.push(`${ok} ${name} x${entry.success}`);
-		}
+		const pushEntry = (icon: string, tone: "error" | "success" | "icon", count: number) => {
+			if (parts.length > 0) parts.push({ text: " · ", tone: "dim" });
+			parts.push({ text: `${icon} `, tone });
+			parts.push({ text: `${name} `, tone: "label" });
+			parts.push({ text: `x${count}`, tone: "value" });
+		};
+		if (entry.active > 0) pushEntry("…", "icon", entry.active);
+		if (entry.error > 0) pushEntry(err, "error", entry.error);
+		if (entry.success > 0) pushEntry(ok, "success", entry.success);
 	}
 
-	return parts.length > 0 ? parts.join(" · ") : undefined;
+	return parts.length > 0 ? content(parts) : undefined;
+}
+
+export function formatDurationContent(
+	pair: string,
+	iconMode: IconMode = "emoji",
+): SegmentContent {
+	if (iconMode === "emoji") {
+		return content([
+			{ text: "🕒 ", tone: "icon" },
+			{ text: pair, tone: "value" },
+		]);
+	}
+	return content([
+		{ text: "time ", tone: "label" },
+		{ text: pair, tone: "value" },
+	]);
+}
+
+export function formatModelContent(
+	modelId: string,
+	thinkingLevel: string,
+	hasReasoning: boolean,
+): SegmentContent {
+	if (hasReasoning && thinkingLevel !== "off") {
+		return content([
+			{ text: modelId, tone: "value" },
+			{ text: ` ${thinkingLevel}`, tone: "label" },
+		]);
+	}
+	return content([{ text: modelId, tone: "value" }]);
 }

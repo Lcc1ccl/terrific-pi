@@ -25,7 +25,32 @@ export type WidgetId =
 
 export type ContextMode = "remaining" | "used";
 
-export type Accent = "model" | "path" | "branch" | "state" | "usage" | "progress" | "session";
+export type Accent =
+	| "model"
+	| "path"
+	| "branch"
+	| "state"
+	| "usage"
+	| "progress"
+	| "session"
+	| "dim"
+	| "neutral";
+
+/** Within-segment tone: labels/icons muted, values bright; bars use threshold tones. */
+export type SegmentTone =
+	| "icon"
+	| "label"
+	| "value"
+	| "dim"
+	| "error"
+	| "success"
+	| "warn"
+	| "bar";
+
+export interface SegmentPart {
+	text: string;
+	tone?: SegmentTone;
+}
 
 export type WidgetGroup = "project" | "usage" | "environment" | "activity";
 
@@ -160,12 +185,14 @@ export interface WidgetSegment {
 	id: WidgetId;
 	accent: Accent;
 	text: string;
+	/** Optional dual-tone parts; `text` must equal joined part texts. */
+	parts?: SegmentPart[];
 	/** Higher values are dropped first when the line is too narrow. Default 50. */
 	priority?: number;
 	/** Optional bar rebuild for responsive narrowing. */
 	bar?: {
 		width: number;
 		minWidth: number;
-		rebuild: (width: number) => string;
+		rebuild: (width: number) => string | { text: string; parts?: SegmentPart[] };
 	};
 }

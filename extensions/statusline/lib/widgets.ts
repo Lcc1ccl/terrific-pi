@@ -8,12 +8,15 @@ import {
 	formatContextText,
 	formatCost,
 	formatCwd,
+	formatDurationContent,
 	formatEnvironment,
 	formatFastBadge,
+	formatModelContent,
 	formatQuota,
 	formatTokenDirection,
+	formatTokenPairMinimal,
 	formatToolActivity,
-	formatTokensCompact,
+	type SegmentContent,
 } from "./format.ts";
 import { formatWidgetSeparator } from "./render.ts";
 import type {
@@ -97,6 +100,24 @@ export const PREVIEW_SNAPSHOT: StatusSnapshot = {
 	},
 };
 
+function pushContent(
+	segments: WidgetSegment[],
+	id: WidgetId,
+	accent: WidgetSegment["accent"],
+	body: SegmentContent,
+	priority: number,
+	extra?: Partial<WidgetSegment>,
+): void {
+	segments.push({
+		id,
+		accent,
+		text: body.text,
+		parts: body.parts,
+		priority,
+		...extra,
+	});
+}
+
 export function formatWidgetsPreview(
 	enabled: readonly string[],
 	spacing = DEFAULT_CONFIG.spacing,
@@ -121,76 +142,101 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 		const priority = WIDGET_PRIORITY[id] ?? 50;
 		switch (id) {
 			case "path":
-				segments.push({ id, accent: "path", text: formatCwd(snapshot.cwd), priority });
+				segments.push({
+					id,
+					accent: "path",
+					text: formatCwd(snapshot.cwd),
+					parts: [{ text: formatCwd(snapshot.cwd), tone: "value" }],
+					priority,
+				});
 				break;
 			case "session":
 				if (snapshot.sessionName) {
-					segments.push({ id, accent: "session", text: snapshot.sessionName, priority });
+					segments.push({
+						id,
+						accent: "session",
+						text: snapshot.sessionName,
+						parts: [{ text: snapshot.sessionName, tone: "value" }],
+						priority,
+					});
 				}
 				break;
-			case "model": {
-				const text = snapshot.hasReasoning && snapshot.thinkingLevel !== "off"
-					? `${snapshot.modelId} ${snapshot.thinkingLevel}`
-					: snapshot.modelId;
-				segments.push({ id, accent: "model", text, priority });
+			case "model":
+				pushContent(
+					segments,
+					id,
+					"model",
+					formatModelContent(snapshot.modelId, snapshot.thinkingLevel, snapshot.hasReasoning),
+					priority,
+				);
 				break;
-			}
 			case "mode":
 				if (snapshot.mode) {
-					segments.push({ id, accent: "state", text: snapshot.mode, priority });
+					segments.push({
+						id,
+						accent: "state",
+						text: snapshot.mode,
+						parts: [{ text: snapshot.mode, tone: "value" }],
+						priority,
+					});
 				}
 				break;
 			case "fast": {
-				const text = formatFastBadge(snapshot.fast, iconMode);
-				if (text) {
-					segments.push({ id, accent: "state", text, priority });
-				}
+				const body = formatFastBadge(snapshot.fast, iconMode);
+				if (body) pushContent(segments, id, "state", body, priority);
 				break;
 			}
 			case "tokens": {
-				const input = formatTokenDirection("in", snapshot.tokens.input, iconMode);
-				const output = formatTokenDirection("out", snapshot.tokens.output, iconMode);
 				if (minimal) {
-					const left = formatTokensCompact(snapshot.tokens.input);
-					const right = formatTokensCompact(snapshot.tokens.output);
-					const text = iconMode === "plain"
-						? `in ${left}/out ${right}`
-						: `${left}/${right}`;
-					segments.push({ id, accent: "usage", text, priority });
+					pushContent(
+						segments,
+						id,
+						"usage",
+						formatTokenPairMinimal(snapshot.tokens.input, snapshot.tokens.output, iconMode),
+						priority,
+					);
 				} else {
-					segments.push({ id, accent: "usage", text: input, priority });
-					segments.push({ id, accent: "usage", text: output, priority });
+					pushContent(
+						segments,
+						id,
+						"usage",
+						formatTokenDirection("in", snapshot.tokens.input, iconMode),
+						priority,
+					);
+					pushContent(
+						segments,
+						id,
+						"usage",
+						formatTokenDirection("out", snapshot.tokens.output, iconMode),
+						priority,
+					);
 				}
 				break;
 			}
 			case "cache": {
-				const text = formatCache(snapshot.tokens, minimal, iconMode);
-				if (text) segments.push({ id, accent: "usage", text, priority });
+				const body = formatCache(snapshot.tokens, minimal, iconMode);
+				if (body) pushContent(segments, id, "usage", body, priority);
 				break;
 			}
 			case "cost":
 				if (snapshot.cost > 0) {
-					segments.push({ id, accent: "usage", text: formatCost(snapshot.cost, minimal), priority });
+					pushContent(segments, id, "usage", formatCost(snapshot.cost, minimal), priority);
 				}
 				break;
 			case "context": {
-				const text = formatContextText(snapshot.context?.percent, config.contextMode, minimal);
-				if (text) segments.push({ id, accent: "usage", text, priority });
+				const body = formatContextText(snapshot.context?.percent, config.contextMode, minimal);
+				if (body) pushContent(segments, id, "usage", body, priority);
 				break;
 			}
 			case "contextBar": {
 				const percent = snapshot.context?.percent;
-				const text = formatContextBar(percent, config.contextBarWidth, config.contextMode);
-				if (text && percent !== null && percent !== undefined && !Number.isNaN(percent)) {
-					segments.push({
-						id,
-						accent: "usage",
-						text,
-						priority,
+				const body = formatContextBar(percent, config.contextBarWidth, config.contextMode);
+				if (body && percent !== null && percent !== undefined && !Number.isNaN(percent)) {
+					pushContent(segments, id, "neutral", body, priority, {
 						bar: {
 							width: Math.max(4, Math.min(40, Math.floor(config.contextBarWidth || 10))),
 							minWidth: 4,
-							rebuild: (width) => formatContextBar(percent, width, config.contextMode) ?? text,
+							rebuild: (width) => formatContextBar(percent, width, config.contextMode) ?? body,
 						},
 					});
 				}
@@ -198,77 +244,71 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 			}
 			case "branch":
 				if (snapshot.branch) {
-					segments.push({
-						id,
-						accent: "branch",
-						text: formatBranch(snapshot.branch, iconMode),
-						priority,
-					});
+					pushContent(segments, id, "branch", formatBranch(snapshot.branch, iconMode), priority);
 				}
 				break;
 			case "branchDiff":
 				if (snapshot.branchDiff) {
-					const text = formatBranchDiff(snapshot.branchDiff);
-					if (text) segments.push({ id, accent: "branch", text, priority });
+					const body = formatBranchDiff(snapshot.branchDiff);
+					if (body) pushContent(segments, id, "branch", body, priority);
 				}
 				break;
 			case "progress":
-				if (snapshot.progress) segments.push({ id, accent: "progress", text: snapshot.progress, priority });
-				break;
-			case "duration":
-				if (snapshot.duration) {
+				if (snapshot.progress) {
 					segments.push({
 						id,
-						accent: "usage",
-						text: formatDurationPair(snapshot.duration.roundMs, snapshot.duration.sessionMs, minimal),
+						accent: "progress",
+						text: snapshot.progress,
+						parts: [{ text: snapshot.progress, tone: "value" }],
 						priority,
 					});
 				}
 				break;
+			case "duration":
+				if (snapshot.duration) {
+					const pair = formatDurationPair(
+						snapshot.duration.roundMs,
+						snapshot.duration.sessionMs,
+						minimal,
+					);
+					pushContent(segments, id, "usage", formatDurationContent(pair, iconMode), priority);
+				}
+				break;
 			case "state":
-				segments.push({ id, accent: "state", text: snapshot.runState, priority });
+				segments.push({
+					id,
+					accent: "state",
+					text: snapshot.runState,
+					parts: [{ text: snapshot.runState, tone: "value" }],
+					priority,
+				});
 				break;
 			case "quota": {
 				if (!snapshot.quota) break;
-				const text = formatQuota(snapshot.quota, iconMode, 6);
-				if (!text) break;
-				segments.push({
-					id,
-					accent: "usage",
-					text,
-					priority,
+				const body = formatQuota(snapshot.quota, iconMode, 6);
+				if (!body) break;
+				pushContent(segments, id, "neutral", body, priority, {
 					bar: {
 						width: 6,
 						minWidth: 4,
-						rebuild: (width) => formatQuota(snapshot.quota!, iconMode, width) ?? text,
+						rebuild: (width) => formatQuota(snapshot.quota!, iconMode, width) ?? body,
 					},
 				});
 				break;
 			}
 			case "environment":
 				if (snapshot.environment) {
-					segments.push({
-						id,
-						accent: "progress",
-						text: formatEnvironment(snapshot.environment),
-						priority,
-					});
+					pushContent(segments, id, "dim", formatEnvironment(snapshot.environment), priority);
 				}
 				break;
 			case "toolActivity": {
 				if (!snapshot.toolActivity) break;
-				const text = formatToolActivity(snapshot.toolActivity, iconMode);
-				if (text) {
-					// Prefer keeping active/error over success-only when narrowing.
+				const body = formatToolActivity(snapshot.toolActivity, iconMode);
+				if (body) {
 					const hasActiveOrError = Object.values(snapshot.toolActivity).some(
 						(entry) => entry.active > 0 || entry.error > 0,
 					);
-					segments.push({
-						id,
-						accent: "progress",
-						text,
-						priority: hasActiveOrError ? 20 : priority,
-					});
+					pushContent(segments, id, "progress", body, hasActiveOrError ? 20 : priority);
 				}
 				break;
 			}

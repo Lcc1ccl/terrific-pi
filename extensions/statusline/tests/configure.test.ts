@@ -157,7 +157,7 @@ describe("formatConfigSummary", () => {
 		assert.match(summary, /layout: single/);
 		assert.match(summary, /iconMode: emoji/);
 		assert.match(summary, /contextMode: remaining/);
-		assert.match(summary, /contextBarWidth: 10/);
+		assert.match(summary, /contextBarWidth: 10 \(default 10, min 1, max 40\)/);
 		assert.match(summary, /minimal: false/);
 		assert.match(summary, /spacing: 1 \(default 1, min 0, max 4\)/);
 		assert.doesNotMatch(summary, /separator:/);
@@ -241,5 +241,44 @@ describe("widget spacing prompt", () => {
 
 		assert.equal(inputTitle, "Widget spacing per side (default 1, min 0, max 4)");
 		assert.equal(inputValue, "1");
+	});
+});
+
+describe("context bar width prompt", () => {
+	it("shows the default, minimum, and maximum values", async () => {
+		const config: StatuslineConfig = {
+			widgets: ["path"],
+			layout: "single",
+			iconMode: "emoji",
+			contextMode: "remaining",
+			contextBarWidth: 10,
+			minimal: false,
+			spacing: 1,
+		};
+		const choices = ["Context bar width", "Done"];
+		let inputTitle: string | undefined;
+		let inputValue: string | undefined;
+
+		await runStatuslineConfigurator({
+			getConfig: () => config,
+			getConfigPath: () => "/tmp/statusline.json",
+			applyConfig: () => ({ ok: true, value: undefined }),
+			reloadConfig: () => ({ ok: true, value: config }),
+			resetConfig: () => ({ ok: true, value: undefined }),
+			ui: {
+				selectMain: async () => choices.shift(),
+				select: async () => undefined,
+				input: async (title, value) => {
+					inputTitle = title;
+					inputValue = value;
+					return undefined;
+				},
+				editWidgets: async () => undefined,
+				notify: () => {},
+			},
+		}, ["path"]);
+
+		assert.equal(inputTitle, "Context bar width (default 10, min 1, max 40)");
+		assert.equal(inputValue, "10");
 	});
 });

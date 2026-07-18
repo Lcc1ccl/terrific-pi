@@ -54,15 +54,15 @@ describe("buildWidgetSegments", () => {
 				"demo",
 				"gpt-5 high",
 				"",
-				"1.5K",
-				"800",
-				"🎯66.7%",
+				"🔼 1.5K",
+				"🔽 800",
+				"🎯 66.7%",
 				"$0.42",
-				"[██████░░░░] 60%",
+				"Context [██████░░░░] 60%",
 				"🏠",
 				"+12 -3",
 				"task 1/2",
-				"12.3s / 1m45s",
+				"🕒 12.3s / 1m45s",
 				"Ready",
 			],
 		);
@@ -73,7 +73,7 @@ describe("buildWidgetSegments", () => {
 		const texts = segments.map((segment) => segment.text);
 		assert.ok(texts.some((text) => text.includes("demo")));
 		assert.ok(texts.some((text) => text.includes("$0.42")));
-		assert.ok(texts.some((text) => text.includes("🎯") && text.includes("%")));
+		assert.ok(texts.some((text) => text.includes("🎯 ") && text.includes("%")));
 		assert.ok(texts.some((text) => text.includes("ctx") || text.includes("%")));
 		assert.ok(texts.includes("Ready"));
 	});
@@ -117,14 +117,14 @@ describe("buildWidgetSegments", () => {
 		assert.deepEqual(inactive, []);
 	});
 
-	it("uses single-column token direction icons", () => {
+	it("uses triangle token direction emojis with spacing", () => {
 		const segments = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,
 			widgets: ["tokens"],
 		});
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
-			["1.5K", "800"],
+			["🔼 1.5K", "🔽 800"],
 		);
 	});
 
@@ -171,7 +171,7 @@ describe("buildWidgetSegments", () => {
 		});
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
-			["12.3s / 1m45s", "Ready"],
+			["🕒 12.3s / 1m45s", "Ready"],
 		);
 	});
 
@@ -203,6 +203,8 @@ describe("buildWidgetSegments", () => {
 				"✓ Read x6",
 			],
 		);
+		assert.equal(segments[1]?.accent, "dim");
+		assert.ok(segments[2]?.parts?.some((part) => part.tone === "label"));
 	});
 
 	it("uses minimal labels when enabled", () => {

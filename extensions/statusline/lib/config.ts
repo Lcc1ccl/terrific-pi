@@ -31,6 +31,10 @@ export const DEFAULT_WIDGET_SPACING = 1;
 export const MIN_WIDGET_SPACING = 0;
 export const MAX_WIDGET_SPACING = 4;
 
+export const DEFAULT_CONTEXT_BAR_WIDTH = 10;
+export const MIN_CONTEXT_BAR_WIDTH = 1;
+export const MAX_CONTEXT_BAR_WIDTH = 40;
+
 export const DEFAULT_CONFIG: StatuslineConfig = {
 	widgets: [
 		"path",
@@ -50,7 +54,7 @@ export const DEFAULT_CONFIG: StatuslineConfig = {
 	layout: "single",
 	iconMode: "emoji",
 	contextMode: "remaining",
-	contextBarWidth: 10,
+	contextBarWidth: DEFAULT_CONTEXT_BAR_WIDTH,
 	minimal: false,
 	spacing: DEFAULT_WIDGET_SPACING,
 };
@@ -77,10 +81,10 @@ function asIconMode(value: unknown): IconMode | undefined {
 	return value === "emoji" || value === "plain" ? value : undefined;
 }
 
-function asPositiveInt(value: unknown): number | undefined {
+function asContextBarWidth(value: unknown): number | undefined {
 	if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
 	const rounded = Math.floor(value);
-	return rounded > 0 ? rounded : undefined;
+	return rounded >= MIN_CONTEXT_BAR_WIDTH && rounded <= MAX_CONTEXT_BAR_WIDTH ? rounded : undefined;
 }
 
 function asWidgetSpacing(value: unknown): number | undefined {
@@ -95,7 +99,7 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 	const layout = asLayout(raw.layout);
 	const iconMode = asIconMode(raw.iconMode);
 	const contextMode = asContextMode(raw.contextMode);
-	const contextBarWidth = asPositiveInt(raw.contextBarWidth);
+	const contextBarWidth = asContextBarWidth(raw.contextBarWidth);
 	const minimal = typeof raw.minimal === "boolean" ? raw.minimal : undefined;
 	const spacing = asWidgetSpacing(raw.spacing);
 

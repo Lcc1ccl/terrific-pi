@@ -31,7 +31,7 @@ Built for pi's `setFooter` extension API: session metrics, git context, and agen
 Package defaults stay single-line emoji and do **not** enable the new widgets:
 
 ```text
-~/proj · session · model high ·  · 1.5K · 800 · 🎯66.7% · $0.42 · [██████░░░░] 60% · 🏠 · +12 -3 · 12.3s / 1m45s · Ready
+~/proj · session · model high ·  · 🔼 1.5K · 🔽 800 · 🎯 66.7% · $0.42 · Context [██████░░░░] 60% · 🏠 · +12 -3 · 🕒 12.3s / 1m45s · Ready
 ```
 
 ## Install
@@ -125,18 +125,18 @@ Context [█░░░░░░░░░] 4% · 12.5K · 3.2K · 🎯76.9% 
 | `model` | model id + thinking level |
 | `mode` | active `/mode` badge |
 | `fast` | `` (or `fast` in plain mode) while `/fast` is on |
-| `tokens` | input/output totals |
-| `cache` | cache hit rate |
+| `tokens` | input/output totals (`🔼` / `🔽` in emoji mode, spaced) |
+| `cache` | cache hit rate (`🎯` spaced in emoji mode) |
 | `cost` | session cost USD |
 | `context` | text context percent |
-| `contextBar` | compact context bar + percent |
+| `contextBar` | `Context` label + compact bar + percent |
 | `branch` | git branch (`main`/`master` → `🏠` in emoji mode) |
 | `branchDiff` | non-empty diff vs default branch |
 | `quota` | native OAuth Claude/Codex usage windows |
-| `environment` | context files / skills / tools counts |
+| `environment` | context files / skills / tools counts (low-contrast / dim) |
 | `toolActivity` | per-tool active/success/error counts |
 | `progress` | extension status texts (excludes dedicated badges) |
-| `duration` | current-round / session LLM time |
+| `duration` | current-round / session LLM time (`🕒` prefix in emoji mode) |
 | `state` | Ready / Thinking / Working |
 
 ### Quota eligibility (strict)

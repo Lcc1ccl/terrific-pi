@@ -1,5 +1,5 @@
 import { MAX_WIDGET_SPACING, MIN_WIDGET_SPACING } from "./config.ts";
-import type { Accent, StatuslineConfig, WidgetGroup, WidgetSegment } from "./types.ts";
+import type { Accent, SegmentPart, SegmentTone, StatuslineConfig, WidgetGroup, WidgetSegment } from "./types.ts";
 import { WIDGET_GROUPS } from "./types.ts";
 
 export type Rgb = readonly [number, number, number];
@@ -13,6 +13,16 @@ export interface Palette {
 	progress: Rgb;
 	session: Rgb;
 	separator: Rgb;
+	/** Near-white default for bars / neutral values. */
+	neutral: Rgb;
+	/** Muted label / secondary text. */
+	label: Rgb;
+	dim: Rgb;
+	error: Rgb;
+	warn: Rgb;
+	success: Rgb;
+	/** Default bar fill (white). */
+	bar: Rgb;
 }
 
 // Adaptive dark/light palettes for pi footer segments.
@@ -26,6 +36,13 @@ export const DARK_PALETTE: Palette = {
 	progress: [166, 227, 161],
 	session: [148, 226, 213],
 	separator: [118, 129, 140],
+	neutral: [205, 214, 244],
+	label: [108, 112, 134],
+	dim: [88, 91, 112],
+	error: [243, 139, 168],
+	warn: [249, 226, 175],
+	success: [166, 227, 161],
+	bar: [205, 214, 244],
 };
 
 export const LIGHT_PALETTE: Palette = {
@@ -37,6 +54,13 @@ export const LIGHT_PALETTE: Palette = {
 	progress: [64, 160, 43],
 	session: [23, 146, 153],
 	separator: [108, 112, 134],
+	neutral: [76, 79, 105],
+	label: [124, 127, 147],
+	dim: [140, 143, 161],
+	error: [210, 15, 57],
+	warn: [223, 142, 29],
+	success: [64, 160, 43],
+	bar: [76, 79, 105],
 };
 
 export function softenColor([red, green, blue]: Rgb): Rgb {
@@ -49,9 +73,39 @@ export function foreground([red, green, blue]: Rgb, text: string): string {
 	return `\x1b[38;2;${red};${green};${blue}m${text}\x1b[39m`;
 }
 
-export function styled(palette: Palette, accent: Accent, text: string): string {
-	const color = accent === "session" ? palette.session : palette[accent];
-	return foreground(softenColor(color), text);
+function accentBase(palette: Palette, accent: Accent): Rgb {
+	if (accent === "dim") return palette.dim;
+	if (accent === "session") return palette.session;
+	if (accent === "neutral") return palette.neutral;
+	return palette[accent];
+}
+
+export function toneColor(palette: Palette, accent: Accent, tone: SegmentTone = "value"): Rgb {
+	switch (tone) {
+		case "value":
+			return accent === "dim" ? palette.dim : accentBase(palette, accent);
+		case "label":
+		case "icon":
+			return palette.label;
+		case "dim":
+			return palette.dim;
+		case "error":
+			return palette.error;
+		case "warn":
+			return palette.warn;
+		case "bar":
+			return palette.bar;
+		case "success":
+			return palette.success;
+	}
+}
+
+export function styled(palette: Palette, accent: Accent, text: string, tone: SegmentTone = "value"): string {
+	return foreground(softenColor(toneColor(palette, accent, tone)), text);
+}
+
+export function styledParts(palette: Palette, accent: Accent, parts: SegmentPart[]): string {
+	return parts.map((part) => styled(palette, accent, part.text, part.tone ?? "value")).join("");
 }
 
 export function selectPalette(themeName: string | undefined): Palette {
@@ -75,19 +129,27 @@ function segmentGroup(segment: WidgetSegment): WidgetGroup {
 	return WIDGET_GROUPS[segment.id] ?? "activity";
 }
 
+function colorizeSegment(palette: Palette, segment: WidgetSegment): string {
+	if (segment.parts && segment.parts.length > 0) {
+		return styledParts(palette, segment.accent, segment.parts);
+	}
+	return styled(palette, segment.accent, segment.text);
+}
+
 function colorizeSegments(
 	segments: WidgetSegment[],
 	config: StatuslineConfig,
 	palette: Palette,
 ): string {
 	const separator = foreground(palette.separator, formatWidgetSeparator(config.spacing));
-	const colored = segments.map((segment) => styled(palette, segment.accent, segment.text));
+	const colored = segments.map((segment) => colorizeSegment(palette, segment));
 	return `  ${colored.join(separator)}`;
 }
 
 function cloneSegments(segments: WidgetSegment[]): WidgetSegment[] {
 	return segments.map((segment) => ({
 		...segment,
+		parts: segment.parts?.map((part) => ({ ...part })),
 		bar: segment.bar
 			? {
 				...segment.bar,
@@ -137,7 +199,15 @@ export function fitSegmentsToWidth(
 		for (const segment of current) {
 			if (!segment.bar || segment.bar.width <= segment.bar.minWidth) continue;
 			segment.bar.width -= 1;
-			segment.text = segment.bar.rebuild(segment.bar.width);
+			const rebuilt = segment.bar.rebuild(segment.bar.width);
+			if (typeof rebuilt === "string") {
+				segment.text = rebuilt;
+				// Drop stale parts after bar rebuild; monochrome rebuild text is fine.
+				segment.parts = undefined;
+			} else {
+				segment.text = rebuilt.text;
+				segment.parts = rebuilt.parts;
+			}
 			shrunk = true;
 			if (lineWidth() <= maxWidth) return current;
 		}
