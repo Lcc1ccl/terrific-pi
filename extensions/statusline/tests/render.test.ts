@@ -3,15 +3,16 @@ import { describe, it } from "node:test";
 
 import { DEFAULT_CONFIG } from "../lib/config.ts";
 import {
-	DARK_PALETTE,
+	fitSegmentsToWidth,
 	groupSegmentsBySemantics,
 	plainVisibleWidth,
 	renderStatusLine,
 } from "../lib/render.ts";
 import { buildWidgetSegments } from "../lib/widgets.ts";
-import type { StatusSnapshot, WidgetSegment } from "../lib/types.ts";
+import type { StatusSnapshot, StatuslineConfig, WidgetSegment } from "../lib/types.ts";
 
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+const TEST_THEME = { fg: (_color: string, text: string) => text };
 const segments = [
 	{ id: "path" as const, accent: "path" as const, text: "left" },
 	{ id: "state" as const, accent: "state" as const, text: "right" },
@@ -23,7 +24,7 @@ function render(spacing: number, legacySeparator = ""): string {
 		spacing,
 		separator: legacySeparator,
 	};
-	const line = renderStatusLine(segments, config, DARK_PALETTE, 200, (text) => text);
+	const line = renderStatusLine(segments, config, TEST_THEME, 200, (text) => text);
 	return (Array.isArray(line) ? line[0]! : line).replace(ANSI_PATTERN, "");
 }
 
@@ -70,24 +71,95 @@ describe("renderStatusLine widget spacing", () => {
 });
 
 describe("groupSegmentsBySemantics", () => {
-	it("breaks only when adjacent groups change", () => {
+	it("uses canonical groups while preserving order within each group", () => {
 		const segs: WidgetSegment[] = [
 			{ id: "path", accent: "path", text: "p" },
-			{ id: "model", accent: "model", text: "m" },
 			{ id: "tokens", accent: "usage", text: "t" },
+			{ id: "model", accent: "model", text: "m" },
 			{ id: "state", accent: "state", text: "s" },
+			{ id: "context", accent: "usage", text: "c" },
 		];
 		const groups = groupSegmentsBySemantics(segs);
 		assert.deepEqual(
 			groups.map((group) => group.map((segment) => segment.id)),
-			[["path", "model"], ["tokens"], ["state"]],
+			[["path", "model"], ["tokens", "context"], ["state"]],
 		);
 	});
 });
 
-describe("renderStatusLine stacked", () => {
-	it("returns multiple lines for stacked layout without reordering", () => {
+describe("responsive fitting", () => {
+	it("keeps input and output tokens together", () => {
 		const config = {
+			...DEFAULT_CONFIG,
+			iconMode: "plain" as const,
+			widgets: ["tokens", "state"] as const,
+		};
+		const segs = buildWidgetSegments(hudSnapshot, { ...config, widgets: [...config.widgets] });
+		const line = renderStatusLine(
+			segs,
+			{ ...config, widgets: [...config.widgets] },
+			TEST_THEME,
+			20,
+			(text, max) => text.slice(0, max),
+			plainVisibleWidth,
+		);
+		const plain = (Array.isArray(line) ? line[0]! : line).replace(ANSI_PATTERN, "");
+		assert.equal(plain.includes("in 12.5K"), plain.includes("out 3.2K"));
+	});
+
+	it("drops account quota before current context", () => {
+		const config = {
+			...DEFAULT_CONFIG,
+			widgets: ["contextBar", "quota"] as const,
+			contextBarWidth: 4,
+		};
+		const segs = buildWidgetSegments(hudSnapshot, { ...config, widgets: [...config.widgets] });
+		const fitted = fitSegmentsToWidth(
+			segs,
+			{ ...config, widgets: [...config.widgets] },
+			TEST_THEME,
+			27,
+			plainVisibleWidth,
+		);
+		assert.deepEqual(fitted.map((segment) => segment.id), ["contextBar"]);
+	});
+});
+
+describe("terminal safety", () => {
+	it("strips control sequences from every rendered segment", () => {
+		const unsafe: WidgetSegment[] = [{
+			id: "session",
+			accent: "session",
+			text: "\x1b]8;;https://example.com\x07name\x1b]8;;\x07\x1b[31m!\x1b[0m\nnext",
+		}];
+		const line = renderStatusLine(unsafe, DEFAULT_CONFIG, TEST_THEME, 200, (text) => text);
+		const text = Array.isArray(line) ? line[0]! : line;
+		assert.equal(text.includes("\x1b"), false);
+		assert.equal(text.includes("\n"), false);
+		assert.equal(text.includes("https://example.com"), false);
+		assert.match(text, /name! next/);
+	});
+});
+
+describe("host theme", () => {
+	it("uses callback theme colors instead of guessing from the theme name", () => {
+		const colors: string[] = [];
+		const theme = {
+			fg(color: string, text: string) {
+				colors.push(color);
+				return text;
+			},
+		};
+		const line = renderStatusLine(segments, DEFAULT_CONFIG, theme, 200, (text) => text);
+		assert.equal(Array.isArray(line), false);
+		assert.ok(colors.includes("dim"));
+		assert.ok(colors.includes("accent") || colors.includes("success"));
+	});
+});
+
+describe("renderStatusLine stacked", () => {
+	it("returns canonical semantic lines while preserving within-group order", () => {
+		const config: StatuslineConfig = {
 			...DEFAULT_CONFIG,
 			layout: "stacked" as const,
 			widgets: [
@@ -103,7 +175,7 @@ describe("renderStatusLine stacked", () => {
 			],
 		};
 		const segs = buildWidgetSegments(hudSnapshot, config);
-		const lines = renderStatusLine(segs, config, DARK_PALETTE, 200, (text) => text);
+		const lines = renderStatusLine(segs, config, TEST_THEME, 200, (text) => text);
 		assert.ok(Array.isArray(lines));
 		assert.equal((lines as string[]).length, 4);
 		const plain = (lines as string[]).map((line) => line.replace(ANSI_PATTERN, ""));
@@ -115,7 +187,7 @@ describe("renderStatusLine stacked", () => {
 	});
 
 	it("keeps each line within target widths", () => {
-		const config = {
+		const config: StatuslineConfig = {
 			...DEFAULT_CONFIG,
 			layout: "stacked" as const,
 			widgets: [
@@ -143,7 +215,7 @@ describe("renderStatusLine stacked", () => {
 			const lines = renderStatusLine(
 				segs,
 				config,
-				DARK_PALETTE,
+				TEST_THEME,
 				width,
 				(text, max) => text.slice(0, max),
 				plainVisibleWidth,

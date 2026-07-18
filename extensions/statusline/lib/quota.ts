@@ -1,4 +1,4 @@
-import type { QuotaProvider, QuotaSnapshot, QuotaWindow } from "./types.ts";
+import type { QuotaProvider, QuotaSnapshot, QuotaStatus, QuotaWindow } from "./types.ts";
 import { formatQuotaWindowLabel } from "./format.ts";
 
 export const QUOTA_TTL_MS = 5 * 60_000;
@@ -298,8 +298,17 @@ function authHeaders(
 	const headers: Record<string, string> = {
 		Accept: "application/json",
 		"User-Agent": "terrific-pi-statusline",
-		...(auth.headers ?? {}),
 	};
+	for (const [name, value] of Object.entries(auth.headers ?? {})) {
+		const normalized = name.toLowerCase();
+		if (
+			normalized === "authorization"
+			|| normalized === "anthropic-beta"
+			|| normalized === "chatgpt-account-id"
+		) {
+			headers[name] = value;
+		}
+	}
 	if (!headers.Authorization && !headers.authorization && auth.apiKey) {
 		headers.Authorization = `Bearer ${auth.apiKey}`;
 	}
@@ -339,6 +348,7 @@ function looksLikeStaleZero(previous: QuotaSnapshot | undefined, next: QuotaSnap
 
 export class QuotaMonitor {
 	private snapshot: QuotaSnapshot | undefined;
+	private status: QuotaStatus = "idle";
 	private provider: QuotaProvider | undefined;
 	private inflight: Promise<void> | undefined;
 	private abort: AbortController | undefined;
@@ -360,6 +370,10 @@ export class QuotaMonitor {
 		this.onChange = options?.onChange ?? (() => {});
 	}
 
+	getStatus(): QuotaStatus {
+		return this.status;
+	}
+
 	getSnapshot(): QuotaSnapshot | undefined {
 		if (!this.snapshot) return undefined;
 		const now = this.now();
@@ -374,7 +388,9 @@ export class QuotaMonitor {
 	}
 
 	clear(): void {
+		this.generation += 1;
 		this.snapshot = undefined;
+		this.status = "idle";
 		this.provider = undefined;
 		this.pendingZero = undefined;
 		this.backoffUntil = 0;
@@ -386,8 +402,18 @@ export class QuotaMonitor {
 	}
 
 	dispose(): void {
-		this.generation += 1;
 		this.clear();
+	}
+
+	private markFailure(generation: number): void {
+		if (generation !== this.generation) return;
+		if (this.snapshot) {
+			this.snapshot = { ...this.snapshot, stale: true };
+			this.status = "ready";
+		} else {
+			this.status = "error";
+		}
+		this.onChange();
 	}
 
 	private stopCountdown(): void {
@@ -417,21 +443,19 @@ export class QuotaMonitor {
 		registry: ModelRegistryLike,
 		enabled: boolean,
 	): Promise<void> {
-		if (!enabled) {
-			if (this.snapshot) this.clear();
+		const offline = ["1", "true", "yes"].includes((process.env.PI_OFFLINE ?? "").toLowerCase());
+		if (!enabled || offline) {
+			if (this.status !== "idle" || this.provider || this.inflight || this.snapshot || this.countdownTimer) this.clear();
 			return;
 		}
 
 		const provider = resolveNativeQuotaProvider(model, registry);
 		if (!provider) {
-			if (this.snapshot) this.clear();
+			if (this.status !== "idle" || this.provider || this.inflight || this.snapshot || this.countdownTimer) this.clear();
 			return;
 		}
 
-		if (this.provider && this.provider !== provider) {
-			this.snapshot = undefined;
-			this.pendingZero = undefined;
-		}
+		if (this.provider && this.provider !== provider) this.clear();
 		this.provider = provider;
 
 		const now = this.now();
@@ -452,22 +476,30 @@ export class QuotaMonitor {
 		}
 
 		const generation = this.generation;
-		this.inflight = this.refresh(model!, registry, provider, generation).finally(() => {
-			this.inflight = undefined;
-		});
-		await this.inflight;
+		this.status = this.snapshot ? "ready" : "loading";
+		if (!this.snapshot) this.onChange();
+		const request = this.refresh(model!, registry, provider, generation);
+		this.inflight = request;
+		try {
+			await request;
+		} finally {
+			if (this.inflight === request) this.inflight = undefined;
+		}
 	}
 
 	noteProviderResponse(status: number, headers: Record<string, string>): void {
-		if (status !== 429) return;
+		if (status !== 429 || !this.provider) return;
 		const retryAfter = headers["retry-after"] ?? headers["Retry-After"];
 		const seconds = retryAfter ? Number.parseInt(retryAfter, 10) : Number.NaN;
 		const delayMs = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 60_000;
 		this.backoffUntil = this.now() + delayMs;
 		if (this.snapshot) {
 			this.snapshot = { ...this.snapshot, stale: true };
-			this.onChange();
+			this.status = "ready";
+		} else {
+			this.status = "error";
 		}
+		this.onChange();
 	}
 
 	private async refresh(
@@ -483,14 +515,23 @@ export class QuotaMonitor {
 
 		try {
 			let auth = await registry.getApiKeyAndHeaders(model);
-			if (!auth.ok) return;
-			let response = await this.request(provider, auth, abort.signal);
-			if ((response.status === 401 || response.status === 403) && generation === this.generation) {
-				auth = await registry.getApiKeyAndHeaders(model);
-				if (!auth.ok) return;
-				response = await this.request(provider, auth, abort.signal);
-			}
 			if (generation !== this.generation) return;
+			if (!auth.ok) {
+				this.markFailure(generation);
+				return;
+			}
+			let response = await this.request(provider, auth, abort.signal);
+			if (generation !== this.generation) return;
+			if (response.status === 401 || response.status === 403) {
+				auth = await registry.getApiKeyAndHeaders(model);
+				if (generation !== this.generation) return;
+				if (!auth.ok) {
+					this.markFailure(generation);
+					return;
+				}
+				response = await this.request(provider, auth, abort.signal);
+				if (generation !== this.generation) return;
+			}
 
 			if (response.status === 429) {
 				const retryAfter = response.headers.get("retry-after");
@@ -498,10 +539,7 @@ export class QuotaMonitor {
 				return;
 			}
 			if (!response.ok) {
-				if (this.snapshot) {
-					this.snapshot = { ...this.snapshot, stale: true };
-					this.onChange();
-				}
+				this.markFailure(generation);
 				return;
 			}
 
@@ -509,13 +547,18 @@ export class QuotaMonitor {
 			try {
 				payload = await response.json();
 			} catch {
+				this.markFailure(generation);
 				return;
 			}
+			if (generation !== this.generation) return;
 
 			const parsed = provider === "codex"
 				? parseCodexUsage(payload, model)
 				: parseClaudeUsage(payload, model);
-			if (!parsed) return;
+			if (!parsed) {
+				this.markFailure(generation);
+				return;
+			}
 
 			const codexHealthy = provider !== "codex" || (
 				isRecord(payload)
@@ -534,14 +577,11 @@ export class QuotaMonitor {
 			}
 
 			this.snapshot = parsed;
+			this.status = "ready";
 			this.startCountdown();
 			this.onChange();
 		} catch {
-			if (generation !== this.generation) return;
-			if (this.snapshot) {
-				this.snapshot = { ...this.snapshot, stale: true };
-				this.onChange();
-			}
+			this.markFailure(generation);
 		} finally {
 			clearTimeout(timeout);
 			if (this.abort === abort) this.abort = undefined;

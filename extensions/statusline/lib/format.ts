@@ -1,6 +1,11 @@
 import { homedir } from "node:os";
 import { relative, resolve, sep } from "node:path";
 
+import {
+	DEFAULT_CONTEXT_BAR_WIDTH,
+	MAX_CONTEXT_BAR_WIDTH,
+	MIN_CONTEXT_BAR_WIDTH,
+} from "./config.ts";
 import type {
 	ContextMode,
 	IconMode,
@@ -35,7 +40,10 @@ export function barFillTone(usedPercent: number): SegmentTone {
 }
 
 export function formatBarParts(usedPercent: number, filledRatio: number, width: number): SegmentPart[] {
-	const barWidth = Math.max(4, Math.min(40, Math.floor(width || 10)));
+	const barWidth = Math.max(
+		MIN_CONTEXT_BAR_WIDTH,
+		Math.min(MAX_CONTEXT_BAR_WIDTH, Math.floor(width || DEFAULT_CONTEXT_BAR_WIDTH)),
+	);
 	const ratio = Math.max(0, Math.min(1, filledRatio));
 	const filled = Math.max(0, Math.min(barWidth, Math.round(ratio * barWidth)));
 	const empty = barWidth - filled;
@@ -135,7 +143,6 @@ export function formatContextBar(
 	mode: ContextMode,
 ): SegmentContent | undefined {
 	if (percent === null || percent === undefined || Number.isNaN(percent)) return undefined;
-	const barWidth = Math.max(4, Math.min(40, Math.floor(width || 10)));
 	const used = Math.max(0, Math.min(100, percent));
 	const filledRatio = mode === "used" ? used / 100 : (100 - used) / 100;
 	const label = mode === "used"
@@ -143,7 +150,7 @@ export function formatContextBar(
 		: `${Math.max(0, Math.min(100, Math.round(100 - used)))}%`;
 	return content([
 		{ text: "Context ", tone: "label" },
-		...formatBarParts(used, filledRatio, barWidth),
+		...formatBarParts(used, filledRatio, width),
 		{ text: label, tone: "value" },
 	]);
 }

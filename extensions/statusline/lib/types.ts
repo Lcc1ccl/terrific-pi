@@ -76,7 +76,7 @@ export const WIDGET_GROUPS: Record<WidgetId, WidgetGroup> = {
 	state: "activity",
 };
 
-/** Drop order: higher first. Keep model/branch/context/quota/state longer. */
+/** Drop order: higher first. Keep model/branch/current-context/state longer. */
 export const WIDGET_PRIORITY: Record<WidgetId, number> = {
 	session: 90,
 	cost: 85,
@@ -92,13 +92,14 @@ export const WIDGET_PRIORITY: Record<WidgetId, number> = {
 	branchDiff: 25,
 	context: 20,
 	contextBar: 15,
-	quota: 12,
+	quota: 22,
 	branch: 10,
 	model: 8,
 	state: 5,
 };
 
 export type QuotaProvider = "codex" | "claude";
+export type QuotaStatus = "idle" | "loading" | "ready" | "error";
 
 export interface TokenTotals {
 	input: number;
@@ -162,10 +163,11 @@ export interface StatusSnapshot {
 	branch?: string | null;
 	branchDiff?: BranchChangeStats;
 	progress?: string;
-	/** Current round LLM ms / session total LLM ms (live). */
+	/** Current round LLM ms / current-process LLM ms (live). */
 	duration?: { roundMs: number; sessionMs: number };
 	runState: RunState;
 	quota?: QuotaSnapshot;
+	quotaStatus?: QuotaStatus;
 	environment?: EnvironmentCounts;
 	/** Aggregated by tool name. */
 	toolActivity?: Record<string, ToolActivity>;

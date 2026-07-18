@@ -1,4 +1,5 @@
 import {
+	DEFAULT_CONFIG,
 	DEFAULT_CONTEXT_BAR_WIDTH,
 	DEFAULT_WIDGET_SPACING,
 	MAX_CONTEXT_BAR_WIDTH,
@@ -17,17 +18,42 @@ export type WidgetEditorItem = {
 	enabled: boolean;
 };
 
+export type WidgetEditorAction = "cancel" | "done" | "up" | "down" | "left" | "right" | "toggle";
+
+export type WidgetEditorBinding =
+	| "tui.select.cancel"
+	| "tui.select.confirm"
+	| "tui.select.up"
+	| "tui.select.down"
+	| "tui.editor.cursorLeft"
+	| "tui.editor.cursorRight";
+
+export function widgetEditorAction(
+	data: string,
+	keybindings: { matches(data: string, binding: WidgetEditorBinding): boolean },
+): WidgetEditorAction | undefined {
+	if (keybindings.matches(data, "tui.select.cancel")) return "cancel";
+	if (keybindings.matches(data, "tui.select.confirm")) return "done";
+	if (keybindings.matches(data, "tui.select.up") || data === "k") return "up";
+	if (keybindings.matches(data, "tui.select.down") || data === "j") return "down";
+	if (keybindings.matches(data, "tui.editor.cursorLeft") || data === "h") return "left";
+	if (keybindings.matches(data, "tui.editor.cursorRight") || data === "l") return "right";
+	if (data === " ") return "toggle";
+	return undefined;
+}
+
 export type ConfigureUi = {
 	/** Top-level selector backed by a wrapping SelectList. */
 	selectMain(title: string, items: string[]): Promise<string | undefined>;
 	select(title: string, items: string[]): Promise<string | undefined>;
-	input(title: string, value: string): Promise<string | undefined>;
+	input(title: string, initialValue: string): Promise<string | undefined>;
+	confirm(title: string, message: string): Promise<boolean>;
 	/** Codex-style multi-select: Space toggle, ↑/↓ select, ←/→ move. */
 	editWidgets(
 		title: string,
 		allWidgets: readonly WidgetId[],
 		enabled: WidgetId[],
-		onChange: (enabled: WidgetId[]) => void,
+		onChange: (enabled: WidgetId[]) => boolean,
 		onReject?: (error: string) => void,
 	): Promise<WidgetId[] | undefined>;
 	notify(message: string, level?: "info" | "warning" | "error"): void;
@@ -147,6 +173,33 @@ export function moveWidget(
 	return { ok: true, value: swapped.items };
 }
 
+export function formatSettingChoices<T extends string>(
+	values: readonly T[],
+	current: T,
+	defaultValue: T,
+): string[] {
+	return [...values]
+		.sort((left, right) => Number(right === current) - Number(left === current))
+		.map((value) => {
+			const markers = [value === current ? "[current]" : "", value === defaultValue ? "[default]" : ""]
+				.filter(Boolean)
+				.join(" ");
+			return markers ? `${value} ${markers}` : value;
+		});
+}
+
+async function selectSetting<T extends string>(
+	deps: ConfigureDeps,
+	title: string,
+	values: readonly T[],
+	current: T,
+	defaultValue: T,
+): Promise<T | undefined> {
+	const choice = await deps.ui.select(title, [...formatSettingChoices(values, current, defaultValue), "Back"]);
+	if (!choice || choice === "Back") return undefined;
+	return values.find((value) => choice === value || choice.startsWith(`${value} [`));
+}
+
 export function parseContextBarWidth(raw: string): MutationResult<number> {
 	const trimmed = raw.trim();
 	const error = `Width must be an integer from ${MIN_CONTEXT_BAR_WIDTH} to ${MAX_CONTEXT_BAR_WIDTH} (default ${DEFAULT_CONTEXT_BAR_WIDTH})`;
@@ -159,7 +212,7 @@ export function parseContextBarWidth(raw: string): MutationResult<number> {
 
 export function parseWidgetSpacing(raw: string): MutationResult<number> {
 	const trimmed = raw.trim();
-	const error = `Spacing must be an integer from ${MIN_WIDGET_SPACING} to ${MAX_WIDGET_SPACING}`;
+	const error = `Spacing must be an integer from ${MIN_WIDGET_SPACING} to ${MAX_WIDGET_SPACING} (default ${DEFAULT_WIDGET_SPACING})`;
 	if (!/^\d+$/.test(trimmed)) return { ok: false, error };
 	const value = Number.parseInt(trimmed, 10);
 	return value >= MIN_WIDGET_SPACING && value <= MAX_WIDGET_SPACING
@@ -195,13 +248,14 @@ function applyOrNotify(
 	deps: ConfigureDeps,
 	next: StatuslineConfig,
 	success: string,
-): void {
+): boolean {
 	const result = deps.applyConfig(next);
 	if (!result.ok) {
 		deps.ui.notify(result.error, "error");
-		return;
+		return false;
 	}
 	deps.ui.notify(success, "info");
+	return true;
 }
 
 async function editWidgetsLoop(deps: ConfigureDeps, allWidgets: readonly WidgetId[]): Promise<void> {
@@ -212,7 +266,7 @@ async function editWidgetsLoop(deps: ConfigureDeps, allWidgets: readonly WidgetI
 		[...config.widgets],
 		(widgets) => {
 			const current = deps.getConfig();
-			applyOrNotify(deps, { ...current, widgets }, `widgets: ${widgets.join(", ")}`);
+			return applyOrNotify(deps, { ...current, widgets }, `widgets: ${widgets.join(", ")}`);
 		},
 		(error) => deps.ui.notify(error, "warning"),
 	);
@@ -220,11 +274,14 @@ async function editWidgetsLoop(deps: ConfigureDeps, allWidgets: readonly WidgetI
 
 async function setLayout(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
-	const choice = await deps.ui.select("Layout", ["single", "stacked", "Back"]);
-	if (!choice || choice === "Back") return;
-	if (choice !== "single" && choice !== "stacked") return;
-
-	const layout = choice as StatuslineLayout;
+	const layout = await selectSetting(
+		deps,
+		"Layout",
+		["single", "stacked"] satisfies readonly StatuslineLayout[],
+		config.layout,
+		DEFAULT_CONFIG.layout,
+	);
+	if (!layout) return;
 	if (layout === config.layout) {
 		deps.ui.notify(`layout already ${layout}`, "info");
 		return;
@@ -234,11 +291,14 @@ async function setLayout(deps: ConfigureDeps): Promise<void> {
 
 async function setIconMode(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
-	const choice = await deps.ui.select("Icon mode", ["emoji", "plain", "Back"]);
-	if (!choice || choice === "Back") return;
-	if (choice !== "emoji" && choice !== "plain") return;
-
-	const iconMode = choice as IconMode;
+	const iconMode = await selectSetting(
+		deps,
+		"Icon mode",
+		["emoji", "plain"] satisfies readonly IconMode[],
+		config.iconMode,
+		DEFAULT_CONFIG.iconMode,
+	);
+	if (!iconMode) return;
 	if (iconMode === config.iconMode) {
 		deps.ui.notify(`iconMode already ${iconMode}`, "info");
 		return;
@@ -248,11 +308,14 @@ async function setIconMode(deps: ConfigureDeps): Promise<void> {
 
 async function setContextMode(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
-	const choice = await deps.ui.select("Context mode", ["remaining", "used", "Back"]);
-	if (!choice || choice === "Back") return;
-	if (choice !== "remaining" && choice !== "used") return;
-
-	const contextMode = choice as ContextMode;
+	const contextMode = await selectSetting(
+		deps,
+		"Context mode",
+		["remaining", "used"] satisfies readonly ContextMode[],
+		config.contextMode,
+		DEFAULT_CONFIG.contextMode,
+	);
+	if (!contextMode) return;
 	if (contextMode === config.contextMode) {
 		deps.ui.notify(`contextMode already ${contextMode}`, "info");
 		return;
@@ -280,8 +343,10 @@ async function setContextBarWidth(deps: ConfigureDeps): Promise<void> {
 
 async function setMinimalMode(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
-	const choice = await deps.ui.select("Minimal mode", ["on", "off", "Back"]);
-	if (!choice || choice === "Back") return;
+	const current = config.minimal ? "on" : "off";
+	const defaultValue = DEFAULT_CONFIG.minimal ? "on" : "off";
+	const choice = await selectSetting(deps, "Minimal mode", ["on", "off"], current, defaultValue);
+	if (!choice) return;
 
 	const minimal = choice === "on";
 	if (minimal === config.minimal) {
@@ -367,6 +432,11 @@ export async function runStatuslineConfigurator(
 				break;
 			}
 			case "Reset to defaults": {
+				const confirmed = await deps.ui.confirm(
+					"Reset statusline config?",
+					`Overwrite ${configPath} with package defaults?`,
+				);
+				if (!confirmed) break;
 				const reset = deps.resetConfig();
 				if (!reset.ok) {
 					deps.ui.notify(reset.error, "error");

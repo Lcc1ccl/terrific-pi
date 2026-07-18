@@ -23,6 +23,31 @@ const claudeModel = {
 	baseUrl: "https://api.anthropic.com",
 };
 
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
+
+function response(payload: unknown) {
+	return {
+		ok: true,
+		status: 200,
+		headers: { get: () => null },
+		json: async () => payload,
+		text: async () => "",
+	};
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+	for (let index = 0; index < 20 && !predicate(); index += 1) {
+		await new Promise<void>((resolve) => setImmediate(resolve));
+	}
+	assert.equal(predicate(), true, "condition was not reached");
+}
+
 function registry(options: {
 	oauth?: boolean;
 	override?: boolean;
@@ -193,6 +218,38 @@ describe("QuotaMonitor", () => {
 		monitor.dispose();
 	});
 
+	it("exposes loading and first-load error states", async (t) => {
+		const pending = deferred<ReturnType<typeof response>>();
+		let calls = 0;
+		const monitor = new QuotaMonitor({
+			fetchImpl: async () => {
+				calls += 1;
+				return pending.promise;
+			},
+		});
+		t.after(() => monitor.dispose());
+
+		const sync = monitor.sync(codexModel, registry({ oauth: true }), true);
+		await waitFor(() => calls === 1);
+		assert.equal(monitor.getStatus(), "loading");
+		pending.resolve({
+			ok: false,
+			status: 500,
+			headers: { get: () => null },
+			json: async () => ({}),
+			text: async () => "",
+		});
+		await sync;
+		assert.equal(monitor.getStatus(), "error");
+	});
+
+	it("ignores provider 429 before an eligible quota provider is active", () => {
+		const monitor = new QuotaMonitor();
+		monitor.noteProviderResponse(429, { "retry-after": "60" });
+		assert.equal(monitor.getStatus(), "idle");
+		monitor.dispose();
+	});
+
 	it("marks stale on 429 and applies backoff", async () => {
 		let calls = 0;
 		const monitor = new QuotaMonitor({
@@ -229,6 +286,100 @@ describe("QuotaMonitor", () => {
 		await monitor.sync(codexModel, registry({ oauth: true }), true);
 		assert.equal(calls, before); // backoff suppresses another request
 		monitor.dispose();
+	});
+
+	it("ignores an old provider request after clear and model switch", async (t) => {
+		const codexResponse = deferred<ReturnType<typeof response>>();
+		const claudeResponse = deferred<ReturnType<typeof response>>();
+		let codexStarted = false;
+		const fetchImpl = (url: string) => {
+			if (url.includes("chatgpt")) {
+				codexStarted = true;
+				return codexResponse.promise;
+			}
+			return claudeResponse.promise;
+		};
+		const monitor = new QuotaMonitor({ fetchImpl });
+		t.after(() => monitor.dispose());
+
+		const oldSync = monitor.sync(codexModel, registry({ oauth: true }), true);
+		await waitFor(() => codexStarted);
+		monitor.clear();
+		const newSync = monitor.sync(claudeModel, registry({ oauth: true }), true);
+		claudeResponse.resolve(response({ five_hour: { utilization: 0.2 } }));
+		await newSync;
+		assert.equal(monitor.getSnapshot()?.provider, "claude");
+
+		codexResponse.resolve(response({
+			rate_limit: { primary_window: { used_percent: 90, limit_window_seconds: 18_000 } },
+		}));
+		await oldSync;
+		assert.equal(monitor.getSnapshot()?.provider, "claude");
+	});
+
+	it("invalidates an in-flight request when quota is disabled", async (t) => {
+		const pending = deferred<ReturnType<typeof response>>();
+		let calls = 0;
+		const monitor = new QuotaMonitor({
+			fetchImpl: async () => {
+				calls += 1;
+				return pending.promise;
+			},
+		});
+		t.after(() => monitor.dispose());
+		const sync = monitor.sync(codexModel, registry({ oauth: true }), true);
+		await waitFor(() => calls === 1);
+		await monitor.sync(codexModel, registry({ oauth: true }), false);
+		pending.resolve(response({
+			rate_limit: { primary_window: { used_percent: 10, limit_window_seconds: 18_000 } },
+		}));
+		await sync;
+		assert.equal(monitor.getSnapshot(), undefined);
+	});
+
+	it("does not fetch in PI_OFFLINE mode", async (t) => {
+		const previous = process.env.PI_OFFLINE;
+		let calls = 0;
+		try {
+			process.env.PI_OFFLINE = "1";
+			const monitor = new QuotaMonitor({
+				fetchImpl: async () => {
+					calls += 1;
+					return response({});
+				},
+			});
+			t.after(() => monitor.dispose());
+			await monitor.sync(codexModel, registry({ oauth: true }), true);
+			assert.equal(calls, 0);
+		} finally {
+			if (previous === undefined) delete process.env.PI_OFFLINE;
+			else process.env.PI_OFFLINE = previous;
+		}
+	});
+
+	it("forwards only quota authentication headers", async (t) => {
+		let sentHeaders: Record<string, string> | undefined;
+		const monitor = new QuotaMonitor({
+			fetchImpl: async (_url, init) => {
+				sentHeaders = init?.headers;
+				return response({ five_hour: { utilization: 0.2 } });
+			},
+		});
+		t.after(() => monitor.dispose());
+		await monitor.sync(claudeModel, registry({
+			oauth: true,
+			auth: {
+				ok: true,
+				headers: {
+					Authorization: "Bearer oauth-token",
+					"anthropic-beta": "oauth-2025-04-20",
+					"X-Private-Provider-Header": "must-not-leak",
+				},
+			},
+		}), true);
+		assert.equal(sentHeaders?.Authorization, "Bearer oauth-token");
+		assert.equal(sentHeaders?.["anthropic-beta"], "oauth-2025-04-20");
+		assert.equal(sentHeaders?.["X-Private-Provider-Header"], undefined);
 	});
 
 	it("requires two near-zero samples before accepting stale-zero", async () => {

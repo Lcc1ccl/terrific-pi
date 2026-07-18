@@ -1,9 +1,9 @@
 import { DynamicBorder, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Container, SelectList, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Container, Input, SelectList, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import {
 	DEFAULT_CONFIG,
-	loadStatuslineConfig,
+	loadStatuslineConfigResult,
 	resolveRuntimeConfigPath,
 	saveStatuslineConfig,
 	WIDGET_IDS,
@@ -15,7 +15,7 @@ import {
 } from "../lib/configure.ts";
 import { LlmDurationTracker } from "../lib/duration.ts";
 import { QuotaMonitor } from "../lib/quota.ts";
-import { renderStatusLine, selectPalette } from "../lib/render.ts";
+import { renderStatusLine } from "../lib/render.ts";
 import { WidgetsSetupComponent } from "../lib/widgets-setup.ts";
 import type {
 	BranchChangeStats,
@@ -33,6 +33,7 @@ import {
 	MODE_STATUS_KEY,
 	runStateForAssistantEvent,
 	sanitizeStatus,
+	shouldTrackToolActivity,
 } from "../lib/widgets.ts";
 
 function parseNumstat(output: string): BranchChangeStats {
@@ -52,14 +53,37 @@ function emptyToolActivity(): ToolActivity {
 	return { active: 0, success: 0, error: 0 };
 }
 
+type QuotaContext = {
+	model?: { id?: string; name?: string; provider?: string; api?: string; baseUrl?: string };
+	modelRegistry: {
+		isUsingOAuth(model: unknown): boolean;
+		getRegisteredProviderConfig?(providerName: string): unknown;
+		getApiKeyAndHeaders(model: unknown): Promise<
+			| { ok: true; apiKey?: string; headers?: Record<string, string> }
+			| { ok: false; error: string }
+		>;
+	};
+};
+
+type UsageContext = {
+	sessionManager: {
+		getBranch(): Parameters<typeof aggregateSessionUsage>[0];
+	};
+};
+
 export default function statusline(pi: ExtensionAPI) {
 	let runState: RunState = "Ready";
 	let branchChanges: BranchChangeStats | undefined;
 	let gitRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 	let durationTickTimer: ReturnType<typeof setInterval> | undefined;
 	let renderRequest: (() => void) | undefined;
+	let lifecycleGeneration = 0;
+	let gitRequestGeneration = 0;
 	let config: StatuslineConfig = { ...DEFAULT_CONFIG, widgets: [...DEFAULT_CONFIG.widgets] };
 	let configPath = resolveRuntimeConfigPath();
+	let configLoadError: string | undefined;
+	let quotaContext: QuotaContext | undefined;
+	let usage = aggregateSessionUsage([]);
 	const activeTools = new Set<string>();
 	const toolCallNames = new Map<string, string>();
 	const toolStats: Record<string, ToolActivity> = {};
@@ -72,24 +96,54 @@ export default function statusline(pi: ExtensionAPI) {
 
 	const requestRender = () => renderRequest?.();
 
-	const reloadConfig = () => {
-		configPath = resolveRuntimeConfigPath();
-		config = loadStatuslineConfig(configPath);
-		requestRender();
-	};
-
 	const cloneConfig = (value: StatuslineConfig): StatuslineConfig => ({
 		...value,
 		widgets: [...value.widgets],
 	});
 
-	const applyConfig = (next: StatuslineConfig): MutationResult<void> => {
+	const syncQuota = async (ctx: QuotaContext) => {
+		const enabled = config.widgets.includes("quota");
+		await quotaMonitor.sync(ctx.model, ctx.modelRegistry as never, enabled);
+	};
+
+	const requestQuotaSync = () => {
+		if (quotaContext) void syncQuota(quotaContext);
+	};
+
+	const reloadConfig = (): MutationResult<StatuslineConfig> => {
+		configPath = resolveRuntimeConfigPath();
+		const loaded = loadStatuslineConfigResult(configPath);
+		if (!loaded.ok) {
+			configLoadError = loaded.error;
+			return loaded;
+		}
+		config = loaded.value;
+		configLoadError = undefined;
+		requestRender();
+		requestQuotaSync();
+		return { ok: true, value: cloneConfig(config) };
+	};
+
+	const refreshUsage = (ctx: UsageContext) => {
+		usage = aggregateSessionUsage(ctx.sessionManager.getBranch());
+		requestRender();
+	};
+
+	const applyConfig = (next: StatuslineConfig, overwriteInvalid = false): MutationResult<void> => {
+		if (configLoadError && !overwriteInvalid) {
+			return {
+				ok: false,
+				error: `${configLoadError}. Fix the file and reload, or use Reset to defaults.`,
+			};
+		}
 		const previous = cloneConfig(config);
 		const candidate = cloneConfig(next);
 		try {
 			saveStatuslineConfig(configPath, candidate);
 			config = candidate;
+			configLoadError = undefined;
 			requestRender();
+			requestQuotaSync();
 			return { ok: true, value: undefined };
 		} catch (error) {
 			config = previous;
@@ -99,7 +153,7 @@ export default function statusline(pi: ExtensionAPI) {
 	};
 
 	const resetConfig = (): MutationResult<void> =>
-		applyConfig(cloneConfig(DEFAULT_CONFIG));
+		applyConfig(cloneConfig(DEFAULT_CONFIG), true);
 
 	const git = async (cwd: string, args: string[]): Promise<string | undefined> => {
 		const result = await pi.exec("git", ["--no-optional-locks", ...args], { cwd, timeout: 2_000 });
@@ -125,17 +179,12 @@ export default function statusline(pi: ExtensionAPI) {
 				return symbolicRef;
 			}
 
-			const remoteInfo = await git(cwd, ["remote", "show", remote]);
-			const headName = remoteInfo
-				?.split("\n")
-				.map((line) => line.trim())
-				.find((line) => line.startsWith("HEAD branch:"))
-				?.slice("HEAD branch:".length)
-				.trim();
-			const remoteRef = headName ? `refs/remotes/${remote}/${headName}` : undefined;
-			if (remoteRef && await gitRefExists(cwd, remoteRef)) {
-				defaultBranchCache.set(cwd, remoteRef);
-				return remoteRef;
+			for (const branch of ["main", "master"]) {
+				const remoteRef = `refs/remotes/${remote}/${branch}`;
+				if (await gitRefExists(cwd, remoteRef)) {
+					defaultBranchCache.set(cwd, remoteRef);
+					return remoteRef;
+				}
 			}
 		}
 
@@ -150,19 +199,23 @@ export default function statusline(pi: ExtensionAPI) {
 		return undefined;
 	};
 
-	const refreshBranchChanges = async (cwd: string) => {
+	const refreshBranchChanges = async (cwd: string, lifecycle: number, request: number) => {
 		const defaultBranch = await resolveDefaultBranch(cwd);
 		const mergeBase = defaultBranch ? await git(cwd, ["merge-base", "HEAD", defaultBranch]) : undefined;
 		const numstat = mergeBase ? await git(cwd, ["diff", "--numstat", `${mergeBase}..HEAD`]) : undefined;
+		if (lifecycle !== lifecycleGeneration || request !== gitRequestGeneration) return;
 		branchChanges = numstat === undefined ? undefined : parseNumstat(numstat);
 		requestRender();
 	};
 
 	const scheduleGitRefresh = (cwd: string, delay = 120) => {
 		if (gitRefreshTimer) clearTimeout(gitRefreshTimer);
+		const lifecycle = lifecycleGeneration;
+		const request = ++gitRequestGeneration;
 		gitRefreshTimer = setTimeout(() => {
 			gitRefreshTimer = undefined;
-			void refreshBranchChanges(cwd).catch(() => {
+			void refreshBranchChanges(cwd, lifecycle, request).catch(() => {
+				if (lifecycle !== lifecycleGeneration || request !== gitRequestGeneration) return;
 				branchChanges = undefined;
 				requestRender();
 			});
@@ -212,28 +265,18 @@ export default function statusline(pi: ExtensionAPI) {
 		clearActiveTools();
 	};
 
-	const syncQuota = async (ctx: {
-		model?: { id?: string; name?: string; provider?: string; api?: string; baseUrl?: string };
-		modelRegistry: {
-			isUsingOAuth(model: unknown): boolean;
-			getRegisteredProviderConfig?(providerName: string): unknown;
-			getApiKeyAndHeaders(model: unknown): Promise<
-				| { ok: true; apiKey?: string; headers?: Record<string, string> }
-				| { ok: false; error: string }
-			>;
-		};
-	}) => {
-		const enabled = config.widgets.includes("quota");
-		await quotaMonitor.sync(ctx.model, ctx.modelRegistry as never, enabled);
-	};
-
 	pi.registerCommand("statusline", {
 		description: "Interactively configure pi statusline (or reload)",
 		handler: async (args, ctx) => {
+			quotaContext = ctx;
 			const action = args.trim().toLowerCase();
 			if (action === "reload") {
-				reloadConfig();
-				ctx.ui.notify(`Statusline config reloaded (${config.widgets.join(", ")})`, "info");
+				const reloaded = reloadConfig();
+				if (!reloaded.ok) {
+					ctx.ui.notify(reloaded.error, "error");
+					return;
+				}
+				ctx.ui.notify(`Statusline config reloaded (${reloaded.value.widgets.join(", ")})`, "info");
 				return;
 			}
 
@@ -251,21 +294,14 @@ export default function statusline(pi: ExtensionAPI) {
 				return;
 			}
 
-			reloadConfig();
+			const loaded = reloadConfig();
+			if (!loaded.ok) ctx.ui.notify(loaded.error, "error");
 			await runStatuslineConfigurator(
 				{
 					getConfig: () => cloneConfig(config),
 					getConfigPath: () => configPath,
 					applyConfig,
-					reloadConfig: () => {
-						try {
-							reloadConfig();
-							return { ok: true, value: cloneConfig(config) };
-						} catch (error) {
-							const message = error instanceof Error ? error.message : String(error);
-							return { ok: false, error: `Failed to reload config: ${message}` };
-						}
-					},
+					reloadConfig,
 					resetConfig,
 					ui: {
 						selectMain: (title, items) =>
@@ -300,14 +336,37 @@ export default function statusline(pi: ExtensionAPI) {
 								};
 							}),
 						select: (title, items) => ctx.ui.select(title, items),
-						input: (title, value) => ctx.ui.input(title, value),
+						input: (title, initialValue) =>
+							ctx.ui.custom<string | undefined>((tui, theme, _keybindings, done) => {
+								const container = new Container();
+								container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+								container.addChild(new Text(theme.fg("accent", theme.bold(title))));
+								const input = new Input();
+								input.setValue(initialValue);
+								input.focused = true;
+								input.onSubmit = done;
+								input.onEscape = () => done(undefined);
+								container.addChild(input);
+								container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+								return {
+									render: (width) => container.render(width),
+									invalidate: () => container.invalidate(),
+									handleInput: (data) => {
+										input.handleInput(data);
+										tui.requestRender();
+									},
+								};
+							}),
+						confirm: (title, message) => ctx.ui.confirm(title, message),
 						editWidgets: (title, allWidgets, enabled, onChange, onReject) =>
-							ctx.ui.custom<string[] | undefined>((tui, theme, _keybindings, done) =>
+							ctx.ui.custom<typeof enabled | undefined>((tui, theme, keybindings, done) =>
 								new WidgetsSetupComponent({
 									title,
 									allWidgets,
 									enabled,
 									theme,
+									previewConfig: cloneConfig(config),
+									keybindings,
 									onChange: (next) => onChange(next as typeof enabled),
 									onReject,
 									done: (next) => done(next as typeof enabled | undefined),
@@ -325,6 +384,13 @@ export default function statusline(pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		if (ctx.mode !== "tui") return;
 
+		lifecycleGeneration += 1;
+		gitRequestGeneration += 1;
+		if (gitRefreshTimer) clearTimeout(gitRefreshTimer);
+		gitRefreshTimer = undefined;
+		renderRequest = undefined;
+		quotaContext = ctx;
+		quotaMonitor.clear();
 		runState = "Ready";
 		branchChanges = undefined;
 		environment = undefined;
@@ -332,8 +398,12 @@ export default function statusline(pi: ExtensionAPI) {
 		for (const name of Object.keys(toolStats)) delete toolStats[name];
 		durationTracker.reset();
 		stopDurationTick();
-		reloadConfig();
-		void syncQuota(ctx);
+		refreshUsage(ctx);
+		const loaded = reloadConfig();
+		if (!loaded.ok) {
+			ctx.ui.notify(loaded.error, "error");
+			requestQuotaSync();
+		}
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			const localRenderRequest = () => tui.requestRender();
@@ -350,8 +420,6 @@ export default function statusline(pi: ExtensionAPI) {
 				},
 				invalidate() {},
 				render(width: number): string[] {
-					const palette = selectPalette(theme.name);
-					const usage = aggregateSessionUsage(ctx.sessionManager.getBranch());
 					const context = ctx.getContextUsage();
 					const thinking = ctx.model?.reasoning ? pi.getThinkingLevel() : "off";
 					const extensionStatuses = footerData.getExtensionStatuses();
@@ -380,6 +448,7 @@ export default function statusline(pi: ExtensionAPI) {
 						duration: durationTracker.snapshot(),
 						runState,
 						quota: config.widgets.includes("quota") ? quotaMonitor.getSnapshot() : undefined,
+						quotaStatus: config.widgets.includes("quota") ? quotaMonitor.getStatus() : undefined,
 						environment: config.widgets.includes("environment") ? environment : undefined,
 						toolActivity: config.widgets.includes("toolActivity") && Object.keys(toolStats).length > 0
 							? toolStats
@@ -390,7 +459,7 @@ export default function statusline(pi: ExtensionAPI) {
 					const rendered = renderStatusLine(
 						segments,
 						config,
-						palette,
+						theme,
 						width,
 						truncateToWidth,
 						visibleWidth,
@@ -427,11 +496,11 @@ export default function statusline(pi: ExtensionAPI) {
 		startDurationTick();
 		requestRender();
 	});
-	pi.on("message_end", async (event) => {
+	pi.on("message_end", async (event, ctx) => {
 		if (event.message.role !== "assistant") return;
 		durationTracker.stopSegment();
 		stopDurationTick();
-		requestRender();
+		refreshUsage(ctx);
 	});
 	pi.on("message_update", async (event) => {
 		if (activeTools.size > 0) return;
@@ -442,10 +511,12 @@ export default function statusline(pi: ExtensionAPI) {
 		clearActiveTools();
 		durationTracker.endRound();
 		stopDurationTick();
+		refreshUsage(ctx);
 		setRunState("Ready");
 		scheduleGitRefresh(ctx.cwd, 0);
 	});
 	pi.on("tool_execution_start", async (event) => {
+		if (!shouldTrackToolActivity(event.toolName)) return;
 		activeTools.add(event.toolCallId);
 		toolCallNames.set(event.toolCallId, event.toolName);
 		const stats = ensureTool(event.toolName);
@@ -453,6 +524,7 @@ export default function statusline(pi: ExtensionAPI) {
 		setRunState("Working");
 	});
 	pi.on("tool_execution_end", async (event, ctx) => {
+		if (!shouldTrackToolActivity(event.toolName)) return;
 		activeTools.delete(event.toolCallId);
 		const name = toolCallNames.get(event.toolCallId) ?? event.toolName;
 		toolCallNames.delete(event.toolCallId);
@@ -464,31 +536,38 @@ export default function statusline(pi: ExtensionAPI) {
 		scheduleGitRefresh(ctx.cwd);
 	});
 	pi.on("model_select", async (_event, ctx) => {
+		quotaContext = ctx;
 		quotaMonitor.clear();
-		void syncQuota(ctx);
+		requestQuotaSync();
 		requestRender();
 	});
 	pi.on("after_provider_response", async (event, ctx) => {
 		if (!config.widgets.includes("quota")) return;
+		quotaContext = ctx;
 		quotaMonitor.noteProviderResponse(event.status, event.headers);
-		void syncQuota(ctx);
+		requestQuotaSync();
 	});
 	pi.on("session_tree", async (_event, ctx) => {
+		quotaContext = ctx;
 		resetToolActivity();
-		void syncQuota(ctx);
-		requestRender();
+		refreshUsage(ctx);
+		requestQuotaSync();
 	});
 	pi.on("thinking_level_select", async () => requestRender());
-	pi.on("session_compact", async () => requestRender());
+	pi.on("session_compact", async (_event, ctx) => refreshUsage(ctx));
 	pi.on("session_info_changed", async () => requestRender());
 	pi.on("session_shutdown", async () => {
+		lifecycleGeneration += 1;
+		gitRequestGeneration += 1;
 		if (gitRefreshTimer) clearTimeout(gitRefreshTimer);
 		gitRefreshTimer = undefined;
 		stopDurationTick();
 		durationTracker.reset();
 		renderRequest = undefined;
 		clearActiveTools();
+		quotaContext = undefined;
 		quotaMonitor.dispose();
+		usage = aggregateSessionUsage([]);
 		environment = undefined;
 	});
 }

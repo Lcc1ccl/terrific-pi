@@ -1,12 +1,15 @@
-import { isKeyRelease, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { isKeyRelease, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import {
 	buildWidgetEditorItems,
 	enabledFromEditorItems,
 	moveEditorItem,
 	toggleEditorItem,
+	widgetEditorAction,
+	type WidgetEditorBinding,
 	type WidgetEditorItem,
 } from "./configure.ts";
+import type { StatuslineConfig } from "./types.ts";
 import { formatWidgetsPreview } from "./widgets.ts";
 
 export type WidgetsSetupTheme = {
@@ -18,8 +21,10 @@ export type WidgetsSetupOptions = {
 	allWidgets: readonly string[];
 	enabled: readonly string[];
 	theme: WidgetsSetupTheme;
-	/** Called with enabled ids in display order after each successful toggle/move. */
-	onChange: (enabled: string[]) => void;
+	previewConfig: StatuslineConfig;
+	keybindings: { matches(data: string, binding: WidgetEditorBinding): boolean };
+	/** Return true to commit the local editor state after persistence succeeds. */
+	onChange: (enabled: string[]) => boolean;
 	/** Called when a toggle/move is rejected (e.g. last widget). */
 	onReject?: (error: string) => void;
 	done: (enabled: string[] | undefined) => void;
@@ -38,7 +43,9 @@ export class WidgetsSetupComponent {
 	private rejectMessage?: string;
 	private readonly title: string;
 	private readonly theme: WidgetsSetupTheme;
-	private readonly onChange: (enabled: string[]) => void;
+	private readonly previewConfig: StatuslineConfig;
+	private readonly keybindings: WidgetsSetupOptions["keybindings"];
+	private readonly onChange: (enabled: string[]) => boolean;
 	private readonly onReject?: (error: string) => void;
 	private readonly done: (enabled: string[] | undefined) => void;
 	private readonly requestRender: () => void;
@@ -47,6 +54,8 @@ export class WidgetsSetupComponent {
 		this.title = options.title;
 		this.items = buildWidgetEditorItems(options.enabled, options.allWidgets);
 		this.theme = options.theme;
+		this.previewConfig = options.previewConfig;
+		this.keybindings = options.keybindings;
 		this.onChange = options.onChange;
 		this.onReject = options.onReject;
 		this.done = options.done;
@@ -56,41 +65,32 @@ export class WidgetsSetupComponent {
 	handleInput(data: string): void {
 		if (isKeyRelease(data)) return;
 
-		if (matchesKey(data, "escape")) {
-			this.done(undefined);
-			return;
-		}
-		if (matchesKey(data, "return") || matchesKey(data, "enter")) {
-			this.done(enabledFromEditorItems(this.items));
-			return;
-		}
-
-		if (matchesKey(data, "up") || data === "k") {
-			if (this.items.length === 0) return;
-			this.selected = (this.selected - 1 + this.items.length) % this.items.length;
-			this.rejectMessage = undefined;
-			this.bump();
-			return;
-		}
-		if (matchesKey(data, "down") || data === "j") {
-			if (this.items.length === 0) return;
-			this.selected = (this.selected + 1) % this.items.length;
-			this.rejectMessage = undefined;
-			this.bump();
-			return;
-		}
-
-		if (matchesKey(data, "left") || data === "h") {
-			this.move(-1);
-			return;
-		}
-		if (matchesKey(data, "right") || data === "l") {
-			this.move(1);
-			return;
-		}
-
-		if (matchesKey(data, "space") || data === " ") {
-			this.toggle();
+		const action = widgetEditorAction(data, this.keybindings);
+		switch (action) {
+			case "cancel":
+				this.done(undefined);
+				return;
+			case "done":
+				this.done(enabledFromEditorItems(this.items));
+				return;
+			case "up":
+			case "down": {
+				if (this.items.length === 0) return;
+				const delta = action === "up" ? -1 : 1;
+				this.selected = (this.selected + delta + this.items.length) % this.items.length;
+				this.rejectMessage = undefined;
+				this.bump();
+				return;
+			}
+			case "left":
+				this.move(-1);
+				return;
+			case "right":
+				this.move(1);
+				return;
+			case "toggle":
+				this.toggle();
+				return;
 		}
 	}
 
@@ -118,7 +118,7 @@ export class WidgetsSetupComponent {
 
 		lines.push("");
 		lines.push(th.fg("dim", `enabled: ${enabled.join(" · ") || "(none)"}`));
-		lines.push(th.fg("dim", `preview: ${formatWidgetsPreview(enabled)}`));
+		lines.push(th.fg("dim", `preview: ${formatWidgetsPreview(enabled, this.previewConfig)}`));
 		if (this.rejectMessage) {
 			lines.push(th.fg("warning", this.rejectMessage));
 		}
@@ -143,9 +143,14 @@ export class WidgetsSetupComponent {
 			this.bump();
 			return;
 		}
+		const enabled = enabledFromEditorItems(result.value);
+		if (!this.onChange(enabled)) {
+			this.rejectMessage = "Change was not saved";
+			this.bump();
+			return;
+		}
 		this.items = result.value;
 		this.rejectMessage = undefined;
-		this.onChange(enabledFromEditorItems(this.items));
 		this.bump();
 	}
 
@@ -155,10 +160,15 @@ export class WidgetsSetupComponent {
 			this.rejectMessage = undefined;
 			return;
 		}
+		const enabled = enabledFromEditorItems(result.value.items);
+		if (!this.onChange(enabled)) {
+			this.rejectMessage = "Change was not saved";
+			this.bump();
+			return;
+		}
 		this.items = result.value.items;
 		this.selected = result.value.index;
 		this.rejectMessage = undefined;
-		this.onChange(enabledFromEditorItems(this.items));
 		this.bump();
 	}
 

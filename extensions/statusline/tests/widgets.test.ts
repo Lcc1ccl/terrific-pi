@@ -4,8 +4,10 @@ import { describe, it } from "node:test";
 import { DEFAULT_CONFIG } from "../lib/config.ts";
 import {
 	buildWidgetSegments,
+	EXCLUDED_TOOL_ACTIVITY_NAMES,
 	joinExtensionProgress,
 	runStateForAssistantEvent,
+	shouldTrackToolActivity,
 } from "../lib/widgets.ts";
 import type { StatusSnapshot } from "../lib/types.ts";
 
@@ -37,7 +39,6 @@ describe("buildWidgetSegments", () => {
 				"model",
 				"fast",
 				"tokens",
-				"tokens",
 				"cache",
 				"cost",
 				"contextBar",
@@ -54,8 +55,7 @@ describe("buildWidgetSegments", () => {
 				"demo",
 				"gpt-5 high",
 				"",
-				"🔼 1.5K",
-				"🔽 800",
+				"🔼 1.5K · 🔽 800",
 				"🎯 66.7%",
 				"$0.42",
 				"Context [██████░░░░] 60%",
@@ -117,14 +117,14 @@ describe("buildWidgetSegments", () => {
 		assert.deepEqual(inactive, []);
 	});
 
-	it("uses triangle token direction emojis with spacing", () => {
+	it("keeps input and output tokens in one atomic segment", () => {
 		const segments = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,
 			widgets: ["tokens"],
 		});
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
-			["🔼 1.5K", "🔽 800"],
+			["🔼 1.5K · 🔽 800"],
 		);
 	});
 
@@ -136,7 +136,7 @@ describe("buildWidgetSegments", () => {
 		});
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
-			["in 1.5K", "out 800", "cache 66.7%", "fast", "main"],
+			["in 1.5K · out 800", "cache 66.7%", "fast", "main"],
 		);
 	});
 
@@ -156,6 +156,16 @@ describe("buildWidgetSegments", () => {
 		assert.deepEqual(segments.map((segment) => segment.text), ["🏠"]);
 	});
 
+	it("shows an unavailable marker when context usage is unknown", () => {
+		for (const widget of ["context", "contextBar"] as const) {
+			const segments = buildWidgetSegments(
+				{ ...baseSnapshot, context: undefined },
+				{ ...DEFAULT_CONFIG, widgets: [widget] },
+			);
+			assert.deepEqual(segments.map((segment) => segment.text), ["Context ?"]);
+		}
+	});
+
 	it("hides branch changes when the diff is empty", () => {
 		const segments = buildWidgetSegments(
 			{ ...baseSnapshot, branchDiff: { additions: 0, deletions: 0 } },
@@ -173,6 +183,19 @@ describe("buildWidgetSegments", () => {
 			segments.map((segment) => segment.text),
 			["🕒 12.3s / 1m45s", "Ready"],
 		);
+	});
+
+	it("renders quota loading and first-load error states", () => {
+		for (const [quotaStatus, expected] of [
+			["loading", "Usage …"],
+			["error", "Usage unavailable"],
+		] as const) {
+			const segments = buildWidgetSegments(
+				{ ...baseSnapshot, quotaStatus },
+				{ ...DEFAULT_CONFIG, widgets: ["quota"] },
+			);
+			assert.deepEqual(segments.map((segment) => segment.text), [expected]);
+		}
 	});
 
 	it("renders quota environment and tool activity widgets", () => {
@@ -230,19 +253,27 @@ describe("runStateForAssistantEvent", () => {
 	});
 });
 
+describe("shouldTrackToolActivity", () => {
+	it("excludes process metadata while retaining business tools", () => {
+		assert.deepEqual([...EXCLUDED_TOOL_ACTIVITY_NAMES], ["process_update"]);
+		assert.equal(shouldTrackToolActivity("process_update"), false);
+		assert.equal(shouldTrackToolActivity("read"), true);
+		assert.equal(shouldTrackToolActivity("custom_tool"), true);
+	});
+});
+
 describe("joinExtensionProgress", () => {
-	it("joins non-excluded statuses and strips ansi", () => {
+	it("keeps generic modes and strips ANSI and OSC controls", () => {
 		const statuses = new Map([
-			["ponytail", "\x1b[32m○\x1b[39m 🐴 ponytail: LITE"],
+			["ponytail", "\x1b[32mponytail: LITE\x1b[39m"],
 			["fast", ""],
-			["task", "step 1/2"],
+			["task", "\x1b]8;;https://example.com\x07step 1/2\x1b]8;;\x07"],
 			["other", "  building  "],
 		]);
-		assert.equal(joinExtensionProgress(statuses), "step 1/2 building");
+		assert.equal(joinExtensionProgress(statuses), "ponytail: LITE step 1/2 building");
 	});
 
-	it("returns undefined when only excluded/empty remain", () => {
-		assert.equal(joinExtensionProgress(new Map([["ponytail", "active"]])), undefined);
+	it("returns undefined when only dedicated or empty statuses remain", () => {
 		assert.equal(joinExtensionProgress(new Map([["pi-essentials-mode", "PLAN"]])), undefined);
 		assert.equal(joinExtensionProgress(new Map([["fast", ""]])), undefined);
 		assert.equal(joinExtensionProgress(new Map([["task", "   "]])), undefined);

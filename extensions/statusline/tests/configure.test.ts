@@ -5,6 +5,7 @@ import {
 	buildWidgetEditorItems,
 	enabledFromEditorItems,
 	formatConfigSummary,
+	formatSettingChoices,
 	moveEditorItem,
 	moveWidget,
 	parseContextBarWidth,
@@ -112,18 +113,31 @@ describe("widget editor items", () => {
 });
 
 describe("parseContextBarWidth", () => {
-	it("accepts integers from 1 to 40", () => {
+	it("accepts integers from 4 to 40", () => {
 		assert.deepEqual(parseContextBarWidth("10"), { ok: true, value: 10 });
-		assert.deepEqual(parseContextBarWidth(" 1 "), { ok: true, value: 1 });
+		assert.deepEqual(parseContextBarWidth(" 4 "), { ok: true, value: 4 });
 		assert.deepEqual(parseContextBarWidth("40"), { ok: true, value: 40 });
 	});
 
 	it("rejects invalid widths", () => {
-		assert.equal(parseContextBarWidth("0").ok, false);
+		assert.equal(parseContextBarWidth("3").ok, false);
 		assert.equal(parseContextBarWidth("41").ok, false);
 		assert.equal(parseContextBarWidth("8.5").ok, false);
 		assert.equal(parseContextBarWidth("abc").ok, false);
 		assert.equal(parseContextBarWidth("").ok, false);
+	});
+});
+
+describe("formatSettingChoices", () => {
+	it("puts the current value first and marks current and default values", () => {
+		assert.deepEqual(
+			formatSettingChoices(["single", "stacked"], "stacked", "single"),
+			["stacked [current]", "single [default]"],
+		);
+		assert.deepEqual(
+			formatSettingChoices(["on", "off"], "off", "off"),
+			["off [current] [default]", "on"],
+		);
 	});
 });
 
@@ -134,9 +148,11 @@ describe("parseWidgetSpacing", () => {
 		assert.deepEqual(parseWidgetSpacing("4"), { ok: true, value: 4 });
 	});
 
-	it("rejects values outside 0 to 4", () => {
+	it("rejects values outside 0 to 4 and reports the default", () => {
 		for (const raw of ["-1", "5", "1.5", "abc", ""]) {
-			assert.equal(parseWidgetSpacing(raw).ok, false);
+			const result = parseWidgetSpacing(raw);
+			assert.equal(result.ok, false);
+			if (!result.ok) assert.match(result.error, /default 1/);
 		}
 	});
 });
@@ -157,7 +173,7 @@ describe("formatConfigSummary", () => {
 		assert.match(summary, /layout: single/);
 		assert.match(summary, /iconMode: emoji/);
 		assert.match(summary, /contextMode: remaining/);
-		assert.match(summary, /contextBarWidth: 10 \(default 10, min 1, max 40\)/);
+		assert.match(summary, /contextBarWidth: 10 \(default 10, min 4, max 40\)/);
 		assert.match(summary, /minimal: false/);
 		assert.match(summary, /spacing: 1 \(default 1, min 0, max 4\)/);
 		assert.doesNotMatch(summary, /separator:/);
@@ -196,12 +212,129 @@ describe("main menu selector", () => {
 				},
 				input: async () => undefined,
 				editWidgets: async () => undefined,
+				confirm: async () => true,
 				notify: () => {},
 			},
 		}, ["path"]);
 
 		assert.equal(mainCalls, 1);
 		assert.equal(nestedCalls, 0);
+	});
+});
+
+describe("widget editor apply", () => {
+	it("reports a rejected config mutation back to the editor", async () => {
+		const config: StatuslineConfig = {
+			widgets: ["path"],
+			layout: "single",
+			iconMode: "emoji",
+			contextMode: "remaining",
+			contextBarWidth: 10,
+			minimal: false,
+			spacing: 1,
+		};
+		const choices = ["Widgets", "Done"];
+		let accepted: boolean | undefined;
+
+		await runStatuslineConfigurator({
+			getConfig: () => config,
+			getConfigPath: () => "/tmp/statusline.json",
+			applyConfig: () => ({ ok: false, error: "save failed" }),
+			reloadConfig: () => ({ ok: true, value: config }),
+			resetConfig: () => ({ ok: true, value: undefined }),
+			ui: {
+				selectMain: async () => choices.shift(),
+				select: async () => undefined,
+				input: async () => undefined,
+				editWidgets: async (_title, _all, _enabled, onChange) => {
+					accepted = onChange(["state"]);
+					return undefined;
+				},
+				confirm: async () => true,
+				notify: () => {},
+			},
+		}, ["path", "state"]);
+
+		assert.equal(accepted, false);
+	});
+});
+
+describe("setting menus", () => {
+	it("shows current/default markers and preselects the current value", async () => {
+		const config: StatuslineConfig = {
+			widgets: ["path"],
+			layout: "stacked",
+			iconMode: "emoji",
+			contextMode: "remaining",
+			contextBarWidth: 10,
+			minimal: false,
+			spacing: 1,
+		};
+		const choices = ["Layout", "Done"];
+		let nestedItems: string[] | undefined;
+
+		await runStatuslineConfigurator({
+			getConfig: () => config,
+			getConfigPath: () => "/tmp/statusline.json",
+			applyConfig: () => ({ ok: true, value: undefined }),
+			reloadConfig: () => ({ ok: true, value: config }),
+			resetConfig: () => ({ ok: true, value: undefined }),
+			ui: {
+				selectMain: async () => choices.shift(),
+				select: async (_title, items) => {
+					nestedItems = items;
+					return undefined;
+				},
+				input: async () => undefined,
+				editWidgets: async () => undefined,
+				confirm: async () => true,
+				notify: () => {},
+			},
+		}, ["path"]);
+
+		assert.deepEqual(nestedItems, ["stacked [current]", "single [default]", "Back"]);
+	});
+});
+
+describe("reset confirmation", () => {
+	it("does not reset when confirmation is declined", async () => {
+		const config: StatuslineConfig = {
+			widgets: ["path"],
+			layout: "single",
+			iconMode: "emoji",
+			contextMode: "remaining",
+			contextBarWidth: 10,
+			minimal: false,
+			spacing: 1,
+		};
+		const choices = ["Reset to defaults", "Done"];
+		let resets = 0;
+		let confirmations = 0;
+
+		await runStatuslineConfigurator({
+			getConfig: () => config,
+			getConfigPath: () => "/tmp/statusline.json",
+			applyConfig: () => ({ ok: true, value: undefined }),
+			reloadConfig: () => ({ ok: true, value: config }),
+			resetConfig: () => {
+				resets += 1;
+				return { ok: true, value: undefined };
+			},
+			ui: {
+				selectMain: async () => choices.shift(),
+				select: async () => undefined,
+				input: async () => undefined,
+				editWidgets: async () => undefined,
+				confirm: async () => {
+					confirmations += 1;
+					return false;
+				},
+				notify: () => {},
+			},
+		}, ["path"]);
+
+		assert.equal(confirmations, 1);
+		assert.equal(resets, 0);
 	});
 });
 
@@ -235,6 +368,7 @@ describe("widget spacing prompt", () => {
 					return undefined;
 				},
 				editWidgets: async () => undefined,
+				confirm: async () => true,
 				notify: () => {},
 			},
 		}, ["path"]);
@@ -274,11 +408,12 @@ describe("context bar width prompt", () => {
 					return undefined;
 				},
 				editWidgets: async () => undefined,
+				confirm: async () => true,
 				notify: () => {},
 			},
 		}, ["path"]);
 
-		assert.equal(inputTitle, "Context bar width (default 10, min 1, max 40)");
+		assert.equal(inputTitle, "Context bar width (default 10, min 4, max 40)");
 		assert.equal(inputValue, "10");
 	});
 });

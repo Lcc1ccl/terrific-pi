@@ -1,4 +1,8 @@
-import { DEFAULT_CONFIG } from "./config.ts";
+import {
+	DEFAULT_CONFIG,
+	MAX_CONTEXT_BAR_WIDTH,
+	MIN_CONTEXT_BAR_WIDTH,
+} from "./config.ts";
 import { formatDurationPair } from "./duration.ts";
 import {
 	formatBranch,
@@ -18,7 +22,7 @@ import {
 	formatToolActivity,
 	type SegmentContent,
 } from "./format.ts";
-import { formatWidgetSeparator } from "./render.ts";
+import { formatWidgetSeparator, stripTerminalControls } from "./render.ts";
 import type {
 	RunState,
 	StatusSnapshot,
@@ -28,10 +32,15 @@ import type {
 } from "./types.ts";
 import { WIDGET_PRIORITY } from "./types.ts";
 
-const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+/** Extension status keys that have dedicated widgets. */
+export const EXCLUDED_PROGRESS_KEYS = new Set(["pi-essentials-mode", "fast"]);
 
-/** Extension status keys that are badges, not task progress. */
-export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail", "pi-essentials-mode", "fast"]);
+/** Metadata-only tools that should not appear in footer activity. */
+export const EXCLUDED_TOOL_ACTIVITY_NAMES = new Set(["process_update"]);
+
+export function shouldTrackToolActivity(toolName: string): boolean {
+	return !EXCLUDED_TOOL_ACTIVITY_NAMES.has(toolName);
+}
 
 /** Status key written by pi-essentials /mode. */
 export const MODE_STATUS_KEY = "pi-essentials-mode";
@@ -46,11 +55,7 @@ export function runStateForAssistantEvent(type: string): RunState | undefined {
 }
 
 export function sanitizeStatus(text: string): string {
-	return text
-		.replace(ANSI_PATTERN, "")
-		.replace(/[\r\n\t]/g, " ")
-		.replace(/ +/g, " ")
-		.trim();
+	return stripTerminalControls(text).replace(/ +/g, " ").trim();
 }
 
 /** Join extension statuses for the progress widget, skipping excluded keys. */
@@ -120,17 +125,15 @@ function pushContent(
 
 export function formatWidgetsPreview(
 	enabled: readonly string[],
-	spacing = DEFAULT_CONFIG.spacing,
-	iconMode = DEFAULT_CONFIG.iconMode,
+	config: StatuslineConfig = DEFAULT_CONFIG,
 ): string {
 	const widgets = enabled.filter((id): id is WidgetId => typeof id === "string");
 	if (widgets.length === 0) return "(none)";
 	const segments = buildWidgetSegments(PREVIEW_SNAPSHOT, {
-		...DEFAULT_CONFIG,
+		...config,
 		widgets,
-		iconMode,
 	});
-	return segments.map((segment) => segment.text).join(formatWidgetSeparator(spacing)) || "(empty)";
+	return segments.map((segment) => segment.text).join(formatWidgetSeparator(config.spacing)) || "(empty)";
 }
 
 export function buildWidgetSegments(snapshot: StatusSnapshot, config: StatuslineConfig): WidgetSegment[] {
@@ -196,18 +199,17 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 						priority,
 					);
 				} else {
+					const input = formatTokenDirection("in", snapshot.tokens.input, iconMode);
+					const output = formatTokenDirection("out", snapshot.tokens.output, iconMode);
+					const separator = formatWidgetSeparator(config.spacing);
 					pushContent(
 						segments,
 						id,
 						"usage",
-						formatTokenDirection("in", snapshot.tokens.input, iconMode),
-						priority,
-					);
-					pushContent(
-						segments,
-						id,
-						"usage",
-						formatTokenDirection("out", snapshot.tokens.output, iconMode),
+						{
+							text: `${input.text}${separator}${output.text}`,
+							parts: [...input.parts, { text: separator, tone: "dim" }, ...output.parts],
+						},
 						priority,
 					);
 				}
@@ -224,22 +226,31 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				}
 				break;
 			case "context": {
-				const body = formatContextText(snapshot.context?.percent, config.contextMode, minimal);
-				if (body) pushContent(segments, id, "usage", body, priority);
+				const body = formatContextText(snapshot.context?.percent, config.contextMode, minimal)
+					?? { text: "Context ?", parts: [{ text: "Context ", tone: "label" }, { text: "?", tone: "dim" }] };
+				pushContent(segments, id, "usage", body, priority);
 				break;
 			}
 			case "contextBar": {
 				const percent = snapshot.context?.percent;
 				const body = formatContextBar(percent, config.contextBarWidth, config.contextMode);
-				if (body && percent !== null && percent !== undefined && !Number.isNaN(percent)) {
-					pushContent(segments, id, "neutral", body, priority, {
-						bar: {
-							width: Math.max(4, Math.min(40, Math.floor(config.contextBarWidth || 10))),
-							minWidth: 4,
-							rebuild: (width) => formatContextBar(percent, width, config.contextMode) ?? body,
-						},
-					});
+				if (!body || percent === null || percent === undefined || Number.isNaN(percent)) {
+					pushContent(segments, id, "neutral", {
+						text: "Context ?",
+						parts: [{ text: "Context ", tone: "label" }, { text: "?", tone: "dim" }],
+					}, priority);
+					break;
 				}
+				pushContent(segments, id, "neutral", body, priority, {
+					bar: {
+						width: Math.max(
+							MIN_CONTEXT_BAR_WIDTH,
+							Math.min(MAX_CONTEXT_BAR_WIDTH, Math.floor(config.contextBarWidth || DEFAULT_CONFIG.contextBarWidth)),
+						),
+						minWidth: MIN_CONTEXT_BAR_WIDTH,
+						rebuild: (width) => formatContextBar(percent, width, config.contextMode) ?? body,
+					},
+				});
 				break;
 			}
 			case "branch":
@@ -284,7 +295,20 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				});
 				break;
 			case "quota": {
-				if (!snapshot.quota) break;
+				if (!snapshot.quota) {
+					if (snapshot.quotaStatus === "loading") {
+						pushContent(segments, id, "neutral", {
+							text: "Usage …",
+							parts: [{ text: "Usage ", tone: "label" }, { text: "…", tone: "dim" }],
+						}, priority);
+					} else if (snapshot.quotaStatus === "error") {
+						pushContent(segments, id, "neutral", {
+							text: "Usage unavailable",
+							parts: [{ text: "Usage ", tone: "label" }, { text: "unavailable", tone: "error" }],
+						}, priority);
+					}
+					break;
+				}
 				const body = formatQuota(snapshot.quota, iconMode, 6);
 				if (!body) break;
 				pushContent(segments, id, "neutral", body, priority, {

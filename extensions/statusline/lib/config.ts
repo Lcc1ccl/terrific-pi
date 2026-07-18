@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import type { ContextMode, IconMode, StatuslineConfig, StatuslineLayout, WidgetId } from "./types.ts";
 
@@ -32,7 +32,7 @@ export const MIN_WIDGET_SPACING = 0;
 export const MAX_WIDGET_SPACING = 4;
 
 export const DEFAULT_CONTEXT_BAR_WIDTH = 10;
-export const MIN_CONTEXT_BAR_WIDTH = 1;
+export const MIN_CONTEXT_BAR_WIDTH = 4;
 export const MAX_CONTEXT_BAR_WIDTH = 40;
 
 export const DEFAULT_CONFIG: StatuslineConfig = {
@@ -66,7 +66,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function asWidgetIds(value: unknown): WidgetId[] | undefined {
 	if (!Array.isArray(value)) return undefined;
 	const widgets = value.filter((item): item is WidgetId => typeof item === "string" && WIDGET_ID_SET.has(item));
-	return widgets;
+	return [...new Set(widgets)];
 }
 
 function asContextMode(value: unknown): ContextMode | undefined {
@@ -82,9 +82,8 @@ function asIconMode(value: unknown): IconMode | undefined {
 }
 
 function asContextBarWidth(value: unknown): number | undefined {
-	if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-	const rounded = Math.floor(value);
-	return rounded >= MIN_CONTEXT_BAR_WIDTH && rounded <= MAX_CONTEXT_BAR_WIDTH ? rounded : undefined;
+	if (typeof value !== "number" || !Number.isInteger(value)) return undefined;
+	return value >= MIN_CONTEXT_BAR_WIDTH && value <= MAX_CONTEXT_BAR_WIDTH ? value : undefined;
 }
 
 function asWidgetSpacing(value: unknown): number | undefined {
@@ -114,13 +113,20 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 	};
 }
 
-export function loadStatuslineConfig(path: string): StatuslineConfig {
+export type ConfigLoadResult =
+	| { ok: true; value: StatuslineConfig }
+	| { ok: false; error: string };
+
+export function loadStatuslineConfigResult(path: string): ConfigLoadResult {
+	if (!existsSync(path)) return { ok: true, value: mergeStatuslineConfig({}) };
 	try {
-		if (!existsSync(path)) return mergeStatuslineConfig({});
 		const text = readFileSync(path, "utf8");
-		return mergeStatuslineConfig(JSON.parse(text));
-	} catch {
-		return mergeStatuslineConfig({});
+		const raw: unknown = JSON.parse(text);
+		if (!isRecord(raw)) throw new Error("Config root must be a JSON object");
+		return { ok: true, value: mergeStatuslineConfig(raw) };
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		return { ok: false, error: `Failed to load ${path}: ${message}` };
 	}
 }
 
@@ -134,8 +140,18 @@ export function saveStatuslineConfig(path: string, config: StatuslineConfig): vo
 		minimal: config.minimal,
 		spacing: config.spacing,
 	};
-	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+	const directory = dirname(path);
+	const temporary = join(directory, `.${basename(path)}.${process.pid}.${Date.now()}.tmp`);
+	mkdirSync(directory, { recursive: true });
+	try {
+		writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+		renameSync(temporary, path);
+	} catch (error) {
+		try {
+			unlinkSync(temporary);
+		} catch {}
+		throw error;
+	}
 }
 
 export function resolveConfigPath(options: {
@@ -153,6 +169,6 @@ export function resolveRuntimeConfigPath(explicit?: string): string {
 	return resolveConfigPath({
 		explicit,
 		envPath: process.env.PI_STATUSLINE_CONFIG,
-		agentDir: process.env.PI_AGENT_DIR || join(homedir(), ".pi", "agent"),
+		agentDir: process.env.PI_CODING_AGENT_DIR || process.env.PI_AGENT_DIR || join(homedir(), ".pi", "agent"),
 	});
 }

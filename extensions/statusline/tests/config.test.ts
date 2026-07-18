@@ -6,12 +6,19 @@ import { describe, it } from "node:test";
 
 import {
 	DEFAULT_CONFIG,
-	loadStatuslineConfig,
+	loadStatuslineConfigResult,
 	mergeStatuslineConfig,
 	resolveConfigPath,
+	resolveRuntimeConfigPath,
 	saveStatuslineConfig,
 	WIDGET_IDS,
 } from "../lib/config.ts";
+
+function loadConfig(path: string) {
+	const result = loadStatuslineConfigResult(path);
+	if (!result.ok) throw new Error(result.error);
+	return result.value;
+}
 
 describe("mergeStatuslineConfig", () => {
 	it("keeps defaults for empty input", () => {
@@ -57,6 +64,15 @@ describe("mergeStatuslineConfig", () => {
 		assert.equal("separator" in merged, false);
 	});
 
+	it("deduplicates widgets and rejects fractional context widths", () => {
+		const merged = mergeStatuslineConfig({
+			widgets: ["path", "cost", "path", "cost"],
+			contextBarWidth: 8.9,
+		});
+		assert.deepEqual(merged.widgets, ["path", "cost"]);
+		assert.equal(merged.contextBarWidth, DEFAULT_CONFIG.contextBarWidth);
+	});
+
 	it("falls back for illegal layout and iconMode", () => {
 		const merged = mergeStatuslineConfig({ layout: "grid", iconMode: "ascii" });
 		assert.equal(merged.layout, "single");
@@ -76,12 +92,12 @@ describe("mergeStatuslineConfig", () => {
 	});
 });
 
-describe("loadStatuslineConfig", () => {
+describe("loadStatuslineConfigResult", () => {
 	it("loads partial json and merges defaults", () => {
 		const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
 		const file = join(dir, "settings.json");
 		writeFileSync(file, JSON.stringify({ widgets: ["path", "cost"], minimal: true }), "utf8");
-		const loaded = loadStatuslineConfig(file);
+		const loaded = loadConfig(file);
 		assert.deepEqual(loaded.widgets, ["path", "cost"]);
 		assert.equal(loaded.minimal, true);
 		assert.equal(loaded.contextMode, DEFAULT_CONFIG.contextMode);
@@ -90,12 +106,28 @@ describe("loadStatuslineConfig", () => {
 		assert.equal(loaded.spacing, 1);
 	});
 
-	it("returns defaults for missing or invalid files", () => {
-		assert.deepEqual(loadStatuslineConfig("/tmp/does-not-exist-pi-statusline.json"), DEFAULT_CONFIG);
+	it("returns defaults for a missing file", () => {
+		assert.deepEqual(loadConfig("/tmp/does-not-exist-pi-statusline.json"), DEFAULT_CONFIG);
+	});
+
+	it("rejects a non-object JSON root", () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
+		const file = join(dir, "array.json");
+		writeFileSync(file, "[]", "utf8");
+
+		const result = loadStatuslineConfigResult(file);
+		assert.equal(result.ok, false);
+		if (!result.ok) assert.match(result.error, /root must be a JSON object/i);
+	});
+
+	it("reports invalid JSON instead of treating it as a successful reload", () => {
 		const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
 		const file = join(dir, "bad.json");
 		writeFileSync(file, "{not-json", "utf8");
-		assert.deepEqual(loadStatuslineConfig(file), DEFAULT_CONFIG);
+
+		const result = loadStatuslineConfigResult(file);
+		assert.equal(result.ok, false);
+		if (!result.ok) assert.match(result.error, /failed to load.*bad\.json/i);
 	});
 });
 
@@ -104,6 +136,25 @@ describe("resolveConfigPath", () => {
 		assert.equal(resolveConfigPath({ explicit: "/tmp/a.json", envPath: "/tmp/b.json", agentDir: "/home/x/.pi/agent" }), "/tmp/a.json");
 		assert.equal(resolveConfigPath({ envPath: "/tmp/b.json", agentDir: "/home/x/.pi/agent" }), "/tmp/b.json");
 		assert.equal(resolveConfigPath({ agentDir: "/home/x/.pi/agent" }), "/home/x/.pi/agent/statusline.json");
+	});
+
+	it("uses PI_CODING_AGENT_DIR for the runtime default", () => {
+		const previousConfig = process.env.PI_STATUSLINE_CONFIG;
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+		const previousLegacyDir = process.env.PI_AGENT_DIR;
+		try {
+			delete process.env.PI_STATUSLINE_CONFIG;
+			process.env.PI_CODING_AGENT_DIR = "/tmp/pi-official-agent";
+			process.env.PI_AGENT_DIR = "/tmp/pi-legacy-agent";
+			assert.equal(resolveRuntimeConfigPath(), "/tmp/pi-official-agent/statusline.json");
+		} finally {
+			if (previousConfig === undefined) delete process.env.PI_STATUSLINE_CONFIG;
+			else process.env.PI_STATUSLINE_CONFIG = previousConfig;
+			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+			if (previousLegacyDir === undefined) delete process.env.PI_AGENT_DIR;
+			else process.env.PI_AGENT_DIR = previousLegacyDir;
+		}
 	});
 });
 
@@ -134,7 +185,7 @@ describe("saveStatuslineConfig", () => {
 			minimal: true,
 			spacing: 2,
 		});
-		assert.deepEqual(loadStatuslineConfig(nested), {
+		assert.deepEqual(loadConfig(nested), {
 			widgets: ["path", "cost"],
 			layout: "stacked",
 			iconMode: "plain",

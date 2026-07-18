@@ -1,115 +1,11 @@
 import { MAX_WIDGET_SPACING, MIN_WIDGET_SPACING } from "./config.ts";
-import type { Accent, SegmentPart, SegmentTone, StatuslineConfig, WidgetGroup, WidgetSegment } from "./types.ts";
+import type { Accent, SegmentTone, StatuslineConfig, WidgetGroup, WidgetSegment } from "./types.ts";
 import { WIDGET_GROUPS } from "./types.ts";
 
-export type Rgb = readonly [number, number, number];
+export type HostThemeColor = "accent" | "success" | "error" | "warning" | "muted" | "dim" | "text";
 
-export interface Palette {
-	model: Rgb;
-	path: Rgb;
-	branch: Rgb;
-	state: Rgb;
-	usage: Rgb;
-	progress: Rgb;
-	session: Rgb;
-	separator: Rgb;
-	/** Near-white default for bars / neutral values. */
-	neutral: Rgb;
-	/** Muted label / secondary text. */
-	label: Rgb;
-	dim: Rgb;
-	error: Rgb;
-	warn: Rgb;
-	success: Rgb;
-	/** Default bar fill (white). */
-	bar: Rgb;
-}
-
-// Adaptive dark/light palettes for pi footer segments.
-// Segment colors are softened to 85% saturation later.
-export const DARK_PALETTE: Palette = {
-	model: [137, 180, 250],
-	path: [166, 227, 161],
-	branch: [250, 179, 135],
-	state: [203, 166, 247],
-	usage: [249, 226, 175],
-	progress: [166, 227, 161],
-	session: [148, 226, 213],
-	separator: [118, 129, 140],
-	neutral: [205, 214, 244],
-	label: [108, 112, 134],
-	dim: [88, 91, 112],
-	error: [243, 139, 168],
-	warn: [249, 226, 175],
-	success: [166, 227, 161],
-	bar: [205, 214, 244],
-};
-
-export const LIGHT_PALETTE: Palette = {
-	model: [30, 102, 245],
-	path: [64, 160, 43],
-	branch: [254, 100, 11],
-	state: [136, 57, 239],
-	usage: [223, 142, 29],
-	progress: [64, 160, 43],
-	session: [23, 146, 153],
-	separator: [108, 112, 134],
-	neutral: [76, 79, 105],
-	label: [124, 127, 147],
-	dim: [140, 143, 161],
-	error: [210, 15, 57],
-	warn: [223, 142, 29],
-	success: [64, 160, 43],
-	bar: [76, 79, 105],
-};
-
-export function softenColor([red, green, blue]: Rgb): Rgb {
-	const luma = Math.floor((77 * red + 150 * green + 29 * blue) / 256);
-	const soften = (channel: number) => Math.floor((channel * 85 + luma * 15 + 50) / 100);
-	return [soften(red), soften(green), soften(blue)];
-}
-
-export function foreground([red, green, blue]: Rgb, text: string): string {
-	return `\x1b[38;2;${red};${green};${blue}m${text}\x1b[39m`;
-}
-
-function accentBase(palette: Palette, accent: Accent): Rgb {
-	if (accent === "dim") return palette.dim;
-	if (accent === "session") return palette.session;
-	if (accent === "neutral") return palette.neutral;
-	return palette[accent];
-}
-
-export function toneColor(palette: Palette, accent: Accent, tone: SegmentTone = "value"): Rgb {
-	switch (tone) {
-		case "value":
-			return accent === "dim" ? palette.dim : accentBase(palette, accent);
-		case "label":
-		case "icon":
-			return palette.label;
-		case "dim":
-			return palette.dim;
-		case "error":
-			return palette.error;
-		case "warn":
-			return palette.warn;
-		case "bar":
-			return palette.bar;
-		case "success":
-			return palette.success;
-	}
-}
-
-export function styled(palette: Palette, accent: Accent, text: string, tone: SegmentTone = "value"): string {
-	return foreground(softenColor(toneColor(palette, accent, tone)), text);
-}
-
-export function styledParts(palette: Palette, accent: Accent, parts: SegmentPart[]): string {
-	return parts.map((part) => styled(palette, accent, part.text, part.tone ?? "value")).join("");
-}
-
-export function selectPalette(themeName: string | undefined): Palette {
-	return themeName?.toLowerCase().includes("light") ? LIGHT_PALETTE : DARK_PALETTE;
+export interface HostTheme {
+	fg(color: HostThemeColor, text: string): string;
 }
 
 export function formatWidgetSeparator(spacing: number): string {
@@ -119,30 +15,58 @@ export function formatWidgetSeparator(spacing: number): string {
 }
 
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+const OSC_PATTERN = /\x1b\][^\x07]*(?:\x07|\x1b\\|$)/g;
+const CONTROL_PATTERN = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g;
+
+export function stripTerminalControls(text: string): string {
+	return text
+		.replace(OSC_PATTERN, "")
+		.replace(ANSI_PATTERN, "")
+		.replace(/[\r\n\t]/g, " ")
+		.replace(CONTROL_PATTERN, "");
+}
 
 /** Fallback visible width when pi-tui helper is not injected. */
 export function plainVisibleWidth(text: string): number {
-	return text.replace(ANSI_PATTERN, "").length;
+	return stripTerminalControls(text).length;
 }
 
 function segmentGroup(segment: WidgetSegment): WidgetGroup {
 	return WIDGET_GROUPS[segment.id] ?? "activity";
 }
 
-function colorizeSegment(palette: Palette, segment: WidgetSegment): string {
+function hostThemeColor(accent: Accent, tone: SegmentTone = "value"): HostThemeColor {
+	if (tone === "error") return "error";
+	if (tone === "warn") return "warning";
+	if (tone === "success") return "success";
+	if (tone === "label" || tone === "icon") return "muted";
+	if (tone === "dim" || accent === "dim") return "dim";
+	if (accent === "path" || accent === "progress") return "success";
+	if (accent === "branch") return "warning";
+	if (accent === "model" || accent === "state" || accent === "session") return "accent";
+	return "text";
+}
+
+function colorizeText(theme: HostTheme, accent: Accent, text: string, tone: SegmentTone = "value"): string {
+	return theme.fg(hostThemeColor(accent, tone), stripTerminalControls(text));
+}
+
+function colorizeSegment(theme: HostTheme, segment: WidgetSegment): string {
 	if (segment.parts && segment.parts.length > 0) {
-		return styledParts(palette, segment.accent, segment.parts);
+		return segment.parts
+			.map((part) => colorizeText(theme, segment.accent, part.text, part.tone ?? "value"))
+			.join("");
 	}
-	return styled(palette, segment.accent, segment.text);
+	return colorizeText(theme, segment.accent, segment.text);
 }
 
 function colorizeSegments(
 	segments: WidgetSegment[],
 	config: StatuslineConfig,
-	palette: Palette,
+	theme: HostTheme,
 ): string {
-	const separator = foreground(palette.separator, formatWidgetSeparator(config.spacing));
-	const colored = segments.map((segment) => colorizeSegment(palette, segment));
+	const separator = colorizeText(theme, "dim", formatWidgetSeparator(config.spacing), "dim");
+	const colored = segments.map((segment) => colorizeSegment(theme, segment));
 	return `  ${colored.join(separator)}`;
 }
 
@@ -165,14 +89,14 @@ function cloneSegments(segments: WidgetSegment[]): WidgetSegment[] {
 export function fitSegmentsToWidth(
 	segments: WidgetSegment[],
 	config: StatuslineConfig,
-	palette: Palette,
+	theme: HostTheme,
 	width: number,
 	measure: (text: string) => number,
 ): WidgetSegment[] {
 	const maxWidth = Math.max(1, width);
 	let current = cloneSegments(segments);
 
-	const lineWidth = () => measure(colorizeSegments(current, config, palette));
+	const lineWidth = () => measure(colorizeSegments(current, config, theme));
 	if (lineWidth() <= maxWidth) return current;
 
 	// 1) Drop high-priority (low importance) segments one by one.
@@ -217,61 +141,44 @@ export function fitSegmentsToWidth(
 }
 
 export function groupSegmentsBySemantics(segments: WidgetSegment[]): WidgetSegment[][] {
-	const lines: WidgetSegment[][] = [];
-	let current: WidgetSegment[] = [];
-	let currentGroup: WidgetGroup | undefined;
-
-	for (const segment of segments) {
-		const group = segmentGroup(segment);
-		if (currentGroup === undefined) {
-			currentGroup = group;
-			current = [segment];
-			continue;
-		}
-		if (group !== currentGroup) {
-			if (current.length > 0) lines.push(current);
-			current = [segment];
-			currentGroup = group;
-			continue;
-		}
-		current.push(segment);
-	}
-	if (current.length > 0) lines.push(current);
-	return lines;
+	const order: WidgetGroup[] = ["project", "usage", "environment", "activity"];
+	const grouped = new Map(order.map((group) => [group, [] as WidgetSegment[]]));
+	for (const segment of segments) grouped.get(segmentGroup(segment))!.push(segment);
+	return order.map((group) => grouped.get(group)!).filter((group) => group.length > 0);
 }
 
 function renderSingleLine(
 	segments: WidgetSegment[],
 	config: StatuslineConfig,
-	palette: Palette,
+	theme: HostTheme,
 	width: number,
 	truncate: (text: string, maxWidth: number, ellipsis: string) => string,
 	measure: (text: string) => number,
 ): string {
-	const fitted = fitSegmentsToWidth(segments, config, palette, width, measure);
-	const separatorEllipsis = foreground(palette.separator, "…");
-	const line = colorizeSegments(fitted, config, palette);
+	const fitted = fitSegmentsToWidth(segments, config, theme, width, measure);
+	const separatorEllipsis = colorizeText(theme, "dim", "…", "dim");
+	const line = colorizeSegments(fitted, config, theme);
 	return truncate(line, Math.max(1, width), separatorEllipsis);
 }
 
 export function renderStatusLine(
 	segments: WidgetSegment[],
 	config: StatuslineConfig,
-	palette: Palette,
+	theme: HostTheme,
 	width: number,
 	truncate: (text: string, maxWidth: number, ellipsis: string) => string,
 	measure: (text: string) => number = plainVisibleWidth,
 ): string | string[] {
 	if (config.layout !== "stacked") {
-		return renderSingleLine(segments, config, palette, width, truncate, measure);
+		return renderSingleLine(segments, config, theme, width, truncate, measure);
 	}
 
 	const groups = groupSegmentsBySemantics(segments);
 	const lines: string[] = [];
 	for (const group of groups) {
 		if (group.length === 0) continue;
-		const line = renderSingleLine(group, config, palette, width, truncate, measure);
+		const line = renderSingleLine(group, config, theme, width, truncate, measure);
 		if (line.trim().length > 0) lines.push(line);
 	}
-	return lines.length > 0 ? lines : [renderSingleLine([], config, palette, width, truncate, measure)];
+	return lines.length > 0 ? lines : [renderSingleLine([], config, theme, width, truncate, measure)];
 }
