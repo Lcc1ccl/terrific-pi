@@ -11,7 +11,8 @@ terrific-pi/
 │   ├── fast/            # OpenAI Priority processing (/fast)
 │   ├── context/         # /context 上下文占用
 │   ├── mode/            # /mode 工具权限模式
-│   └── btw/             # /btw 旁路问答
+│   ├── btw/             # /btw 旁路问答
+│   └── process-view/    # 结构化任务进度与实时工具 HUD
 ├── skills/              # Agent skills（安装到 ~/.agents/skills）
 │   └── pi-provider-sync # 自定义 provider /models 同步与 vision 字段补全
 ├── snapshot/            # 可迁移本机配置快照（无密钥）
@@ -34,6 +35,7 @@ terrific-pi/
 | context | `extensions/context` | `/context` 上下文占用拆解（不调模型、不写 session） |
 | mode | `extensions/mode` | `/mode ask\|plan\|edit\|auto` 工具权限模式；status key `pi-essentials-mode` |
 | btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话） |
+| process-view | `extensions/process-view` | `process_update` 结构化里程碑、branch-aware 状态与 editor-above 实时工具 HUD；`/process` 控制视图 |
 
 > 原 monorepo 包 `vendor/pi-essentials` 已按插件拆入上表三项。配置文件仍兼容 `~/.pi/agent/pi-essentials.json`。
 
@@ -105,6 +107,7 @@ FORCE=1 RESTORE=1 ./install.sh
 "../vendor/terrific-pi/extensions/context"
 "../vendor/terrific-pi/extensions/mode"
 "../vendor/terrific-pi/extensions/btw"
+"../vendor/terrific-pi/extensions/process-view"
 ```
 
 ## 安全约定
