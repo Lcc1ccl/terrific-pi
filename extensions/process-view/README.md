@@ -46,10 +46,12 @@ The Widget key is `terrific-pi:process-view` and uses Pi theme tokens. Its compa
 
 When Pi's native tool expansion is enabled, compact mode switches to a live panel with:
 
-- goal status, task count, percentage, current step, and active time
-- every step's completion state, active time, LLM turns, token use, and model when available
+- goal status, completed/total task count, current step, total task time, and current-step time
+- every step's completion state, active time, turns, ↑input ↓output, and model when available
 - task-local input/output/cache/cost totals and current safe tool activity
 - the latest blocker, update, verification, or artifact labels
+
+LLM turn wall-clock (current turn / session) stays in statusline `duration`; Process View only shows task/step active time and usage totals.
 
 The panel is responsive, bounded to 15 lines, and `/process full` pins it open. Step time pauses while Waiting, Blocked, or Interrupted and resumes if the same step becomes active again.
 

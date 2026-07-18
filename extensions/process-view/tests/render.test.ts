@@ -137,13 +137,17 @@ describe("formatProcessLines", () => {
 		assertFits(lines, 110);
 		assert.ok(lines.length <= 15);
 		assert.match(lines.join("\n"), /Process View.*Running.*1\/4/);
+		assert.doesNotMatch(lines.join("\n"), /\d+%/);
+		assert.match(lines.join("\n"), /Time: total 1m17s · current 1m05s/);
+		assert.match(lines.join("\n"), /Current: Apply changes/);
+		assert.doesNotMatch(lines.join("\n"), /Current: Apply changes ·/);
 		assert.match(lines.join("\n"), /Tasks/);
 		assert.match(lines.join("\n"), /Runtime/);
 		assert.match(lines.join("\n"), /openai\/gpt-5\.6-sol/);
 		assert.match(lines.join("\n"), /↑43k.*↓2\.4k.*R31k/);
 		assert.match(lines.join("\n"), /Inspect naming.*12s/);
 		assert.match(lines.join("\n"), /Apply changes.*1m05s/);
-		assert.doesNotMatch(lines.join("\n"), /Summarize results.*0t/);
+		assert.doesNotMatch(lines.join("\n"), /\btok\b|\d+t\b|LLM turns/);
 	});
 
 	it("keeps step elapsed time visible with a long model identifier", () => {
@@ -155,8 +159,9 @@ describe("formatProcessLines", () => {
 			steps: base.steps.map((step) => ({ ...step, models: step.models.length > 0 ? [model] : [] })),
 		};
 		const lines = formatProcessLines(state({ expanded: true, telemetry: longModelTelemetry }), 100, plainTheme);
-		const activeTask = lines.find((line) => line.includes("Apply changes")) ?? "";
-		assert.match(activeTask, /1m05s/);
+		const joined = lines.join("\n");
+		assert.match(joined, /Time: total .* · current 1m05s/);
+		assert.match(joined, /● Apply changes[\s\S]*1m05s/);
 	});
 
 	it("prioritizes blocked and interrupted reasons", () => {
@@ -254,7 +259,7 @@ describe("formatToolResultLines", () => {
 		}, true, false);
 		assert.equal(lines.slice(1).filter((line) => line.startsWith("✓ ")).length, 4);
 		assert.match(lines.join("\n"), /Apply changes.*1m05s/);
-		assert.match(lines.join("\n"), /Runtime: openai\/gpt-5\.6-sol.*↑43k.*↓2\.4k/);
+		assert.match(lines.join("\n"), /Runtime: openai\/gpt-5\.6-sol.*3 turns.*↑43k.*↓2\.4k/);
 		assert.match(lines.join("\n"), /Verification: Workbook checks passed/);
 		assert.match(lines.join("\n"), /Artifacts: Bonus_Config\.xlsx · revision\.md/);
 		assert.doesNotMatch(lines.join("\n"), /\/secret\//);

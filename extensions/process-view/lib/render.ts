@@ -132,6 +132,23 @@ function telemetryForStep(
 	return telemetry.steps[index]?.text === step.text ? telemetry.steps[index] : undefined;
 }
 
+function totalElapsedMs(telemetry: ProcessTelemetry | undefined, now: number): number | undefined {
+	if (!telemetry || telemetry.steps.length === 0) return undefined;
+	let total = 0;
+	let observed = false;
+	for (const step of telemetry.steps) {
+		const elapsed = stepElapsedMs(step, now);
+		if (elapsed === undefined) continue;
+		observed = true;
+		total += elapsed;
+	}
+	return observed ? total : undefined;
+}
+
+function formatTokenPair(usage: { input: number; output: number }): string {
+	return `↑${formatTokens(usage.input)} ↓${formatTokens(usage.output)}`;
+}
+
 function compactSummary(state: ProcessRenderState, width: number, theme: ProcessTheme): string {
 	const snapshot = state.snapshot!;
 	const meta = STATUS_META[snapshot.status];
@@ -208,18 +225,18 @@ function hasObservedTelemetry(metric: ProcessStepTelemetry | undefined): metric 
 function taskMetrics(metric: ProcessStepTelemetry | undefined, now: number, width: number): string {
 	if (!hasObservedTelemetry(metric)) return "—";
 	const elapsed = formatElapsed(stepElapsedMs(metric, now));
-	const tokens = formatTokens(metric.usage.input + metric.usage.output);
+	const tokens = formatTokenPair(metric.usage);
 	if (width < 62) return elapsed;
-	if (width < 88) return `${metric.turns}t · ${tokens} tok · ${elapsed}`;
-	return `${modelSummary(metric.models)} · ${metric.turns}t · ${tokens} tok · ${elapsed}`;
+	if (width < 88) return `${metric.turns} turns · ${tokens} · ${elapsed}`;
+	return `${modelSummary(metric.models)} · ${metric.turns} turns · ${tokens} · ${elapsed}`;
 }
 
 function runtimeLine(telemetry: ProcessTelemetry | undefined): string {
 	if (!telemetry) return "Runtime: telemetry unavailable";
-	const turns = `${telemetry.turns} LLM turn${telemetry.turns === 1 ? "" : "s"}`;
+	const turns = `${telemetry.turns} turn${telemetry.turns === 1 ? "" : "s"}`;
 	const usage = telemetry.usage;
 	const cost = usage.cost > 0 ? ` · $${usage.cost.toFixed(3)}` : "";
-	return `Runtime: ${modelSummary(telemetry.models)} · ${turns} · ↑${formatTokens(usage.input)} ↓${formatTokens(usage.output)} · R${formatTokens(usage.cacheRead)} W${formatTokens(usage.cacheWrite)}${cost}`;
+	return `Runtime: ${modelSummary(telemetry.models)} · ${turns} · ${formatTokenPair(usage)} · R${formatTokens(usage.cacheRead)} W${formatTokens(usage.cacheWrite)}${cost}`;
 }
 
 function detailedActivity(state: ProcessRenderState): string | undefined {
@@ -240,13 +257,15 @@ function detailPanelLines(state: ProcessRenderState, width: number, theme: Proce
 	const snapshot = state.snapshot!;
 	const meta = STATUS_META[snapshot.status];
 	const progress = `${doneCount(snapshot)}/${snapshot.steps.length}`;
-	const percent = Math.round((doneCount(snapshot) / snapshot.steps.length) * 100);
 	const current = currentStep(snapshot);
 	const currentMetric = telemetryForStep(snapshot, state.telemetry, current);
+	const totalElapsed = formatElapsed(totalElapsedMs(state.telemetry, state.now));
+	const currentElapsed = formatElapsed(stepElapsedMs(currentMetric, state.now));
 	const lines = [boxBorder("top", width, theme)];
-	lines.push(boxRow(` ${theme.bold("Process View")} · ${meta.label} · ${progress} · ${percent}% · ${snapshot.title}`, width, theme));
+	lines.push(boxRow(` ${theme.bold("Process View")} · ${meta.label} · ${progress} · ${snapshot.title}`, width, theme));
+	lines.push(boxRow(` Time: total ${totalElapsed} · current ${currentElapsed}`, width, theme));
 	if (current) {
-		lines.push(boxRow(` Current: ${current.text} · ${formatElapsed(stepElapsedMs(currentMetric, state.now))}`, width, theme));
+		lines.push(boxRow(` Current: ${current.text}`, width, theme));
 	}
 	lines.push(boxBorder("section", width, theme, "Tasks"));
 	for (let index = 0; index < snapshot.steps.length; index += 1) {
