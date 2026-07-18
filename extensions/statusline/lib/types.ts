@@ -173,7 +173,7 @@ export interface StatusSnapshot {
 	branch?: string | null;
 	branchDiff?: BranchChangeStats;
 	progress?: string;
-	/** Current round LLM ms / current-process LLM ms (live). */
+	/** Current parent-agent round ms / current-process active ms (live). */
 	duration?: { roundMs: number; sessionMs: number };
 	runState: RunState;
 	quota?: QuotaSnapshot;

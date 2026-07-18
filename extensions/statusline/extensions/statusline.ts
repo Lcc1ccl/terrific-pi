@@ -13,7 +13,7 @@ import {
 	runStatuslineConfigurator,
 	type MutationResult,
 } from "../lib/configure.ts";
-import { LlmDurationTracker } from "../lib/duration.ts";
+import { AgentDurationTracker } from "../lib/duration.ts";
 import { QuotaMonitor } from "../lib/quota.ts";
 import { renderStatusLine } from "../lib/render.ts";
 import { WidgetsSetupComponent } from "../lib/widgets-setup.ts";
@@ -89,7 +89,7 @@ export default function statusline(pi: ExtensionAPI) {
 	const toolStats: Record<string, ToolActivity> = {};
 	let environment: EnvironmentCounts | undefined;
 	const defaultBranchCache = new Map<string, string | null>();
-	const durationTracker = new LlmDurationTracker();
+	const durationTracker = new AgentDurationTracker();
 	const quotaMonitor = new QuotaMonitor({
 		onChange: () => requestRender(),
 	});
@@ -486,21 +486,12 @@ export default function statusline(pi: ExtensionAPI) {
 	pi.on("agent_start", async () => {
 		resetToolActivity();
 		durationTracker.startRound();
-		stopDurationTick();
+		startDurationTick();
 		setRunState("Thinking");
 	});
 	pi.on("turn_start", async () => setRunState("Thinking"));
-	// Pure LLM wall time: assistant stream only (excludes tools + idle).
-	pi.on("message_start", async (event) => {
-		if (event.message.role !== "assistant") return;
-		durationTracker.startSegment();
-		startDurationTick();
-		requestRender();
-	});
 	pi.on("message_end", async (event, ctx) => {
 		if (event.message.role !== "assistant") return;
-		durationTracker.stopSegment();
-		stopDurationTick();
 		refreshUsage(ctx);
 	});
 	pi.on("message_update", async (event) => {

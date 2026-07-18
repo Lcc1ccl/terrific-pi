@@ -22,7 +22,7 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 - Current agent-run tool activity aggregates (active / success / error)
 - Git branch (`main`/`master` is `🏠` in emoji mode) + committed branch diff (`+N -M`)
 - Extension statuses (dedicated mode, fast, and ponytail statuses excluded)
-- LLM duration: current round / current process total (assistant stream only)
+- Agent duration: current request / current process active total (includes tools and child pi processes)
 - Run state: Thinking / Working / Ready
 - Interactive `/statusline` configurator and `/statusline reload`
 
@@ -156,7 +156,7 @@ The footer follows the active pi theme rather than maintaining separate RGB pale
 | `environment` | context files / skills / tools counts (low-contrast / dim) |
 | `toolActivity` | current agent-run per-tool active/success/error counts; metadata-only `process_update` is excluded |
 | `progress` | extension status texts (excludes dedicated badges) |
-| `duration` | current-round / current-process LLM time (`🕒` prefix in emoji mode) |
+| `duration` | current-request / current-process active time (`🕒` prefix in emoji mode); includes tools and child pi processes, excludes idle between requests |
 | `state` | Ready / Thinking / Working |
 
 `toolActivity` resets at each agent run and counts business tools only. Process View's `process_update` publishes session metadata and is ignored at both tool start and tool end, preventing duplicate progress in the footer and editor-above HUD.

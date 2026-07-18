@@ -1,40 +1,32 @@
-/** Tracks LLM wall time only (assistant stream segments), excluding tools and idle. */
-export class LlmDurationTracker {
+/** Tracks active parent-agent wall time, including tools and child pi processes. */
+export class AgentDurationTracker {
 	private sessionMs = 0;
 	private roundMs = 0;
-	private segmentStart: number | null = null;
+	private roundStart: number | null = null;
 
-	/** Begin a user round; previous open segment is closed into session first. */
+	/** Begin a user round; repeated low-level agent starts belong to the same round. */
 	startRound(now = Date.now()): void {
-		this.stopSegment(now);
+		if (this.roundStart !== null) return;
 		this.roundMs = 0;
+		this.roundStart = now;
 	}
 
-	/** End a user round (agent settled / aborted). */
+	/** End a user round when the parent agent fully settles. */
 	endRound(now = Date.now()): void {
-		this.stopSegment(now);
-	}
-
-	startSegment(now = Date.now()): void {
-		if (this.segmentStart !== null) return;
-		this.segmentStart = now;
-	}
-
-	stopSegment(now = Date.now()): void {
-		if (this.segmentStart === null) return;
-		const delta = Math.max(0, now - this.segmentStart);
-		this.segmentStart = null;
+		if (this.roundStart === null) return;
+		const delta = Math.max(0, now - this.roundStart);
+		this.roundStart = null;
 		this.roundMs += delta;
 		this.sessionMs += delta;
 	}
 
 	isRunning(): boolean {
-		return this.segmentStart !== null;
+		return this.roundStart !== null;
 	}
 
-	/** Live snapshot including any open segment. */
+	/** Live snapshot including the active round. */
 	snapshot(now = Date.now()): { roundMs: number; sessionMs: number } {
-		const open = this.segmentStart !== null ? Math.max(0, now - this.segmentStart) : 0;
+		const open = this.roundStart !== null ? Math.max(0, now - this.roundStart) : 0;
 		return {
 			roundMs: this.roundMs + open,
 			sessionMs: this.sessionMs + open,
@@ -44,7 +36,7 @@ export class LlmDurationTracker {
 	reset(): void {
 		this.sessionMs = 0;
 		this.roundMs = 0;
-		this.segmentStart = null;
+		this.roundStart = null;
 	}
 }
 

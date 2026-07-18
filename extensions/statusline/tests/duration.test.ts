@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { formatDuration, formatDurationPair, LlmDurationTracker } from "../lib/duration.ts";
+import { AgentDurationTracker, formatDuration, formatDurationPair } from "../lib/duration.ts";
 
 describe("formatDuration", () => {
 	it("formats sub-minute and longer spans", () => {
@@ -20,31 +20,37 @@ describe("formatDurationPair", () => {
 	});
 });
 
-describe("LlmDurationTracker", () => {
-	it("counts only closed + open assistant segments", () => {
-		const tracker = new LlmDurationTracker();
+describe("AgentDurationTracker", () => {
+	it("keeps counting while a child process runs until the agent settles", () => {
+		const tracker = new AgentDurationTracker();
 		tracker.startRound(1_000);
-		tracker.startSegment(1_000);
-		tracker.stopSegment(4_000); // +3s
-		tracker.startSegment(5_000); // tools idle gap ignored
-		assert.deepEqual(tracker.snapshot(6_500), { roundMs: 4_500, sessionMs: 4_500 });
-		tracker.stopSegment(7_000); // +2s more
+		assert.deepEqual(tracker.snapshot(9_000), { roundMs: 8_000, sessionMs: 8_000 });
+		tracker.endRound(9_000);
+		assert.deepEqual(tracker.snapshot(12_000), { roundMs: 8_000, sessionMs: 8_000 });
+	});
+
+	it("accumulates agent rounds without counting idle time", () => {
+		const tracker = new AgentDurationTracker();
+		tracker.startRound(1_000);
 		tracker.endRound(7_000);
-		assert.deepEqual(tracker.snapshot(9_000), { roundMs: 5_000, sessionMs: 5_000 });
+		assert.deepEqual(tracker.snapshot(9_000), { roundMs: 6_000, sessionMs: 6_000 });
 
 		tracker.startRound(10_000);
-		assert.deepEqual(tracker.snapshot(10_000), { roundMs: 0, sessionMs: 5_000 });
-		tracker.startSegment(10_000);
-		tracker.stopSegment(12_000);
+		assert.deepEqual(tracker.snapshot(10_000), { roundMs: 0, sessionMs: 6_000 });
 		tracker.endRound(12_000);
-		assert.deepEqual(tracker.snapshot(20_000), { roundMs: 2_000, sessionMs: 7_000 });
+		assert.deepEqual(tracker.snapshot(20_000), { roundMs: 2_000, sessionMs: 8_000 });
+	});
+
+	it("does not reset the round on a low-level retry", () => {
+		const tracker = new AgentDurationTracker();
+		tracker.startRound(1_000);
+		tracker.startRound(5_000);
+		assert.deepEqual(tracker.snapshot(7_000), { roundMs: 6_000, sessionMs: 6_000 });
 	});
 
 	it("reset clears all counters", () => {
-		const tracker = new LlmDurationTracker();
+		const tracker = new AgentDurationTracker();
 		tracker.startRound(0);
-		tracker.startSegment(0);
-		tracker.stopSegment(5_000);
 		tracker.reset();
 		assert.deepEqual(tracker.snapshot(100), { roundMs: 0, sessionMs: 0 });
 		assert.equal(tracker.isRunning(), false);
