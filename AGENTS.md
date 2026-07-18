@@ -75,9 +75,28 @@ extensions/<name>/
 - 最小可用：一个命令/一个关注点一个包；不要做 monorepo 大包再“内部过滤”
 - 复用本仓已有模式（参考 `statusline`、`fast`、`mode`）
 - 配置文件：可选、失败不抛、不阻断 pi 启动；优先兼容既有路径（如 `pi-essentials.json`）
-- status key / footer badge：若占用 statusline 专用位，同步改 `statusline` 的 `EXCLUDED_PROGRESS_KEYS` 或专用 widget
 - 文本 **LF** 换行；不引入与任务无关的格式化大扫除
 - 非平凡逻辑留最小可运行校验（`npm test` / `node --test`），不强制测试框架
+
+### 跨插件联动（feat 必做）
+
+新增或大改插件 **feat** 时，设计与实现默认按「本仓已启用插件会同时加载」来考虑，而不是孤立交付。
+先扫 `extensions/` + `settings.json` packages，再决定是否需要适配层；联动结论写进对话/PR 简述（无联动也要写「无需」）。
+
+| 触点 | 何时考虑 | 默认动作 |
+|------|----------|----------|
+| **statusline / HUD** | 有运行态、模式、进度、子任务、配额、开关态等用户应可见的信息 | 专用 status key + widget；必要时改 `EXCLUDED_PROGRESS_KEYS`；避免与现有 badge 抢位/重复 |
+| **mode** | 改变工具权限、写入范围、或引入可执行副作用 | 与 `/mode` 语义一致或显式声明覆盖；不静默绕过 ask/plan |
+| **fast** | 发模型请求且可能走 OpenAI Priority | 复用既有 tier/开关语义，不另起冲突 header |
+| **context** | 显著改变上下文构成或压缩策略 | 保证 `/context` 仍可解释占用；必要时暴露可汇总字段 |
+| **btw** | 旁路会话 / 独立 memory | 不污染主 session；HUD 若展示须标明旁路 |
+| **配置文件** | 新配置项 | 优先并入既有路径（如 `pi-essentials.json` / `statusline.json`），避免再增并列配置 |
+
+**示例**：做 subagent / 工作流插件时，默认就要设计 HUD——活跃子代理数、当前阶段、完成/失败态应出现在 statusline（或明确说明为何不展示），而不是事后补丁。
+
+- 联动以**薄适配**为准：能在本插件 set status + statusline 读 key 就够，不抽大公共框架
+- 只改被联动插件的必要接线（key 名、exclude、widget）；不做无关重构
+- 无运行态、纯 slash 查询类命令可标「无需 HUD」并跳过
 
 ### 本地引用
 
@@ -143,6 +162,7 @@ chore(scripts): ...
 2. 变更插件若有测试：在对应目录 `npm test`（或等价 `node --test`）
 3. 新增 extension：`package.json` 的 `pi.extensions` 路径真实存在
 4. README 插件表与磁盘一致
+5. feat：已写跨插件联动结论（尤其 statusline/HUD；无联动写「无需」）
 
 ## 自动打包规范
 
@@ -185,7 +205,7 @@ chore(scripts): ...
 ### 与开发流的衔接（推荐顺序）
 
 ```text
-检索官方/社区 → 设计最小包 → 实现 + 单测 → 更新 README
+检索官方/社区 → 设计最小包（含跨插件联动，默认想 HUD）→ 实现 + 单测 → 更新 README
   → ./scripts/snapshot.sh（若改了本机配置/技能）
   → 提交（用户授权时 push）→ ./scripts/pack.sh → 分发 tar.gz
   → 目标机 FORCE=1 RESTORE=1 ./install.sh
@@ -202,6 +222,8 @@ chore(scripts): ...
 ## 验证清单（插件 PR/提交自检）
 
 - [ ] 已检索官方文档与社区，结论写明“复用 / 封装 / 新建及原因”
+- [ ] feat 已评估与已启用插件的联动（statusline/HUD、mode、fast、context、btw 等），有结论或「无需」
+- [ ] 若有 HUD/运行态：statusline 已适配（key / widget / exclude），不与现有 badge 冲突
 - [ ] `extensions/<name>/` 结构与 `package.json` 合法
 - [ ] 新增 skill 有 `skills/<name>/SKILL.md` 且 README 技能表已更新
 - [ ] snapshot 无密钥；`snapshot.sh` 消毒检查可通过
