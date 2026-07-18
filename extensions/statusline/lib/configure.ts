@@ -3,7 +3,7 @@ import {
 	MAX_WIDGET_SPACING,
 	MIN_WIDGET_SPACING,
 } from "./config.ts";
-import type { ContextMode, StatuslineConfig, WidgetId } from "./types.ts";
+import type { ContextMode, IconMode, StatuslineConfig, StatuslineLayout, WidgetId } from "./types.ts";
 
 export type MutationResult<T> =
 	| { ok: true; value: T }
@@ -169,6 +169,8 @@ export function parseWidgetSpacing(raw: string): MutationResult<number> {
 export function formatConfigSummary(config: StatuslineConfig, configPath: string): string {
 	return [
 		`widgets: ${config.widgets.join(", ")}`,
+		`layout: ${config.layout}`,
+		`iconMode: ${config.iconMode}`,
 		`contextMode: ${config.contextMode}`,
 		`contextBarWidth: ${config.contextBarWidth}`,
 		`minimal: ${config.minimal}`,
@@ -181,6 +183,7 @@ function mainMenuTitle(config: StatuslineConfig, configPath: string): string {
 	return [
 		"Statusline Config",
 		`widgets: ${config.widgets.join(", ")}`,
+		`layout: ${config.layout} · iconMode: ${config.iconMode}`,
 		`contextMode: ${config.contextMode} · bar: ${config.contextBarWidth} · minimal: ${config.minimal}`,
 		`spacing: ${config.spacing} (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
 		`config: ${configPath}`,
@@ -212,6 +215,34 @@ async function editWidgetsLoop(deps: ConfigureDeps, allWidgets: readonly WidgetI
 		},
 		(error) => deps.ui.notify(error, "warning"),
 	);
+}
+
+async function setLayout(deps: ConfigureDeps): Promise<void> {
+	const config = deps.getConfig();
+	const choice = await deps.ui.select("Layout", ["single", "stacked", "Back"]);
+	if (!choice || choice === "Back") return;
+	if (choice !== "single" && choice !== "stacked") return;
+
+	const layout = choice as StatuslineLayout;
+	if (layout === config.layout) {
+		deps.ui.notify(`layout already ${layout}`, "info");
+		return;
+	}
+	applyOrNotify(deps, { ...config, layout }, `layout: ${layout}`);
+}
+
+async function setIconMode(deps: ConfigureDeps): Promise<void> {
+	const config = deps.getConfig();
+	const choice = await deps.ui.select("Icon mode", ["emoji", "plain", "Back"]);
+	if (!choice || choice === "Back") return;
+	if (choice !== "emoji" && choice !== "plain") return;
+
+	const iconMode = choice as IconMode;
+	if (iconMode === config.iconMode) {
+		deps.ui.notify(`iconMode already ${iconMode}`, "info");
+		return;
+	}
+	applyOrNotify(deps, { ...config, iconMode }, `iconMode: ${iconMode}`);
 }
 
 async function setContextMode(deps: ConfigureDeps): Promise<void> {
@@ -283,6 +314,8 @@ export async function runStatuslineConfigurator(
 		const configPath = deps.getConfigPath();
 		const choice = await deps.ui.selectMain(mainMenuTitle(config, configPath), [
 			"Widgets",
+			"Layout",
+			"Icon mode",
 			"Context mode",
 			"Context bar width",
 			"Minimal mode",
@@ -298,6 +331,12 @@ export async function runStatuslineConfigurator(
 		switch (choice) {
 			case "Widgets":
 				await editWidgetsLoop(deps, allWidgets);
+				break;
+			case "Layout":
+				await setLayout(deps);
+				break;
+			case "Icon mode":
+				await setIconMode(deps);
 				break;
 			case "Context mode":
 				await setContextMode(deps);

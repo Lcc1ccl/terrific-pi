@@ -23,6 +23,14 @@ describe("mergeStatuslineConfig", () => {
 		assert.equal("separator" in DEFAULT_CONFIG, false);
 	});
 
+	it("defaults layout single and iconMode emoji without auto-inserting new widgets", () => {
+		assert.equal(DEFAULT_CONFIG.layout, "single");
+		assert.equal(DEFAULT_CONFIG.iconMode, "emoji");
+		assert.equal(DEFAULT_CONFIG.widgets.includes("quota"), false);
+		assert.equal(DEFAULT_CONFIG.widgets.includes("environment"), false);
+		assert.equal(DEFAULT_CONFIG.widgets.includes("toolActivity"), false);
+	});
+
 	it("registers fast as a dedicated widget and enables it by default", () => {
 		assert.equal(WIDGET_IDS.indexOf("fast"), WIDGET_IDS.indexOf("mode") + 1);
 		assert.equal(DEFAULT_CONFIG.widgets.indexOf("fast"), DEFAULT_CONFIG.widgets.indexOf("model") + 1);
@@ -30,19 +38,29 @@ describe("mergeStatuslineConfig", () => {
 
 	it("filters unknown widgets and applies known options", () => {
 		const merged = mergeStatuslineConfig({
-			widgets: ["path", "nope", "cost", "contextBar"],
+			widgets: ["path", "nope", "cost", "contextBar", "quota"],
+			layout: "stacked",
+			iconMode: "plain",
 			contextMode: "used",
 			contextBarWidth: 8,
 			minimal: true,
 			spacing: 2,
 			separator: " | ",
 		});
-		assert.deepEqual(merged.widgets, ["path", "cost", "contextBar"]);
+		assert.deepEqual(merged.widgets, ["path", "cost", "contextBar", "quota"]);
+		assert.equal(merged.layout, "stacked");
+		assert.equal(merged.iconMode, "plain");
 		assert.equal(merged.contextMode, "used");
 		assert.equal(merged.contextBarWidth, 8);
 		assert.equal(merged.minimal, true);
 		assert.equal(merged.spacing, 2);
 		assert.equal("separator" in merged, false);
+	});
+
+	it("falls back for illegal layout and iconMode", () => {
+		const merged = mergeStatuslineConfig({ layout: "grid", iconMode: "ascii" });
+		assert.equal(merged.layout, "single");
+		assert.equal(merged.iconMode, "emoji");
 	});
 
 	it("falls back for non-integer or out-of-range spacing", () => {
@@ -67,6 +85,8 @@ describe("loadStatuslineConfig", () => {
 		assert.deepEqual(loaded.widgets, ["path", "cost"]);
 		assert.equal(loaded.minimal, true);
 		assert.equal(loaded.contextMode, DEFAULT_CONFIG.contextMode);
+		assert.equal(loaded.layout, "single");
+		assert.equal(loaded.iconMode, "emoji");
 		assert.equal(loaded.spacing, 1);
 	});
 
@@ -93,6 +113,8 @@ describe("saveStatuslineConfig", () => {
 		const nested = join(dir, "nested", "statusline.json");
 		const config = {
 			widgets: ["path", "cost"] as const,
+			layout: "stacked" as const,
+			iconMode: "plain" as const,
 			contextMode: "used" as const,
 			contextBarWidth: 8,
 			minimal: true,
@@ -105,6 +127,8 @@ describe("saveStatuslineConfig", () => {
 		assert.equal(raw.endsWith("\n"), true);
 		assert.deepEqual(JSON.parse(raw), {
 			widgets: ["path", "cost"],
+			layout: "stacked",
+			iconMode: "plain",
 			contextMode: "used",
 			contextBarWidth: 8,
 			minimal: true,
@@ -112,6 +136,8 @@ describe("saveStatuslineConfig", () => {
 		});
 		assert.deepEqual(loadStatuslineConfig(nested), {
 			widgets: ["path", "cost"],
+			layout: "stacked",
+			iconMode: "plain",
 			contextMode: "used",
 			contextBarWidth: 8,
 			minimal: true,

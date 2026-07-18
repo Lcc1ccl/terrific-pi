@@ -145,6 +145,8 @@ describe("formatConfigSummary", () => {
 	it("renders a compact multi-line summary", () => {
 		const config: StatuslineConfig = {
 			widgets: ["path", "cost"],
+			layout: "single",
+			iconMode: "emoji",
 			contextMode: "remaining",
 			contextBarWidth: 10,
 			minimal: false,
@@ -152,6 +154,8 @@ describe("formatConfigSummary", () => {
 		};
 		const summary = formatConfigSummary(config, "/tmp/statusline.json");
 		assert.match(summary, /widgets: path, cost/);
+		assert.match(summary, /layout: single/);
+		assert.match(summary, /iconMode: emoji/);
 		assert.match(summary, /contextMode: remaining/);
 		assert.match(summary, /contextBarWidth: 10/);
 		assert.match(summary, /minimal: false/);
@@ -165,6 +169,8 @@ describe("main menu selector", () => {
 	it("routes the top-level menu through the cyclic selector", async () => {
 		const config: StatuslineConfig = {
 			widgets: ["path"],
+			layout: "single",
+			iconMode: "emoji",
 			contextMode: "remaining",
 			contextBarWidth: 10,
 			minimal: false,
@@ -203,6 +209,8 @@ describe("widget spacing prompt", () => {
 	it("shows the default, minimum, and maximum values", async () => {
 		const config: StatuslineConfig = {
 			widgets: ["path"],
+			layout: "single",
+			iconMode: "emoji",
 			contextMode: "remaining",
 			contextBarWidth: 10,
 			minimal: false,

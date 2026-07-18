@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { relative, resolve, sep } from "node:path";
 
-import type { ContextMode, TokenTotals } from "./types.ts";
+import type { ContextMode, IconMode, QuotaSnapshot, TokenTotals, ToolActivity } from "./types.ts";
 
 export function formatTokensCompact(value: number): string {
 	const count = Math.max(0, value);
@@ -33,13 +33,18 @@ export function formatCost(value: number, minimal = false): string {
 	return minimal ? amount : `$${amount}`;
 }
 
-export function formatCache(tokens: TokenTotals, minimal = false): string | undefined {
+export function formatCache(
+	tokens: TokenTotals,
+	minimal = false,
+	iconMode: IconMode = "emoji",
+): string | undefined {
 	const { input, cacheRead, cacheWrite } = tokens;
 	if (cacheRead <= 0 && cacheWrite <= 0) return undefined;
 
 	const prompt = input + cacheRead + cacheWrite;
 	const hitRate = prompt > 0 ? ((cacheRead / prompt) * 100).toFixed(1) : "0.0";
-	return minimal ? `${hitRate}%` : `🎯${hitRate}%`;
+	if (minimal) return `${hitRate}%`;
+	return iconMode === "plain" ? `cache ${hitRate}%` : `🎯${hitRate}%`;
 }
 
 export function formatContextText(
@@ -55,6 +60,14 @@ export function formatContextText(
 	return mode === "used" ? `Context ${value}% used` : `Context ${value}% left`;
 }
 
+export function formatBar(filledRatio: number, width: number): string {
+	const barWidth = Math.max(4, Math.min(40, Math.floor(width || 10)));
+	const ratio = Math.max(0, Math.min(1, filledRatio));
+	const filled = Math.max(0, Math.min(barWidth, Math.round(ratio * barWidth)));
+	const empty = barWidth - filled;
+	return `${"█".repeat(filled)}${"░".repeat(empty)}`;
+}
+
 export function formatContextBar(
 	percent: number | null | undefined,
 	width: number,
@@ -64,9 +77,7 @@ export function formatContextBar(
 	const barWidth = Math.max(4, Math.min(40, Math.floor(width || 10)));
 	const used = Math.max(0, Math.min(100, percent));
 	const filledRatio = mode === "used" ? used / 100 : (100 - used) / 100;
-	const filled = Math.max(0, Math.min(barWidth, Math.round(filledRatio * barWidth)));
-	const empty = barWidth - filled;
-	const bar = `${"█".repeat(filled)}${"░".repeat(empty)}`;
+	const bar = formatBar(filledRatio, barWidth);
 	const label = mode === "used"
 		? `${Math.round(used)}%`
 		: `${Math.max(0, Math.min(100, Math.round(100 - used)))}%`;
@@ -89,7 +100,108 @@ export function formatTokensPair(input: number, output: number, minimal = false)
 	return minimal ? `${left}/${right}` : `${left} in · ${right} out`;
 }
 
+export function formatTokenDirection(
+	direction: "in" | "out",
+	value: number,
+	iconMode: IconMode = "emoji",
+): string {
+	const compact = formatTokensCompact(value);
+	if (iconMode === "plain") {
+		return direction === "in" ? `in ${compact}` : `out ${compact}`;
+	}
+	return direction === "in" ? `${compact}` : `${compact}`;
+}
+
+export function formatBranch(branch: string, iconMode: IconMode = "emoji"): string {
+	const isDefault = branch === "main" || branch === "master";
+	if (isDefault && iconMode === "emoji") return "🏠";
+	return branch;
+}
+
 export function formatBranchDiff(stats: { additions: number; deletions: number }): string | undefined {
 	if (stats.additions === 0 && stats.deletions === 0) return undefined;
 	return `+${stats.additions} -${stats.deletions}`;
+}
+
+export function formatFastBadge(value: string | undefined, iconMode: IconMode = "emoji"): string | undefined {
+	if (!value) return undefined;
+	return iconMode === "plain" ? "fast" : value;
+}
+
+export function formatQuotaWindowLabel(windowSeconds: number | undefined, fallback: string): string {
+	if (!windowSeconds || !Number.isFinite(windowSeconds) || windowSeconds <= 0) return fallback;
+	const hours = windowSeconds / 3600;
+	if (Math.abs(hours - 5) < 0.05) return "5h";
+	if (Math.abs(hours - 24) < 0.05) return "24h";
+	if (Math.abs(hours - 168) < 0.5 || Math.abs(hours - 7 * 24) < 0.5) return "7d";
+	if (hours >= 24) {
+		const days = hours / 24;
+		return Number.isInteger(days) ? `${days}d` : `${days.toFixed(1)}d`;
+	}
+	if (Number.isInteger(hours)) return `${hours}h`;
+	return `${hours.toFixed(1)}h`;
+}
+
+export function formatQuotaBar(usedPercent: number, width: number): string {
+	const clamped = Math.max(0, Math.min(100, usedPercent));
+	const bar = formatBar(clamped / 100, width);
+	return `[${bar}] ${Math.round(clamped)}%`;
+}
+
+export function formatQuota(
+	snapshot: QuotaSnapshot,
+	iconMode: IconMode = "emoji",
+	barWidth = 6,
+): string | undefined {
+	const now = Date.now();
+	const windows = snapshot.windows.filter((window) => {
+		if (!Number.isFinite(window.usedPercent)) return false;
+		if (window.resetsAt !== undefined && window.resetsAt <= now) return false;
+		return true;
+	});
+	if (windows.length === 0) return undefined;
+
+	const prefix = iconMode === "plain" ? "usage" : "📊";
+	const parts = windows.map((window) => {
+		const label = window.label || formatQuotaWindowLabel(window.windowSeconds, window.id);
+		return `${label} ${formatQuotaBar(window.usedPercent, barWidth)}`;
+	});
+	const body = parts.join(" · ");
+	const staleMark = snapshot.stale ? " ~" : "";
+	return `${prefix} ${body}${staleMark}`;
+}
+
+export function formatEnvironment(counts: {
+	contextFiles: number;
+	skills: number;
+	tools: number;
+}): string {
+	return `${counts.contextFiles} context files · ${counts.skills} skills · ${counts.tools} tools`;
+}
+
+export function formatToolActivity(
+	activity: Record<string, ToolActivity>,
+	iconMode: IconMode = "emoji",
+): string | undefined {
+	const names = Object.keys(activity).sort((a, b) => a.localeCompare(b));
+	if (names.length === 0) return undefined;
+
+	const ok = iconMode === "plain" ? "ok" : "✓";
+	const err = iconMode === "plain" ? "error" : "✗";
+	const parts: string[] = [];
+
+	for (const name of names) {
+		const entry = activity[name]!;
+		if (entry.active > 0) {
+			parts.push(`… ${name} x${entry.active}`);
+		}
+		if (entry.error > 0) {
+			parts.push(`${err} ${name} x${entry.error}`);
+		}
+		if (entry.success > 0) {
+			parts.push(`${ok} ${name} x${entry.success}`);
+		}
+	}
+
+	return parts.length > 0 ? parts.join(" · ") : undefined;
 }

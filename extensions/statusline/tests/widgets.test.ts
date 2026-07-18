@@ -27,6 +27,47 @@ const baseSnapshot: StatusSnapshot = {
 };
 
 describe("buildWidgetSegments", () => {
+	it("locks default widget text sequence (characterization)", () => {
+		const segments = buildWidgetSegments(baseSnapshot, DEFAULT_CONFIG);
+		assert.deepEqual(
+			segments.map((segment) => segment.id),
+			[
+				"path",
+				"session",
+				"model",
+				"fast",
+				"tokens",
+				"tokens",
+				"cache",
+				"cost",
+				"contextBar",
+				"branch",
+				"branchDiff",
+				"progress",
+				"duration",
+				"state",
+			],
+		);
+		assert.deepEqual(
+			segments.filter((segment) => segment.id !== "path").map((segment) => segment.text),
+			[
+				"demo",
+				"gpt-5 high",
+				"",
+				"1.5K",
+				"800",
+				"🎯66.7%",
+				"$0.42",
+				"[██████░░░░] 60%",
+				"🏠",
+				"+12 -3",
+				"task 1/2",
+				"12.3s / 1m45s",
+				"Ready",
+			],
+		);
+	});
+
 	it("builds default-oriented segments with new p0 widgets", () => {
 		const segments = buildWidgetSegments(baseSnapshot, DEFAULT_CONFIG);
 		const texts = segments.map((segment) => segment.text);
@@ -87,6 +128,18 @@ describe("buildWidgetSegments", () => {
 		);
 	});
 
+	it("renders plain token labels without changing numbers", () => {
+		const segments = buildWidgetSegments(baseSnapshot, {
+			...DEFAULT_CONFIG,
+			widgets: ["tokens", "cache", "fast", "branch"],
+			iconMode: "plain",
+		});
+		assert.deepEqual(
+			segments.map((segment) => segment.text),
+			["in 1.5K", "out 800", "cache 66.7%", "fast", "main"],
+		);
+	});
+
 	it("renders main as home", () => {
 		const segments = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,
@@ -119,6 +172,36 @@ describe("buildWidgetSegments", () => {
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
 			["12.3s / 1m45s", "Ready"],
+		);
+	});
+
+	it("renders quota environment and tool activity widgets", () => {
+		const segments = buildWidgetSegments(
+			{
+				...baseSnapshot,
+				quota: {
+					provider: "claude",
+					windows: [{ id: "five_hour", label: "5h", usedPercent: 7 }],
+					capturedAt: Date.now(),
+					stale: false,
+				},
+				environment: { contextFiles: 2, skills: 3, tools: 4 },
+				toolActivity: {
+					Read: { active: 0, success: 6, error: 0 },
+				},
+			},
+			{
+				...DEFAULT_CONFIG,
+				widgets: ["quota", "environment", "toolActivity"],
+			},
+		);
+		assert.deepEqual(
+			segments.map((segment) => segment.text),
+			[
+				"📊 5h [░░░░░░] 7%",
+				"2 context files · 3 skills · 4 tools",
+				"✓ Read x6",
+			],
 		);
 	});
 

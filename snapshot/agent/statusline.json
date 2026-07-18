@@ -1,18 +1,24 @@
 {
+  "layout": "stacked",
+  "iconMode": "emoji",
   "widgets": [
     "path",
+    "session",
+    "model",
     "branch",
     "branchDiff",
     "mode",
-    "model",
     "fast",
+    "contextBar",
     "tokens",
     "cache",
     "cost",
-    "contextBar",
+    "quota",
+    "environment",
+    "toolActivity",
     "progress",
-    "state",
-    "duration"
+    "duration",
+    "state"
   ],
   "contextMode": "used",
   "contextBarWidth": 10,

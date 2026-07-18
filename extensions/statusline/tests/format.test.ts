@@ -2,13 +2,18 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+	formatBranch,
 	formatBranchDiff,
 	formatCache,
 	formatContextBar,
 	formatContextText,
 	formatCost,
 	formatCwd,
+	formatEnvironment,
+	formatQuota,
+	formatTokenDirection,
 	formatTokensCompact,
+	formatToolActivity,
 } from "../lib/format.ts";
 
 describe("formatTokensCompact", () => {
@@ -43,6 +48,10 @@ describe("formatCache", () => {
 			formatCache({ input: 100, output: 0, cacheRead: 400, cacheWrite: 100 }, true),
 			"66.7%",
 		);
+		assert.equal(
+			formatCache({ input: 100, output: 0, cacheRead: 400, cacheWrite: 100 }, false, "plain"),
+			"cache 66.7%",
+		);
 	});
 });
 
@@ -66,6 +75,61 @@ describe("formatContextBar", () => {
 describe("formatBranchDiff", () => {
 	it("hides an empty diff", () => {
 		assert.equal(formatBranchDiff({ additions: 0, deletions: 0 }), undefined);
+	});
+});
+
+describe("formatBranch", () => {
+	it("maps default branches by iconMode", () => {
+		assert.equal(formatBranch("main", "emoji"), "🏠");
+		assert.equal(formatBranch("master", "emoji"), "🏠");
+		assert.equal(formatBranch("main", "plain"), "main");
+		assert.equal(formatBranch("feature", "emoji"), "feature");
+		assert.equal(formatBranch("feature", "plain"), "feature");
+	});
+});
+
+describe("formatTokenDirection", () => {
+	it("switches only the glyph/label", () => {
+		assert.equal(formatTokenDirection("in", 12_500, "emoji"), "12.5K");
+		assert.equal(formatTokenDirection("out", 3_200, "emoji"), "3.2K");
+		assert.equal(formatTokenDirection("in", 12_500, "plain"), "in 12.5K");
+		assert.equal(formatTokenDirection("out", 3_200, "plain"), "out 3.2K");
+	});
+});
+
+describe("formatQuota", () => {
+	it("keeps bars identical across icon modes", () => {
+		const snapshot = {
+			provider: "codex" as const,
+			windows: [
+				{ id: "primary", label: "5h", usedPercent: 42, windowSeconds: 18_000 },
+				{ id: "secondary", label: "7d", usedPercent: 33, windowSeconds: 604_800 },
+			],
+			capturedAt: Date.now(),
+			stale: false,
+		};
+		assert.equal(formatQuota(snapshot, "emoji", 6), "📊 5h [███░░░] 42% · 7d [██░░░░] 33%");
+		assert.equal(formatQuota(snapshot, "plain", 6), "usage 5h [███░░░] 42% · 7d [██░░░░] 33%");
+	});
+});
+
+describe("formatEnvironment", () => {
+	it("formats counts", () => {
+		assert.equal(
+			formatEnvironment({ contextFiles: 2, skills: 67, tools: 7 }),
+			"2 context files · 67 skills · 7 tools",
+		);
+	});
+});
+
+describe("formatToolActivity", () => {
+	it("uses emoji or plain labels", () => {
+		const activity = {
+			Read: { active: 0, success: 6, error: 0 },
+			Bash: { active: 0, success: 0, error: 1 },
+		};
+		assert.equal(formatToolActivity(activity, "emoji"), "✗ Bash x1 · ✓ Read x6");
+		assert.equal(formatToolActivity(activity, "plain"), "error Bash x1 · ok Read x6");
 	});
 });
 

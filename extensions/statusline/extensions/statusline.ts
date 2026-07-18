@@ -1,5 +1,5 @@
 import { DynamicBorder, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Container, SelectList, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { Container, SelectList, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import {
 	DEFAULT_CONFIG,
@@ -14,9 +14,17 @@ import {
 	type MutationResult,
 } from "../lib/configure.ts";
 import { LlmDurationTracker } from "../lib/duration.ts";
+import { QuotaMonitor } from "../lib/quota.ts";
 import { renderStatusLine, selectPalette } from "../lib/render.ts";
 import { WidgetsSetupComponent } from "../lib/widgets-setup.ts";
-import type { BranchChangeStats, RunState, StatuslineConfig, StatusSnapshot } from "../lib/types.ts";
+import type {
+	BranchChangeStats,
+	EnvironmentCounts,
+	RunState,
+	StatuslineConfig,
+	StatusSnapshot,
+	ToolActivity,
+} from "../lib/types.ts";
 import { aggregateSessionUsage } from "../lib/usage.ts";
 import {
 	buildWidgetSegments,
@@ -40,6 +48,10 @@ function parseNumstat(output: string): BranchChangeStats {
 	return { additions, deletions };
 }
 
+function emptyToolActivity(): ToolActivity {
+	return { active: 0, success: 0, error: 0 };
+}
+
 export default function statusline(pi: ExtensionAPI) {
 	let runState: RunState = "Ready";
 	let branchChanges: BranchChangeStats | undefined;
@@ -49,8 +61,14 @@ export default function statusline(pi: ExtensionAPI) {
 	let config: StatuslineConfig = { ...DEFAULT_CONFIG, widgets: [...DEFAULT_CONFIG.widgets] };
 	let configPath = resolveRuntimeConfigPath();
 	const activeTools = new Set<string>();
+	const toolCallNames = new Map<string, string>();
+	const toolStats: Record<string, ToolActivity> = {};
+	let environment: EnvironmentCounts | undefined;
 	const defaultBranchCache = new Map<string, string | null>();
 	const durationTracker = new LlmDurationTracker();
+	const quotaMonitor = new QuotaMonitor({
+		onChange: () => requestRender(),
+	});
 
 	const requestRender = () => renderRequest?.();
 
@@ -174,6 +192,41 @@ export default function statusline(pi: ExtensionAPI) {
 		}, 250);
 	};
 
+	const ensureTool = (name: string): ToolActivity => {
+		if (!toolStats[name]) toolStats[name] = emptyToolActivity();
+		return toolStats[name]!;
+	};
+
+	const clearActiveTools = () => {
+		for (const name of Object.keys(toolStats)) {
+			toolStats[name]!.active = 0;
+		}
+		activeTools.clear();
+		toolCallNames.clear();
+	};
+
+	const resetToolActivity = () => {
+		for (const name of Object.keys(toolStats)) {
+			delete toolStats[name];
+		}
+		clearActiveTools();
+	};
+
+	const syncQuota = async (ctx: {
+		model?: { id?: string; name?: string; provider?: string; api?: string; baseUrl?: string };
+		modelRegistry: {
+			isUsingOAuth(model: unknown): boolean;
+			getRegisteredProviderConfig?(providerName: string): unknown;
+			getApiKeyAndHeaders(model: unknown): Promise<
+				| { ok: true; apiKey?: string; headers?: Record<string, string> }
+				| { ok: false; error: string }
+			>;
+		};
+	}) => {
+		const enabled = config.widgets.includes("quota");
+		await quotaMonitor.sync(ctx.model, ctx.modelRegistry as never, enabled);
+	};
+
 	pi.registerCommand("statusline", {
 		description: "Interactively configure pi statusline (or reload)",
 		handler: async (args, ctx) => {
@@ -274,10 +327,13 @@ export default function statusline(pi: ExtensionAPI) {
 
 		runState = "Ready";
 		branchChanges = undefined;
-		activeTools.clear();
+		environment = undefined;
+		clearActiveTools();
+		for (const name of Object.keys(toolStats)) delete toolStats[name];
 		durationTracker.reset();
 		stopDurationTick();
 		reloadConfig();
+		void syncQuota(ctx);
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			const localRenderRequest = () => tui.requestRender();
@@ -323,16 +379,39 @@ export default function statusline(pi: ExtensionAPI) {
 						progress: joinExtensionProgress(extensionStatuses),
 						duration: durationTracker.snapshot(),
 						runState,
+						quota: config.widgets.includes("quota") ? quotaMonitor.getSnapshot() : undefined,
+						environment: config.widgets.includes("environment") ? environment : undefined,
+						toolActivity: config.widgets.includes("toolActivity") && Object.keys(toolStats).length > 0
+							? toolStats
+							: undefined,
 					};
 
 					const segments = buildWidgetSegments(snapshot, config);
-					const line = renderStatusLine(segments, config, palette, width, truncateToWidth);
-					return [line];
+					const rendered = renderStatusLine(
+						segments,
+						config,
+						palette,
+						width,
+						truncateToWidth,
+						visibleWidth,
+					);
+					return Array.isArray(rendered) ? rendered : [rendered];
 				},
 			};
 		});
 
 		scheduleGitRefresh(ctx.cwd, 0);
+	});
+
+	pi.on("before_agent_start", async (event) => {
+		const options = event.systemPromptOptions;
+		if (!options) return;
+		environment = {
+			contextFiles: options.contextFiles?.length ?? 0,
+			skills: options.skills?.length ?? 0,
+			tools: options.selectedTools?.length ?? 0,
+		};
+		requestRender();
 	});
 
 	pi.on("agent_start", async () => {
@@ -360,7 +439,7 @@ export default function statusline(pi: ExtensionAPI) {
 		if (state) setRunState(state);
 	});
 	pi.on("agent_settled", async (_event, ctx) => {
-		activeTools.clear();
+		clearActiveTools();
 		durationTracker.endRound();
 		stopDurationTick();
 		setRunState("Ready");
@@ -368,14 +447,37 @@ export default function statusline(pi: ExtensionAPI) {
 	});
 	pi.on("tool_execution_start", async (event) => {
 		activeTools.add(event.toolCallId);
+		toolCallNames.set(event.toolCallId, event.toolName);
+		const stats = ensureTool(event.toolName);
+		stats.active += 1;
 		setRunState("Working");
 	});
 	pi.on("tool_execution_end", async (event, ctx) => {
 		activeTools.delete(event.toolCallId);
+		const name = toolCallNames.get(event.toolCallId) ?? event.toolName;
+		toolCallNames.delete(event.toolCallId);
+		const stats = ensureTool(name);
+		stats.active = Math.max(0, stats.active - 1);
+		if (event.isError) stats.error += 1;
+		else stats.success += 1;
 		setRunState(activeTools.size > 0 ? "Working" : "Thinking");
 		scheduleGitRefresh(ctx.cwd);
 	});
-	pi.on("model_select", async () => requestRender());
+	pi.on("model_select", async (_event, ctx) => {
+		quotaMonitor.clear();
+		void syncQuota(ctx);
+		requestRender();
+	});
+	pi.on("after_provider_response", async (event, ctx) => {
+		if (!config.widgets.includes("quota")) return;
+		quotaMonitor.noteProviderResponse(event.status, event.headers);
+		void syncQuota(ctx);
+	});
+	pi.on("session_tree", async (_event, ctx) => {
+		resetToolActivity();
+		void syncQuota(ctx);
+		requestRender();
+	});
 	pi.on("thinking_level_select", async () => requestRender());
 	pi.on("session_compact", async () => requestRender());
 	pi.on("session_info_changed", async () => requestRender());
@@ -385,6 +487,8 @@ export default function statusline(pi: ExtensionAPI) {
 		stopDurationTick();
 		durationTracker.reset();
 		renderRequest = undefined;
-		activeTools.clear();
+		clearActiveTools();
+		quotaMonitor.dispose();
+		environment = undefined;
 	});
 }

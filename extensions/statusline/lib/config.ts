@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import type { ContextMode, StatuslineConfig, WidgetId } from "./types.ts";
+import type { ContextMode, IconMode, StatuslineConfig, StatuslineLayout, WidgetId } from "./types.ts";
 
 export const WIDGET_IDS = [
 	"path",
@@ -20,6 +20,9 @@ export const WIDGET_IDS = [
 	"progress",
 	"duration",
 	"state",
+	"quota",
+	"environment",
+	"toolActivity",
 ] as const satisfies readonly WidgetId[];
 
 const WIDGET_ID_SET = new Set<string>(WIDGET_IDS);
@@ -44,6 +47,8 @@ export const DEFAULT_CONFIG: StatuslineConfig = {
 		"duration",
 		"state",
 	],
+	layout: "single",
+	iconMode: "emoji",
 	contextMode: "remaining",
 	contextBarWidth: 10,
 	minimal: false,
@@ -64,6 +69,14 @@ function asContextMode(value: unknown): ContextMode | undefined {
 	return value === "remaining" || value === "used" ? value : undefined;
 }
 
+function asLayout(value: unknown): StatuslineLayout | undefined {
+	return value === "single" || value === "stacked" ? value : undefined;
+}
+
+function asIconMode(value: unknown): IconMode | undefined {
+	return value === "emoji" || value === "plain" ? value : undefined;
+}
+
 function asPositiveInt(value: unknown): number | undefined {
 	if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
 	const rounded = Math.floor(value);
@@ -79,6 +92,8 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 	if (!isRecord(raw)) return { ...DEFAULT_CONFIG, widgets: [...DEFAULT_CONFIG.widgets] };
 
 	const widgets = asWidgetIds(raw.widgets);
+	const layout = asLayout(raw.layout);
+	const iconMode = asIconMode(raw.iconMode);
 	const contextMode = asContextMode(raw.contextMode);
 	const contextBarWidth = asPositiveInt(raw.contextBarWidth);
 	const minimal = typeof raw.minimal === "boolean" ? raw.minimal : undefined;
@@ -86,6 +101,8 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 
 	return {
 		widgets: widgets && widgets.length > 0 ? widgets : [...DEFAULT_CONFIG.widgets],
+		layout: layout ?? DEFAULT_CONFIG.layout,
+		iconMode: iconMode ?? DEFAULT_CONFIG.iconMode,
 		contextMode: contextMode ?? DEFAULT_CONFIG.contextMode,
 		contextBarWidth: contextBarWidth ?? DEFAULT_CONFIG.contextBarWidth,
 		minimal: minimal ?? DEFAULT_CONFIG.minimal,
@@ -106,6 +123,8 @@ export function loadStatuslineConfig(path: string): StatuslineConfig {
 export function saveStatuslineConfig(path: string, config: StatuslineConfig): void {
 	const payload: StatuslineConfig = {
 		widgets: [...config.widgets],
+		layout: config.layout,
+		iconMode: config.iconMode,
 		contextMode: config.contextMode,
 		contextBarWidth: config.contextBarWidth,
 		minimal: config.minimal,

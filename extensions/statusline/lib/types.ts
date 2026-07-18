@@ -1,5 +1,8 @@
 export type RunState = "Ready" | "Working" | "Thinking";
 
+export type StatuslineLayout = "single" | "stacked";
+export type IconMode = "emoji" | "plain";
+
 export type WidgetId =
 	| "path"
 	| "session"
@@ -15,11 +18,62 @@ export type WidgetId =
 	| "branchDiff"
 	| "progress"
 	| "duration"
-	| "state";
+	| "state"
+	| "quota"
+	| "environment"
+	| "toolActivity";
 
 export type ContextMode = "remaining" | "used";
 
 export type Accent = "model" | "path" | "branch" | "state" | "usage" | "progress" | "session";
+
+export type WidgetGroup = "project" | "usage" | "environment" | "activity";
+
+/** Semantic groups for stacked layout. */
+export const WIDGET_GROUPS: Record<WidgetId, WidgetGroup> = {
+	path: "project",
+	session: "project",
+	model: "project",
+	branch: "project",
+	branchDiff: "project",
+	mode: "project",
+	fast: "project",
+	context: "usage",
+	contextBar: "usage",
+	tokens: "usage",
+	cache: "usage",
+	cost: "usage",
+	quota: "usage",
+	environment: "environment",
+	toolActivity: "activity",
+	progress: "activity",
+	duration: "activity",
+	state: "activity",
+};
+
+/** Drop order: higher first. Keep model/branch/context/quota/state longer. */
+export const WIDGET_PRIORITY: Record<WidgetId, number> = {
+	session: 90,
+	cost: 85,
+	duration: 80,
+	cache: 70,
+	progress: 65,
+	toolActivity: 60,
+	tokens: 55,
+	environment: 50,
+	path: 40,
+	mode: 35,
+	fast: 30,
+	branchDiff: 25,
+	context: 20,
+	contextBar: 15,
+	quota: 12,
+	branch: 10,
+	model: 8,
+	state: 5,
+};
+
+export type QuotaProvider = "codex" | "claude";
 
 export interface TokenTotals {
 	input: number;
@@ -37,6 +91,34 @@ export interface ContextUsageView {
 	tokens: number | null;
 	contextWindow: number;
 	percent: number | null;
+}
+
+export interface QuotaWindow {
+	id: string;
+	label: string;
+	usedPercent: number;
+	resetsAt?: number;
+	windowSeconds?: number;
+}
+
+export interface QuotaSnapshot {
+	provider: QuotaProvider;
+	modelBucket?: string;
+	windows: QuotaWindow[];
+	capturedAt: number;
+	stale: boolean;
+}
+
+export interface EnvironmentCounts {
+	contextFiles: number;
+	skills: number;
+	tools: number;
+}
+
+export interface ToolActivity {
+	active: number;
+	success: number;
+	error: number;
 }
 
 export interface StatusSnapshot {
@@ -58,10 +140,16 @@ export interface StatusSnapshot {
 	/** Current round LLM ms / session total LLM ms (live). */
 	duration?: { roundMs: number; sessionMs: number };
 	runState: RunState;
+	quota?: QuotaSnapshot;
+	environment?: EnvironmentCounts;
+	/** Aggregated by tool name. */
+	toolActivity?: Record<string, ToolActivity>;
 }
 
 export interface StatuslineConfig {
 	widgets: WidgetId[];
+	layout: StatuslineLayout;
+	iconMode: IconMode;
 	contextMode: ContextMode;
 	contextBarWidth: number;
 	minimal: boolean;
@@ -72,4 +160,12 @@ export interface WidgetSegment {
 	id: WidgetId;
 	accent: Accent;
 	text: string;
+	/** Higher values are dropped first when the line is too narrow. Default 50. */
+	priority?: number;
+	/** Optional bar rebuild for responsive narrowing. */
+	bar?: {
+		width: number;
+		minWidth: number;
+		rebuild: (width: number) => string;
+	};
 }
