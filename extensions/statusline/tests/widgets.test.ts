@@ -140,6 +140,26 @@ describe("buildWidgetSegments", () => {
 		);
 	});
 
+	it("uses muted supporting metadata and state-aware runtime tones", () => {
+		const metadata = buildWidgetSegments(
+			{ ...baseSnapshot, mode: "EDIT", branch: "feature" },
+			{ ...DEFAULT_CONFIG, widgets: ["path", "mode", "branch"] },
+		);
+		assert.ok(metadata.every((segment) => segment.parts?.every((part) => part.tone === "muted")));
+
+		for (const [runState, expectedTone] of [
+			["Ready", "dim"],
+			["Working", "active"],
+			["Thinking", "thinkingHigh"],
+		] as const) {
+			const [state] = buildWidgetSegments(
+				{ ...baseSnapshot, runState },
+				{ ...DEFAULT_CONFIG, widgets: ["state"] },
+			);
+			assert.equal(state?.parts?.[0]?.tone, expectedTone);
+		}
+	});
+
 	it("renders main as home", () => {
 		const segments = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,

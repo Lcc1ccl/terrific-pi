@@ -21,9 +21,9 @@ export type SegmentContent = {
 	parts: SegmentPart[];
 };
 
-/** Used-percent thresholds for bar fill color (independent of remaining/used display mode). */
-export const BAR_WARN_USED_PERCENT = 60;
-export const BAR_ERROR_USED_PERCENT = 85;
+/** Match pi's native footer thresholds; severity always follows used percent. */
+export const USAGE_WARN_USED_PERCENT = 70;
+export const USAGE_ERROR_USED_PERCENT = 90;
 
 function content(parts: SegmentPart[]): SegmentContent {
 	return {
@@ -32,14 +32,14 @@ function content(parts: SegmentPart[]): SegmentContent {
 	};
 }
 
-export function barFillTone(usedPercent: number): SegmentTone {
+export function usageValueTone(usedPercent: number): SegmentTone {
 	const used = Math.max(0, Math.min(100, usedPercent));
-	if (used >= BAR_ERROR_USED_PERCENT) return "error";
-	if (used >= BAR_WARN_USED_PERCENT) return "warn";
-	return "bar";
+	if (used > USAGE_ERROR_USED_PERCENT) return "error";
+	if (used > USAGE_WARN_USED_PERCENT) return "warn";
+	return "value";
 }
 
-export function formatBarParts(usedPercent: number, filledRatio: number, width: number): SegmentPart[] {
+export function formatBarParts(filledRatio: number, width: number): SegmentPart[] {
 	const barWidth = Math.max(
 		MIN_CONTEXT_BAR_WIDTH,
 		Math.min(MAX_CONTEXT_BAR_WIDTH, Math.floor(width || DEFAULT_CONTEXT_BAR_WIDTH)),
@@ -47,10 +47,9 @@ export function formatBarParts(usedPercent: number, filledRatio: number, width: 
 	const ratio = Math.max(0, Math.min(1, filledRatio));
 	const filled = Math.max(0, Math.min(barWidth, Math.round(ratio * barWidth)));
 	const empty = barWidth - filled;
-	const fillTone = barFillTone(usedPercent);
 	return [
 		{ text: "[", tone: "dim" },
-		{ text: "█".repeat(filled), tone: fillTone },
+		{ text: "█".repeat(filled), tone: "bar" },
 		{ text: "░".repeat(empty), tone: "dim" },
 		{ text: "] ", tone: "dim" },
 	];
@@ -120,19 +119,21 @@ export function formatContextText(
 	minimal = false,
 ): SegmentContent | undefined {
 	if (percent === null || percent === undefined || Number.isNaN(percent)) return undefined;
-	const used = Math.max(0, Math.min(100, Math.round(percent)));
+	const usedPercent = Math.max(0, Math.min(100, percent));
+	const used = Math.round(usedPercent);
 	const remaining = Math.max(0, Math.min(100, 100 - used));
 	const value = mode === "used" ? used : remaining;
-	if (minimal) return content([{ text: `${value}%`, tone: "value" }]);
+	const tone = usageValueTone(usedPercent);
+	if (minimal) return content([{ text: `${value}%`, tone }]);
 	const suffix = mode === "used" ? "% used" : "% left";
 	return content([
 		{ text: "Context ", tone: "label" },
-		{ text: `${value}${suffix}`, tone: "value" },
+		{ text: `${value}${suffix}`, tone },
 	]);
 }
 
 export function formatBar(filledRatio: number, width: number): string {
-	const parts = formatBarParts(0, filledRatio, width);
+	const parts = formatBarParts(filledRatio, width);
 	// Keep a plain bar body without brackets for callers that only need glyphs.
 	return `${parts[1]?.text ?? ""}${parts[2]?.text ?? ""}`;
 }
@@ -150,8 +151,8 @@ export function formatContextBar(
 		: `${Math.max(0, Math.min(100, Math.round(100 - used)))}%`;
 	return content([
 		{ text: "Context ", tone: "label" },
-		...formatBarParts(used, filledRatio, width),
-		{ text: label, tone: "value" },
+		...formatBarParts(filledRatio, width),
+		{ text: label, tone: usageValueTone(used) },
 	]);
 }
 
@@ -217,9 +218,9 @@ export function formatTokenPairMinimal(
 export function formatBranch(branch: string, iconMode: IconMode = "emoji"): SegmentContent {
 	const isDefault = branch === "main" || branch === "master";
 	if (isDefault && iconMode === "emoji") {
-		return content([{ text: "🏠", tone: "icon" }]);
+		return content([{ text: "🏠", tone: "muted" }]);
 	}
-	return content([{ text: branch, tone: "value" }]);
+	return content([{ text: branch, tone: "muted" }]);
 }
 
 export function formatBranchDiff(stats: { additions: number; deletions: number }): SegmentContent | undefined {
@@ -258,15 +259,15 @@ export function formatQuotaWindowLabel(windowSeconds: number | undefined, fallba
 
 export function formatQuotaBar(usedPercent: number, width: number): string {
 	const clamped = Math.max(0, Math.min(100, usedPercent));
-	const parts = formatBarParts(clamped, clamped / 100, width);
+	const parts = formatBarParts(clamped / 100, width);
 	return `${parts.map((part) => part.text).join("")}${Math.round(clamped)}%`;
 }
 
 export function formatQuotaBarParts(usedPercent: number, width: number): SegmentPart[] {
 	const clamped = Math.max(0, Math.min(100, usedPercent));
 	return [
-		...formatBarParts(clamped, clamped / 100, width),
-		{ text: `${Math.round(clamped)}%`, tone: "value" },
+		...formatBarParts(clamped / 100, width),
+		{ text: `${Math.round(clamped)}%`, tone: usageValueTone(clamped) },
 	];
 }
 
@@ -330,15 +331,15 @@ export function formatToolActivity(
 
 	for (const name of names) {
 		const entry = activity[name]!;
-		const pushEntry = (icon: string, tone: "error" | "success" | "icon", count: number) => {
+		const pushEntry = (icon: string, tone: "active" | "error" | "muted", count: number) => {
 			if (parts.length > 0) parts.push({ text: " · ", tone: "dim" });
 			parts.push({ text: `${icon} `, tone });
 			parts.push({ text: `${name} `, tone: "label" });
 			parts.push({ text: `x${count}`, tone: "value" });
 		};
-		if (entry.active > 0) pushEntry("…", "icon", entry.active);
+		if (entry.active > 0) pushEntry("…", "active", entry.active);
 		if (entry.error > 0) pushEntry(err, "error", entry.error);
-		if (entry.success > 0) pushEntry(ok, "success", entry.success);
+		if (entry.success > 0) pushEntry(ok, "muted", entry.success);
 	}
 
 	return parts.length > 0 ? content(parts) : undefined;
@@ -360,15 +361,27 @@ export function formatDurationContent(
 	]);
 }
 
+export function thinkingLevelTone(level: string): SegmentTone {
+	switch (level) {
+		case "minimal": return "thinkingMinimal";
+		case "low": return "thinkingLow";
+		case "medium": return "thinkingMedium";
+		case "high": return "thinkingHigh";
+		case "xhigh": return "thinkingXhigh";
+		case "max": return "thinkingMax";
+		default: return "thinkingOff";
+	}
+}
+
 export function formatModelContent(
 	modelId: string,
 	thinkingLevel: string,
 	hasReasoning: boolean,
 ): SegmentContent {
-	if (hasReasoning && thinkingLevel !== "off") {
+	if (hasReasoning) {
 		return content([
 			{ text: modelId, tone: "value" },
-			{ text: ` ${thinkingLevel}`, tone: "label" },
+			{ text: ` ${thinkingLevel}`, tone: thinkingLevelTone(thinkingLevel) },
 		]);
 	}
 	return content([{ text: modelId, tone: "value" }]);

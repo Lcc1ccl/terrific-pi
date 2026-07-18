@@ -5,7 +5,7 @@ Scope: `extensions/statusline`
 
 ## Decisions
 
-- Keep `·` as a fixed separator and configure only symmetric spacing around it: default `1`, minimum `0`, maximum `4` terminal cells per side.
+- Configure symmetric spacing around `·`; separator selection was later superseded by the 2026-07-18 color hierarchy design (`·` or single-cell `│`).
 - Render `main` as `🏠` and omit `branchDiff` when both counts are zero.
 - Derive state from stream events: reasoning is `Thinking`, text/tool-call generation and tool execution are `Working`, and settled is `Ready`.
 - Render the context bar without the `ctx` prefix.

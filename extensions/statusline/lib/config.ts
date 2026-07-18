@@ -2,7 +2,14 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
-import type { ContextMode, IconMode, StatuslineConfig, StatuslineLayout, WidgetId } from "./types.ts";
+import type {
+	ContextMode,
+	IconMode,
+	StatuslineConfig,
+	StatuslineLayout,
+	StatuslineSeparator,
+	WidgetId,
+} from "./types.ts";
 
 export const WIDGET_IDS = [
 	"path",
@@ -31,6 +38,11 @@ export const DEFAULT_WIDGET_SPACING = 1;
 export const MIN_WIDGET_SPACING = 0;
 export const MAX_WIDGET_SPACING = 4;
 
+export const WIDGET_SEPARATOR_GLYPHS = {
+	dot: "·",
+	bar: "│",
+} as const satisfies Record<StatuslineSeparator, string>;
+
 export const DEFAULT_CONTEXT_BAR_WIDTH = 10;
 export const MIN_CONTEXT_BAR_WIDTH = 4;
 export const MAX_CONTEXT_BAR_WIDTH = 40;
@@ -56,6 +68,7 @@ export const DEFAULT_CONFIG: StatuslineConfig = {
 	contextMode: "remaining",
 	contextBarWidth: DEFAULT_CONTEXT_BAR_WIDTH,
 	minimal: false,
+	separator: "dot",
 	spacing: DEFAULT_WIDGET_SPACING,
 };
 
@@ -81,6 +94,10 @@ function asIconMode(value: unknown): IconMode | undefined {
 	return value === "emoji" || value === "plain" ? value : undefined;
 }
 
+function asSeparator(value: unknown): StatuslineSeparator | undefined {
+	return value === "dot" || value === "bar" ? value : undefined;
+}
+
 function asContextBarWidth(value: unknown): number | undefined {
 	if (typeof value !== "number" || !Number.isInteger(value)) return undefined;
 	return value >= MIN_CONTEXT_BAR_WIDTH && value <= MAX_CONTEXT_BAR_WIDTH ? value : undefined;
@@ -100,6 +117,7 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 	const contextMode = asContextMode(raw.contextMode);
 	const contextBarWidth = asContextBarWidth(raw.contextBarWidth);
 	const minimal = typeof raw.minimal === "boolean" ? raw.minimal : undefined;
+	const separator = asSeparator(raw.separator);
 	const spacing = asWidgetSpacing(raw.spacing);
 
 	return {
@@ -109,6 +127,7 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 		contextMode: contextMode ?? DEFAULT_CONFIG.contextMode,
 		contextBarWidth: contextBarWidth ?? DEFAULT_CONFIG.contextBarWidth,
 		minimal: minimal ?? DEFAULT_CONFIG.minimal,
+		separator: separator ?? DEFAULT_CONFIG.separator,
 		spacing: spacing ?? DEFAULT_CONFIG.spacing,
 	};
 }
@@ -138,6 +157,7 @@ export function saveStatuslineConfig(path: string, config: StatuslineConfig): vo
 		contextMode: config.contextMode,
 		contextBarWidth: config.contextBarWidth,
 		minimal: config.minimal,
+		separator: config.separator ?? DEFAULT_CONFIG.separator,
 		spacing: config.spacing,
 	};
 	const directory = dirname(path);

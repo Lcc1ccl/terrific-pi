@@ -1,6 +1,6 @@
 {
   "layout": "stacked",
-  "iconMode": "emoji",
+  "iconMode": "plain",
   "widgets": [
     "path",
     "session",
@@ -23,5 +23,6 @@
   "contextMode": "used",
   "contextBarWidth": 10,
   "minimal": false,
+  "separator": "bar",
   "spacing": 1
 }

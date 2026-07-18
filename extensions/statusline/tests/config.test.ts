@@ -25,9 +25,9 @@ describe("mergeStatuslineConfig", () => {
 		assert.deepEqual(mergeStatuslineConfig({}), DEFAULT_CONFIG);
 	});
 
-	it("uses numeric spacing and does not expose a separator setting", () => {
+	it("defaults to the dot separator with numeric spacing", () => {
+		assert.equal(DEFAULT_CONFIG.separator, "dot");
 		assert.equal(DEFAULT_CONFIG.spacing, 1);
-		assert.equal("separator" in DEFAULT_CONFIG, false);
 	});
 
 	it("defaults layout single and iconMode emoji without auto-inserting new widgets", () => {
@@ -51,8 +51,8 @@ describe("mergeStatuslineConfig", () => {
 			contextMode: "used",
 			contextBarWidth: 8,
 			minimal: true,
+			separator: "bar",
 			spacing: 2,
-			separator: " | ",
 		});
 		assert.deepEqual(merged.widgets, ["path", "cost", "contextBar", "quota"]);
 		assert.equal(merged.layout, "stacked");
@@ -60,8 +60,13 @@ describe("mergeStatuslineConfig", () => {
 		assert.equal(merged.contextMode, "used");
 		assert.equal(merged.contextBarWidth, 8);
 		assert.equal(merged.minimal, true);
+		assert.equal(merged.separator, "bar");
 		assert.equal(merged.spacing, 2);
-		assert.equal("separator" in merged, false);
+	});
+
+	it("rejects arbitrary separator strings", () => {
+		assert.equal(mergeStatuslineConfig({ separator: "│" }).separator, "dot");
+		assert.equal(mergeStatuslineConfig({ separator: " | " }).separator, "dot");
 	});
 
 	it("deduplicates widgets and rejects fractional context widths", () => {
@@ -103,6 +108,7 @@ describe("loadStatuslineConfigResult", () => {
 		assert.equal(loaded.contextMode, DEFAULT_CONFIG.contextMode);
 		assert.equal(loaded.layout, "single");
 		assert.equal(loaded.iconMode, "emoji");
+		assert.equal(loaded.separator, "dot");
 		assert.equal(loaded.spacing, 1);
 	});
 
@@ -169,6 +175,7 @@ describe("saveStatuslineConfig", () => {
 			contextMode: "used" as const,
 			contextBarWidth: 8,
 			minimal: true,
+			separator: "bar" as const,
 			spacing: 2,
 		};
 
@@ -183,6 +190,7 @@ describe("saveStatuslineConfig", () => {
 			contextMode: "used",
 			contextBarWidth: 8,
 			minimal: true,
+			separator: "bar",
 			spacing: 2,
 		});
 		assert.deepEqual(loadConfig(nested), {
@@ -192,6 +200,7 @@ describe("saveStatuslineConfig", () => {
 			contextMode: "used",
 			contextBarWidth: 8,
 			minimal: true,
+			separator: "bar",
 			spacing: 2,
 		});
 	});

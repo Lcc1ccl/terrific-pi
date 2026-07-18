@@ -24,10 +24,11 @@ Main menu actions:
 - Widgets (toggle + reorder)
 - Layout
 - Icon mode
+- Widget separator
+- Widget spacing
 - Context mode
 - Context bar width
 - Minimal mode
-- Widget spacing
 - Show config
 - Reload from file
 - Reset to defaults
@@ -73,12 +74,13 @@ Custom single-line `Input` initialized with `setValue(current)`.
 
 Select on/off.
 
-### Widget spacing
+### Widget separator and spacing
 
-Custom single-line `Input` initialized with the current numeric value. The title shows default `1`, minimum `0`, and maximum `4`.
+Separator is a selector immediately followed by the numeric spacing input.
 
-- Valid: integer `0`–`4`, measured in terminal space cells on each side
-- The `·` separator is fixed and cannot be removed or changed
+- `separator`: `"dot"` (`·`) or `"bar"` (`│`); default `"dot"`
+- separator changes only widget boundaries; related values inside a widget remain dot-separated
+- `spacing`: integer `0`–`4` terminal cells on each side; default `1`
 
 ### Show / Reload / Reset / Done
 
@@ -105,7 +107,7 @@ Add `saveStatuslineConfig(path, config)`:
 - Create parent directory if missing
 - Pretty-print JSON with 2-space indent and trailing newline
 - Replace through a same-directory temporary file
-- Stable key order: `widgets`, `layout`, `iconMode`, `contextMode`, `contextBarWidth`, `minimal`, `spacing`
+- Stable key order: `widgets`, `layout`, `iconMode`, `contextMode`, `contextBarWidth`, `minimal`, `separator`, `spacing`
 
 Path resolution remains `resolveRuntimeConfigPath()`:
 
@@ -162,5 +164,5 @@ docs/plans/
 
 1. Unit: save + load roundtrip
 2. Unit: toggle/move constraints and boundaries
-3. Unit: width/spacing validation and immutable separator rendering
+3. Unit: width/spacing validation and dot/bar separator rendering
 4. Manual: `/statusline` in TUI toggles widget and footer updates; file on disk matches

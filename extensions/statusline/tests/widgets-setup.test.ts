@@ -19,10 +19,12 @@ describe("formatWidgetsPreview", () => {
 			widgets: ["tokens", "cache"],
 			iconMode: "plain",
 			minimal: true,
+			separator: "bar",
 			spacing: 0,
 		});
 		assert.doesNotMatch(preview, /🔼|🔽|🎯/);
 		assert.match(preview, /1\.5K.*800/);
+		assert.match(preview, /│/);
 	});
 
 	it("returns none when empty", () => {

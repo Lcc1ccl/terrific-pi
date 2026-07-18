@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
-	barFillTone,
 	formatBranch,
 	formatBranchDiff,
 	formatCache,
@@ -12,10 +11,12 @@ import {
 	formatCwd,
 	formatDurationContent,
 	formatEnvironment,
+	formatModelContent,
 	formatQuota,
 	formatTokenDirection,
 	formatTokensCompact,
 	formatToolActivity,
+	usageValueTone,
 } from "../lib/format.ts";
 
 describe("formatTokensCompact", () => {
@@ -63,17 +64,17 @@ describe("formatContextText", () => {
 		assert.equal(formatContextText(37.2, "remaining")?.text, "Context 63% left");
 		assert.equal(formatContextText(37.2, "used")?.text, "Context 37% used");
 		assert.equal(formatContextText(37.2, "remaining", true)?.text, "63%");
+		assert.equal(formatContextText(70.1, "used")?.parts.at(-1)?.tone, "warn");
 		assert.equal(formatContextText(null, "remaining"), undefined);
 	});
 });
 
-describe("barFillTone", () => {
-	it("uses white/warn/error thresholds on used percent", () => {
-		assert.equal(barFillTone(27), "bar");
-		assert.equal(barFillTone(59), "bar");
-		assert.equal(barFillTone(60), "warn");
-		assert.equal(barFillTone(84), "warn");
-		assert.equal(barFillTone(85), "error");
+describe("usageValueTone", () => {
+	it("matches pi's native context thresholds", () => {
+		assert.equal(usageValueTone(70), "value");
+		assert.equal(usageValueTone(70.1), "warn");
+		assert.equal(usageValueTone(90), "warn");
+		assert.equal(usageValueTone(90.1), "error");
 	});
 });
 
@@ -88,11 +89,26 @@ describe("formatContextBar", () => {
 		assert.ok(tones?.includes("value"));
 	});
 
-	it("colors fill by used-percent threshold even in remaining mode", () => {
-		const high = formatContextBar(90, 10, "remaining");
-		assert.ok(high?.parts.some((part) => part.tone === "error" && part.text.includes("█")));
-		const mid = formatContextBar(70, 10, "used");
-		assert.ok(mid?.parts.some((part) => part.tone === "warn" && part.text.includes("█")));
+	it("keeps the bar neutral and colors only the percentage", () => {
+		const warning = formatContextBar(75, 10, "remaining");
+		assert.ok(warning?.parts.some((part) => part.tone === "bar" && part.text.includes("█")));
+		assert.equal(warning?.parts.at(-1)?.tone, "warn");
+		const error = formatContextBar(95, 10, "used");
+		assert.ok(error?.parts.some((part) => part.tone === "bar" && part.text.includes("█")));
+		assert.equal(error?.parts.at(-1)?.tone, "error");
+	});
+});
+
+describe("formatModelContent", () => {
+	it("always shows reasoning level with pi's native theme token", () => {
+		assert.deepEqual(formatModelContent("gpt-5", "off", true), {
+			text: "gpt-5 off",
+			parts: [
+				{ text: "gpt-5", tone: "value" },
+				{ text: " off", tone: "thinkingOff" },
+			],
+		});
+		assert.equal(formatModelContent("gpt-5", "max", true).parts.at(-1)?.tone, "thinkingMax");
 	});
 });
 
@@ -163,6 +179,12 @@ describe("formatToolActivity", () => {
 		const parts = formatToolActivity(activity, "emoji")?.parts ?? [];
 		assert.ok(parts.some((part) => part.tone === "label" && part.text.includes("Bash")));
 		assert.ok(parts.some((part) => part.tone === "value" && part.text === "x1"));
+		assert.ok(parts.some((part) => part.tone === "muted" && part.text.includes("✓")));
+	});
+
+	it("reserves accent for active tools", () => {
+		const parts = formatToolActivity({ Bash: { active: 1, success: 0, error: 0 } }, "emoji")?.parts ?? [];
+		assert.ok(parts.some((part) => part.tone === "active" && part.text.includes("…")));
 	});
 });
 

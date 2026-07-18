@@ -166,6 +166,7 @@ describe("formatConfigSummary", () => {
 			contextMode: "remaining",
 			contextBarWidth: 10,
 			minimal: false,
+			separator: "dot",
 			spacing: 1,
 		};
 		const summary = formatConfigSummary(config, "/tmp/statusline.json");
@@ -175,8 +176,8 @@ describe("formatConfigSummary", () => {
 		assert.match(summary, /contextMode: remaining/);
 		assert.match(summary, /contextBarWidth: 10 \(default 10, min 4, max 40\)/);
 		assert.match(summary, /minimal: false/);
+		assert.match(summary, /separator: dot \(·\)/);
 		assert.match(summary, /spacing: 1 \(default 1, min 0, max 4\)/);
-		assert.doesNotMatch(summary, /separator:/);
 		assert.match(summary, /config: \/tmp\/statusline\.json/);
 	});
 });
@@ -190,6 +191,7 @@ describe("main menu selector", () => {
 			contextMode: "remaining",
 			contextBarWidth: 10,
 			minimal: false,
+			separator: "dot",
 			spacing: 1,
 		};
 		let mainCalls = 0;
@@ -231,6 +233,7 @@ describe("widget editor apply", () => {
 			contextMode: "remaining",
 			contextBarWidth: 10,
 			minimal: false,
+			separator: "dot",
 			spacing: 1,
 		};
 		const choices = ["Widgets", "Done"];
@@ -268,6 +271,7 @@ describe("setting menus", () => {
 			contextMode: "remaining",
 			contextBarWidth: 10,
 			minimal: false,
+			separator: "dot",
 			spacing: 1,
 		};
 		const choices = ["Layout", "Done"];
@@ -296,6 +300,49 @@ describe("setting menus", () => {
 	});
 });
 
+describe("widget separator menu", () => {
+	it("places separator next to spacing and applies the selected style", async () => {
+		const config: StatuslineConfig = {
+			widgets: ["path"],
+			layout: "single",
+			iconMode: "emoji",
+			contextMode: "remaining",
+			contextBarWidth: 10,
+			minimal: false,
+			separator: "dot",
+			spacing: 1,
+		};
+		const choices = ["Widget separator", "Done"];
+		let mainItems: string[] = [];
+		let selected: StatuslineConfig | undefined;
+
+		await runStatuslineConfigurator({
+			getConfig: () => config,
+			getConfigPath: () => "/tmp/statusline.json",
+			applyConfig: (next) => {
+				selected = next;
+				return { ok: true, value: undefined };
+			},
+			reloadConfig: () => ({ ok: true, value: config }),
+			resetConfig: () => ({ ok: true, value: undefined }),
+			ui: {
+				selectMain: async (_title, items) => {
+					mainItems = items;
+					return choices.shift();
+				},
+				select: async (title) => title.includes("· / │") ? "bar" : undefined,
+				input: async () => undefined,
+				editWidgets: async () => undefined,
+				confirm: async () => true,
+				notify: () => {},
+			},
+		}, ["path"]);
+
+		assert.equal(mainItems.indexOf("Widget separator") + 1, mainItems.indexOf("Widget spacing"));
+		assert.equal(selected?.separator, "bar");
+	});
+});
+
 describe("reset confirmation", () => {
 	it("does not reset when confirmation is declined", async () => {
 		const config: StatuslineConfig = {
@@ -305,6 +352,7 @@ describe("reset confirmation", () => {
 			contextMode: "remaining",
 			contextBarWidth: 10,
 			minimal: false,
+			separator: "dot",
 			spacing: 1,
 		};
 		const choices = ["Reset to defaults", "Done"];
@@ -347,6 +395,7 @@ describe("widget spacing prompt", () => {
 			contextMode: "remaining",
 			contextBarWidth: 10,
 			minimal: false,
+			separator: "dot",
 			spacing: 1,
 		};
 		const choices = ["Widget spacing", "Done"];
@@ -387,6 +436,7 @@ describe("context bar width prompt", () => {
 			contextMode: "remaining",
 			contextBarWidth: 10,
 			minimal: false,
+			separator: "dot",
 			spacing: 1,
 		};
 		const choices = ["Context bar width", "Done"];

@@ -6,8 +6,16 @@ import {
 	MAX_WIDGET_SPACING,
 	MIN_CONTEXT_BAR_WIDTH,
 	MIN_WIDGET_SPACING,
+	WIDGET_SEPARATOR_GLYPHS,
 } from "./config.ts";
-import type { ContextMode, IconMode, StatuslineConfig, StatuslineLayout, WidgetId } from "./types.ts";
+import type {
+	ContextMode,
+	IconMode,
+	StatuslineConfig,
+	StatuslineLayout,
+	StatuslineSeparator,
+	WidgetId,
+} from "./types.ts";
 
 export type MutationResult<T> =
 	| { ok: true; value: T }
@@ -220,6 +228,11 @@ export function parseWidgetSpacing(raw: string): MutationResult<number> {
 		: { ok: false, error };
 }
 
+function separatorLabel(separator: StatuslineSeparator | undefined): string {
+	const value = separator ?? DEFAULT_CONFIG.separator;
+	return `${value} (${WIDGET_SEPARATOR_GLYPHS[value]})`;
+}
+
 export function formatConfigSummary(config: StatuslineConfig, configPath: string): string {
 	return [
 		`widgets: ${config.widgets.join(", ")}`,
@@ -228,6 +241,7 @@ export function formatConfigSummary(config: StatuslineConfig, configPath: string
 		`contextMode: ${config.contextMode}`,
 		`contextBarWidth: ${config.contextBarWidth} (default ${DEFAULT_CONTEXT_BAR_WIDTH}, min ${MIN_CONTEXT_BAR_WIDTH}, max ${MAX_CONTEXT_BAR_WIDTH})`,
 		`minimal: ${config.minimal}`,
+		`separator: ${separatorLabel(config.separator)}`,
 		`spacing: ${config.spacing} (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
 		`config: ${configPath}`,
 	].join("\n");
@@ -239,7 +253,7 @@ function mainMenuTitle(config: StatuslineConfig, configPath: string): string {
 		`widgets: ${config.widgets.join(", ")}`,
 		`layout: ${config.layout} · iconMode: ${config.iconMode}`,
 		`contextMode: ${config.contextMode} · bar: ${config.contextBarWidth} (default ${DEFAULT_CONTEXT_BAR_WIDTH}) · minimal: ${config.minimal}`,
-		`spacing: ${config.spacing} (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
+		`separator: ${separatorLabel(config.separator)} · spacing: ${config.spacing} (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
 		`config: ${configPath}`,
 	].join("\n");
 }
@@ -304,6 +318,24 @@ async function setIconMode(deps: ConfigureDeps): Promise<void> {
 		return;
 	}
 	applyOrNotify(deps, { ...config, iconMode }, `iconMode: ${iconMode}`);
+}
+
+async function setWidgetSeparator(deps: ConfigureDeps): Promise<void> {
+	const config = deps.getConfig();
+	const current = config.separator ?? DEFAULT_CONFIG.separator;
+	const separator = await selectSetting(
+		deps,
+		"Widget separator (· / │)",
+		["dot", "bar"] satisfies readonly StatuslineSeparator[],
+		current,
+		DEFAULT_CONFIG.separator,
+	);
+	if (!separator) return;
+	if (separator === current) {
+		deps.ui.notify(`separator already ${separator}`, "info");
+		return;
+	}
+	applyOrNotify(deps, { ...config, separator }, `separator: ${separatorLabel(separator)}`);
 }
 
 async function setContextMode(deps: ConfigureDeps): Promise<void> {
@@ -385,10 +417,11 @@ export async function runStatuslineConfigurator(
 			"Widgets",
 			"Layout",
 			"Icon mode",
+			"Widget separator",
+			"Widget spacing",
 			"Context mode",
 			"Context bar width",
 			"Minimal mode",
-			"Widget spacing",
 			"Show config",
 			"Reload from file",
 			"Reset to defaults",
@@ -407,6 +440,12 @@ export async function runStatuslineConfigurator(
 			case "Icon mode":
 				await setIconMode(deps);
 				break;
+			case "Widget separator":
+				await setWidgetSeparator(deps);
+				break;
+			case "Widget spacing":
+				await setWidgetSpacing(deps);
+				break;
 			case "Context mode":
 				await setContextMode(deps);
 				break;
@@ -415,9 +454,6 @@ export async function runStatuslineConfigurator(
 				break;
 			case "Minimal mode":
 				await setMinimalMode(deps);
-				break;
-			case "Widget spacing":
-				await setWidgetSpacing(deps);
 				break;
 			case "Show config":
 				deps.ui.notify(formatConfigSummary(config, configPath), "info");

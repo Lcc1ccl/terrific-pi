@@ -2,6 +2,7 @@ export type RunState = "Ready" | "Working" | "Thinking";
 
 export type StatuslineLayout = "single" | "stacked";
 export type IconMode = "emoji" | "plain";
+export type StatuslineSeparator = "dot" | "bar";
 
 export type WidgetId =
 	| "path"
@@ -36,16 +37,25 @@ export type Accent =
 	| "dim"
 	| "neutral";
 
-/** Within-segment tone: labels/icons muted, values bright; bars use threshold tones. */
+/** Semantic tone mapped to the active pi theme at render time. */
 export type SegmentTone =
 	| "icon"
 	| "label"
 	| "value"
+	| "muted"
 	| "dim"
+	| "active"
 	| "error"
 	| "success"
 	| "warn"
-	| "bar";
+	| "bar"
+	| "thinkingOff"
+	| "thinkingMinimal"
+	| "thinkingLow"
+	| "thinkingMedium"
+	| "thinkingHigh"
+	| "thinkingXhigh"
+	| "thinkingMax";
 
 export interface SegmentPart {
 	text: string;
@@ -180,6 +190,7 @@ export interface StatuslineConfig {
 	contextMode: ContextMode;
 	contextBarWidth: number;
 	minimal: boolean;
+	separator: StatuslineSeparator;
 	spacing: number;
 }
 

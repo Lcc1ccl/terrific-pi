@@ -20,6 +20,7 @@ import {
 	formatTokenDirection,
 	formatTokenPairMinimal,
 	formatToolActivity,
+	thinkingLevelTone,
 	type SegmentContent,
 } from "./format.ts";
 import { formatWidgetSeparator, stripTerminalControls } from "./render.ts";
@@ -133,7 +134,9 @@ export function formatWidgetsPreview(
 		...config,
 		widgets,
 	});
-	return segments.map((segment) => segment.text).join(formatWidgetSeparator(config.spacing)) || "(empty)";
+	return segments
+		.map((segment) => segment.text)
+		.join(formatWidgetSeparator(config.spacing, config.separator ?? "dot")) || "(empty)";
 }
 
 export function buildWidgetSegments(snapshot: StatusSnapshot, config: StatuslineConfig): WidgetSegment[] {
@@ -149,7 +152,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 					id,
 					accent: "path",
 					text: formatCwd(snapshot.cwd),
-					parts: [{ text: formatCwd(snapshot.cwd), tone: "value" }],
+					parts: [{ text: formatCwd(snapshot.cwd), tone: "muted" }],
 					priority,
 				});
 				break;
@@ -159,7 +162,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 						id,
 						accent: "session",
 						text: snapshot.sessionName,
-						parts: [{ text: snapshot.sessionName, tone: "value" }],
+						parts: [{ text: snapshot.sessionName, tone: "muted" }],
 						priority,
 					});
 				}
@@ -179,7 +182,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 						id,
 						accent: "state",
 						text: snapshot.mode,
-						parts: [{ text: snapshot.mode, tone: "value" }],
+						parts: [{ text: snapshot.mode, tone: "muted" }],
 						priority,
 					});
 				}
@@ -270,7 +273,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 						id,
 						accent: "progress",
 						text: snapshot.progress,
-						parts: [{ text: snapshot.progress, tone: "value" }],
+						parts: [{ text: snapshot.progress, tone: "active" }],
 						priority,
 					});
 				}
@@ -285,15 +288,21 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 					pushContent(segments, id, "usage", formatDurationContent(pair, iconMode), priority);
 				}
 				break;
-			case "state":
+			case "state": {
+				const tone = snapshot.runState === "Ready"
+					? "dim"
+					: snapshot.runState === "Thinking"
+						? thinkingLevelTone(snapshot.thinkingLevel)
+						: "active";
 				segments.push({
 					id,
 					accent: "state",
 					text: snapshot.runState,
-					parts: [{ text: snapshot.runState, tone: "value" }],
+					parts: [{ text: snapshot.runState, tone }],
 					priority,
 				});
 				break;
+			}
 			case "quota": {
 				if (!snapshot.quota) {
 					if (snapshot.quotaStatus === "loading") {

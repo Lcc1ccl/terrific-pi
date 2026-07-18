@@ -6,12 +6,12 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 
 ## Features
 
-- Configurable widget order and numeric spacing (JSON)
+- Configurable widget order, `·` / `│` separator, and numeric spacing
 - `layout: "single" | "stacked"` with canonical project/usage/environment/activity lines
 - `iconMode: "emoji" | "plain"` (plugin-owned glyphs only; bars/colors unchanged)
 - Path (home-relative `~`)
 - Session name (when set via `/name`)
-- Model + thinking level
+- Model + thinking level using pi's native thinking colors
 - Execution mode and fast priority badges when active
 - Active-branch token usage (`🔼input` / `🔽output`, or plain `in` / `out`)
 - Active-branch cumulative cache hit rate (`🎯…%` or `cache …%`)
@@ -48,7 +48,9 @@ Optional config file:
 - file override: `PI_STATUSLINE_CONFIG=/path/to.json`
 - legacy directory fallback: `PI_AGENT_DIR`
 
-`spacing` is the number of terminal space cells placed on each side of the fixed `·` separator. Default: `1`; minimum: `0`; maximum: `4`.
+`separator` accepts `"dot"` (`·`) or `"bar"` (`│`). Default: `"dot"`. It applies between widgets; related values inside a widget remain dot-separated.
+
+`spacing` is the number of terminal space cells placed on each side of the widget separator. Default: `1`; minimum: `0`; maximum: `4`.
 
 `contextBarWidth` is an integer terminal-cell width. Default: `10`; minimum: `4`; maximum: `40`.
 
@@ -76,6 +78,7 @@ Single-line layout follows the configured order exactly. Stacked layout uses can
   "contextMode": "remaining",
   "contextBarWidth": 10,
   "minimal": false,
+  "separator": "dot",
   "spacing": 1
 }
 ```
@@ -85,7 +88,7 @@ Single-line layout follows the configured order exactly. Stacked layout uses can
 ```json
 {
   "layout": "stacked",
-  "iconMode": "emoji",
+  "iconMode": "plain",
   "widgets": [
     "path",
     "session",
@@ -108,6 +111,7 @@ Single-line layout follows the configured order exactly. Stacked layout uses can
   "contextMode": "used",
   "contextBarWidth": 10,
   "minimal": false,
+  "separator": "bar",
   "spacing": 1
 }
 ```
@@ -115,11 +119,22 @@ Single-line layout follows the configured order exactly. Stacked layout uses can
 Example stacked output:
 
 ```text
-[Fable 5] · ~/vendor/terrific-pi · 🏠 · +12 -3 · EDIT · 
-Context [█░░░░░░░░░] 4% · 🔼 12.5K · 🔽 3.2K · 🎯 76.9% · $0.42 · 📊 5h [█░░░] 7% · 7d [███░] 33%
+~/vendor/terrific-pi │ [Fable 5] │ gpt-5 high │ main │ +12 -3 │ EDIT │ fast
+Context [█░░░░░░░░░] 4% │ in 12.5K · out 3.2K │ cache 76.9% │ $0.42 │ usage 5h [░░░░░░] 7% · 7d [██░░░░] 33%
 2 context files · 67 skills · 7 tools
-✓ Read x6 · ✓ Bash x3 · Ready · 12.3s / 1m45s
+ok Read x6 · ok Bash x3 │ time 12.3s / 1m45s │ Ready
 ```
+
+### Color hierarchy
+
+The footer follows the active pi theme rather than maintaining separate RGB palettes:
+
+- normal values use `text`; labels and supporting metadata use `muted`; separators and tertiary metadata use `dim`
+- `accent` is reserved for active work; routine successes stay muted, while failures use `error`
+- context and quota bars remain neutral; only percentages use `warning` above 70% and `error` above 90%, matching pi's native footer thresholds
+- thinking levels use `thinkingOff` through `thinkingMax`, the same tokens as pi's editor border
+
+`plain` mode is recommended for a restrained HUD because terminal emoji retain their own colors.
 
 ### Widget ids
 
@@ -187,7 +202,7 @@ These are account-level signals, not a guarantee of the current Pi session budge
 In TUI mode, `/statusline` opens a nested menu:
 
 - **Widgets**: `Space` toggle, configured select keys to navigate, configured cursor keys to move, Enter done
-- set `layout`, `iconMode`, `contextMode`, `contextBarWidth`, `minimal`, spacing
+- set `layout`, `iconMode`, widget separator/spacing, `contextMode`, `contextBarWidth`, and `minimal`
 - enum menus put the current value first and mark current/default values
 - numeric inputs are prefilled with the current value
 - show / reload / confirmed reset config

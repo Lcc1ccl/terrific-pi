@@ -18,11 +18,11 @@ const segments = [
 	{ id: "state" as const, accent: "state" as const, text: "right" },
 ];
 
-function render(spacing: number, legacySeparator = ""): string {
+function render(spacing: number, separator: "dot" | "bar" = "dot"): string {
 	const config = {
 		...DEFAULT_CONFIG,
 		spacing,
-		separator: legacySeparator,
+		separator,
 	};
 	const line = renderStatusLine(segments, config, TEST_THEME, 200, (text) => text);
 	return (Array.isArray(line) ? line[0]! : line).replace(ANSI_PATTERN, "");
@@ -61,12 +61,31 @@ const hudSnapshot: StatusSnapshot = {
 };
 
 describe("renderStatusLine widget spacing", () => {
-	it("keeps the fixed separator and adds equal spaces on both sides", () => {
-		assert.equal(render(2, "|"), "  left  ·  right");
+	it("renders dot and bar separators with equal side spacing", () => {
+		assert.equal(render(2), "  left  ·  right");
+		assert.equal(render(1, "bar"), "  left │ right");
 	});
 
 	it("keeps the separator when spacing is zero", () => {
 		assert.equal(render(0), "  left·right");
+	});
+
+	it("keeps related token values dot-separated inside a bar-separated HUD", () => {
+		const config = {
+			...DEFAULT_CONFIG,
+			separator: "bar" as const,
+			iconMode: "plain" as const,
+			widgets: ["tokens", "state"] as const,
+		};
+		const built = buildWidgetSegments(hudSnapshot, { ...config, widgets: [...config.widgets] });
+		const line = renderStatusLine(
+			built,
+			{ ...config, widgets: [...config.widgets] },
+			TEST_THEME,
+			200,
+			(text) => text,
+		);
+		assert.equal(line, "  in 12.5K · out 3.2K │ Ready");
 	});
 });
 
@@ -142,18 +161,28 @@ describe("terminal safety", () => {
 });
 
 describe("host theme", () => {
-	it("uses callback theme colors instead of guessing from the theme name", () => {
-		const colors: string[] = [];
+	it("uses neutral hierarchy and the native thinking-level color", () => {
+		const calls: Array<[string, string]> = [];
 		const theme = {
 			fg(color: string, text: string) {
-				colors.push(color);
+				calls.push([color, text]);
 				return text;
 			},
 		};
-		const line = renderStatusLine(segments, DEFAULT_CONFIG, theme, 200, (text) => text);
+		const config = { ...DEFAULT_CONFIG, widgets: ["model", "path", "state"] as const };
+		const built = buildWidgetSegments(hudSnapshot, { ...config, widgets: [...config.widgets] });
+		const line = renderStatusLine(
+			built,
+			{ ...config, widgets: [...config.widgets] },
+			theme,
+			200,
+			(text) => text,
+		);
 		assert.equal(Array.isArray(line), false);
-		assert.ok(colors.includes("dim"));
-		assert.ok(colors.includes("accent") || colors.includes("success"));
+		assert.ok(calls.some(([color, text]) => color === "text" && text === "gpt-5"));
+		assert.ok(calls.some(([color, text]) => color === "thinkingHigh" && text === " high"));
+		assert.ok(calls.some(([color, text]) => color === "muted" && text === "/home/user/proj"));
+		assert.ok(calls.some(([color, text]) => color === "dim" && text === "Ready"));
 	});
 });
 

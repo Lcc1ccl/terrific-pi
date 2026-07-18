@@ -1,17 +1,46 @@
-import { MAX_WIDGET_SPACING, MIN_WIDGET_SPACING } from "./config.ts";
-import type { Accent, SegmentTone, StatuslineConfig, WidgetGroup, WidgetSegment } from "./types.ts";
+import {
+	MAX_WIDGET_SPACING,
+	MIN_WIDGET_SPACING,
+	WIDGET_SEPARATOR_GLYPHS,
+} from "./config.ts";
+import type {
+	Accent,
+	SegmentTone,
+	StatuslineConfig,
+	StatuslineSeparator,
+	WidgetGroup,
+	WidgetSegment,
+} from "./types.ts";
 import { WIDGET_GROUPS } from "./types.ts";
 
-export type HostThemeColor = "accent" | "success" | "error" | "warning" | "muted" | "dim" | "text";
+export type HostThemeColor =
+	| "accent"
+	| "success"
+	| "error"
+	| "warning"
+	| "muted"
+	| "dim"
+	| "text"
+	| "thinkingOff"
+	| "thinkingMinimal"
+	| "thinkingLow"
+	| "thinkingMedium"
+	| "thinkingHigh"
+	| "thinkingXhigh"
+	| "thinkingMax";
 
 export interface HostTheme {
 	fg(color: HostThemeColor, text: string): string;
 }
 
-export function formatWidgetSeparator(spacing: number): string {
+export function formatWidgetSeparator(
+	spacing: number,
+	separator: StatuslineSeparator = "dot",
+): string {
 	const width = Math.max(MIN_WIDGET_SPACING, Math.min(MAX_WIDGET_SPACING, Math.floor(spacing)));
 	const gap = " ".repeat(width);
-	return `${gap}·${gap}`;
+	const glyph = WIDGET_SEPARATOR_GLYPHS[separator] ?? WIDGET_SEPARATOR_GLYPHS.dot;
+	return `${gap}${glyph}${gap}`;
 }
 
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
@@ -36,15 +65,34 @@ function segmentGroup(segment: WidgetSegment): WidgetGroup {
 }
 
 function hostThemeColor(accent: Accent, tone: SegmentTone = "value"): HostThemeColor {
-	if (tone === "error") return "error";
-	if (tone === "warn") return "warning";
-	if (tone === "success") return "success";
-	if (tone === "label" || tone === "icon") return "muted";
-	if (tone === "dim" || accent === "dim") return "dim";
-	if (accent === "path" || accent === "progress") return "success";
-	if (accent === "branch") return "warning";
-	if (accent === "model" || accent === "state" || accent === "session") return "accent";
-	return "text";
+	switch (tone) {
+		case "thinkingOff":
+		case "thinkingMinimal":
+		case "thinkingLow":
+		case "thinkingMedium":
+		case "thinkingHigh":
+		case "thinkingXhigh":
+		case "thinkingMax":
+			return tone;
+		case "error":
+			return "error";
+		case "warn":
+			return "warning";
+		case "success":
+			return "success";
+		case "active":
+			return "accent";
+		case "label":
+		case "icon":
+		case "muted":
+			return "muted";
+		case "dim":
+			return "dim";
+		case "value":
+		case "bar":
+			return "text";
+	}
+	return accent === "dim" ? "dim" : accent === "progress" ? "accent" : "text";
 }
 
 function colorizeText(theme: HostTheme, accent: Accent, text: string, tone: SegmentTone = "value"): string {
@@ -65,7 +113,12 @@ function colorizeSegments(
 	config: StatuslineConfig,
 	theme: HostTheme,
 ): string {
-	const separator = colorizeText(theme, "dim", formatWidgetSeparator(config.spacing), "dim");
+	const separator = colorizeText(
+		theme,
+		"dim",
+		formatWidgetSeparator(config.spacing, config.separator ?? "dot"),
+		"dim",
+	);
 	const colored = segments.map((segment) => colorizeSegment(theme, segment));
 	return `  ${colored.join(separator)}`;
 }
