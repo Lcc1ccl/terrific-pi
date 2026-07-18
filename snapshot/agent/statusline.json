@@ -1,0 +1,21 @@
+{
+  "widgets": [
+    "path",
+    "branch",
+    "branchDiff",
+    "mode",
+    "model",
+    "fast",
+    "tokens",
+    "cache",
+    "cost",
+    "contextBar",
+    "progress",
+    "state",
+    "duration"
+  ],
+  "contextMode": "used",
+  "contextBarWidth": 10,
+  "minimal": false,
+  "spacing": 1
+}

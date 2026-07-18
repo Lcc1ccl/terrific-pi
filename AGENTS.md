@@ -7,8 +7,14 @@
 ## 仓库定位
 
 - 路径：通常为 `~/.pi/vendor/terrific-pi`（由 `settings.json` 相对路径引用）
-- 内容：可公开的 pi packages（`extensions/`）、配置模板（`agent/`）、离线脚本（`scripts/`）
-- **禁止**入库：`auth.json`、API key、token、session 日志、本机私密路径硬编码
+- 内容：
+  - 可公开 pi packages：`extensions/`
+  - 可迁移 skills：`skills/`（安装到 `~/.agents/skills`）
+  - 非密钥配置快照：`snapshot/agent/`
+  - 配置模板：`agent/`
+  - 离线脚本：`scripts/{snapshot,pack,install}.sh`
+- **禁止**入库：真实 `auth.json` 密钥、token、session 日志、本机私密路径硬编码
+- **允许**入库：经消毒的 `models.json` / `settings.json` / `statusline.json` / `AGENTS.md`，以及 **空 key** 的 `auth.template.json`（见 `snapshot/README.md`）
 
 ## 开发前：先扫再写（强制）
 
@@ -87,6 +93,25 @@ extensions/<name>/
 
 新插件合并前更新根 `README.md` 插件表（路径 + 一句话说明）。
 
+## Skills 规范
+
+- 一技能一目录：`skills/<name>/`，必须含 `SKILL.md`
+- 辅助脚本可同目录（如 `*.py`）；不提交 `__pycache__`
+- 本机权威安装路径：`~/.agents/skills/<name>/`（可用 `AGENTS_SKILLS_DIR` 覆盖）
+- 刷新仓内技能源：`./scripts/snapshot.sh`（或 `SNAPSHOT_ONLY=skills`）
+- 安装时 **始终** 从包同步 skills（保证迁移 1:1）
+- 新技能合并前更新根 `README.md` 技能表
+
+## Snapshot 规范
+
+- 源：`./scripts/snapshot.sh` 从本机白名单采集到 `snapshot/agent/`
+- 白名单（当前）：`models.json`、`settings.json`、`statusline.json`、`AGENTS.md`、`pi-essentials.json`
+- 另生成：`auth.template.json`（从本机 auth 导出 provider 结构，**密钥字段清空**）
+- 采集时跑 secret 消毒检查；命中 `apiKey` 值 / bearer / 私钥 / `sk-...` token 则失败
+- 还原：`RESTORE=1 ./install.sh` 覆盖写入 agent 快照；`auth.json` 由模板 seed/merge，**不覆盖已有非空 key**
+- 迁移手工作业只有：编辑目标机 `~/.pi/agent/auth.json` 填 key（不走 `/login`）
+- 默认无 `RESTORE`：仅 seed 缺失文件，不覆盖用户现有配置
+
 ## 提交规范
 
 ### 何时提交
@@ -121,41 +146,49 @@ chore(scripts): ...
 
 ## 自动打包规范
 
-离线包是仓库的发布物之一；**内容以当前工作树 + 已声明 extensions 为准**。
+离线包是仓库的发布物之一；**内容以当前工作树 + extensions + skills + snapshot 为准**。
 
 ### 脚本
 
 | 脚本 | 作用 |
 |------|------|
-| `scripts/pack.sh` | 扫描 `extensions/*/package.json`，生成 `dist/terrific-pi-<utc>-<sha>.tar.gz` + `MANIFEST.txt` |
-| `scripts/install.sh` | 离线安装到 `$PI_HOME/vendor/terrific-pi`，合并 `settings.json` packages |
+| `scripts/snapshot.sh` | 从本机采集 agent 快照并刷新 `skills/` 源 |
+| `scripts/pack.sh` | 打包 `extensions`/`skills`/`snapshot`，生成 `dist/terrific-pi-<utc>-<sha>.tar.gz` + `MANIFEST.txt` |
+| `scripts/install.sh` | 离线安装 vendor + skills；`RESTORE=1` 时 1:1 还原 agent 快照 |
 
 ### 何时打包
 
-在以下情况于仓库根执行 `./scripts/pack.sh`，并把结果当作“可拷贝安装包”：
+在以下情况于仓库根执行 `./scripts/snapshot.sh && ./scripts/pack.sh`，并把结果当作“可拷贝安装包”：
 
-1. **用户要求打包 / 发版 / 同步到其他设备**
-2. **合并了插件增删或 install/pack 脚本变更** 且用户需要离线物
+1. **用户要求打包 / 发版 / 迁移到其他设备**
+2. **合并了插件/技能/快照或 install/pack/snapshot 脚本变更** 且用户需要离线物
 3. **提交并推送后**，若用户要求“带上安装包”，再 pack 一次（包内 `git_sha` 对应该提交）
 
 默认 **不把 `dist/*.tar.gz` 提交进 git**（已 gitignore）。需要分发时拷贝文件即可。
 
 ### 打包要求
 
-- pack 必须能在无额外配置下发现全部合法插件（含 `pi.extensions` 的 package）
-- 包内必须有根级 `install.sh` 与 `scripts/install.sh`
-- 排除：`.git`、`node_modules`、`dist`、密钥类文件
+- pack 必须发现：全部合法插件、`skills/*/SKILL.md`、`snapshot/agent/*`
+- `MANIFEST.txt` 含 `packages<<`、`skills<<`、`snapshot_agent<<` 三段
+- 包内必须有根级 `install.sh` 与 `scripts/*.sh`
+- 排除：`.git`、`node_modules`、`dist`、`__pycache__`、密钥类文件
 - install 必须：
-  - 可无网运行
-  - 合并而非盲写 `packages`（保留 npm:/git: 等外部项）
-  - 不覆盖已有 `auth.json` / 用户私密配置；模板仅 seed 缺失文件
-- 改 `pack.sh` / `install.sh` 后，至少做一次：`./scripts/pack.sh` + 对临时 `PI_HOME` 跑 `install.sh` 冒烟
+  - 可无网运行（`npm:`/`git:` 包本身仍可能需网）
+  - 合并而非盲写 `packages`（保留 npm:/git: 等外部项；`RESTORE=1` 先还原 snapshot 再合并 terrific-pi 项）
+  - 只安装 `auth.template.json` 派生的空壳/合并 `auth.json`，永不打包/覆盖真实密钥
+  - skills 始终同步；agent 快照默认 seed，仅 `RESTORE=1` 覆盖
+- 改打包/安装脚本后，至少做一次：
+  - `./scripts/snapshot.sh`（如需要）
+  - `./scripts/pack.sh`
+  - 对临时 `PI_HOME` + 临时 `AGENTS_SKILLS_DIR` 跑 `FORCE=1 RESTORE=1 install.sh` 冒烟
 
 ### 与开发流的衔接（推荐顺序）
 
 ```text
 检索官方/社区 → 设计最小包 → 实现 + 单测 → 更新 README
+  → ./scripts/snapshot.sh（若改了本机配置/技能）
   → 提交（用户授权时 push）→ ./scripts/pack.sh → 分发 tar.gz
+  → 目标机 FORCE=1 RESTORE=1 ./install.sh
 ```
 
 ## 安全与边界
@@ -163,12 +196,15 @@ chore(scripts): ...
 - 插件与宿主同权：只添加可信、必要的代码
 - 不在插件里硬编码本机用户名、内网地址、密钥
 - 不删除用户 `~/.pi` 数据；`FORCE=1` 安装仅替换 `vendor/terrific-pi` 树
+- `RESTORE=1` 可覆盖 agent 快照文件；`auth.json` 仅 seed/merge 空 key 结构，**禁止覆盖已有非空密钥**
 - 破坏性 git/系统操作必须用户明确授权
 
 ## 验证清单（插件 PR/提交自检）
 
 - [ ] 已检索官方文档与社区，结论写明“复用 / 封装 / 新建及原因”
 - [ ] `extensions/<name>/` 结构与 `package.json` 合法
+- [ ] 新增 skill 有 `skills/<name>/SKILL.md` 且 README 技能表已更新
+- [ ] snapshot 无密钥；`snapshot.sh` 消毒检查可通过
 - [ ] 无密钥、LF、无无关大重构
 - [ ] 测试或最小手动验证已做
 - [ ] README 插件表已更新
@@ -177,5 +213,5 @@ chore(scripts): ...
 ## 非目标
 
 - 不在本仓维护 pi 本体或第三方大包（ponytail、npm 全局依赖等）的离线镜像，除非用户另行要求
-- 不把 `~/.pi/agent` 私密运行态同步进 git
+- 不把真实密钥、sessions、trust 等私密/机器绑定运行态同步进 git（仅允许空 key 的 auth 模板）
 - 不为“完美架构”拆公共 monorepo 库；重复极小时代码可复制，重复变大再抽

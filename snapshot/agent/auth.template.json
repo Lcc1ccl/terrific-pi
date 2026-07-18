@@ -1,0 +1,10 @@
+{
+  "openai": {
+    "type": "api_key",
+    "key": ""
+  },
+  "grok": {
+    "type": "api_key",
+    "key": ""
+  }
+}

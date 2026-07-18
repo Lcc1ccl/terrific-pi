@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Build an offline install archive from the current terrific-pi tree.
+# Includes extensions, skills, and config snapshot for 1:1 migration restore.
 # Usage: ./scripts/pack.sh [output-dir]
 set -euo pipefail
 
@@ -22,11 +23,13 @@ tar -C "$ROOT" \
 	--exclude='dist' \
 	--exclude='node_modules' \
 	--exclude='**/node_modules' \
+	--exclude='**/__pycache__' \
+	--exclude='*.pyc' \
 	--exclude='*.tgz' \
 	--exclude='.DS_Store' \
 	-cf - . | tar -C "$STAGE/$NAME" -xf -
 
-# Manifest: discovered packages + provenance (drives install, tracks pack source).
+# Manifest: packages + skills + snapshot files + provenance.
 {
 	echo "name=terrific-pi"
 	echo "packed_at_utc=$STAMP"
@@ -44,24 +47,52 @@ tar -C "$ROOT" \
 		echo "../vendor/terrific-pi/extensions/$base"
 	done
 	echo ">>"
+	echo "skills<<"
+	find "$STAGE/$NAME/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | while read -r d; do
+		base="$(basename "$d")"
+		# Require SKILL.md to count as a shippable skill
+		[[ -f "$d/SKILL.md" ]] || continue
+		echo "$base"
+	done
+	echo ">>"
+	echo "snapshot_agent<<"
+	if [[ -d "$STAGE/$NAME/snapshot/agent" ]]; then
+		find "$STAGE/$NAME/snapshot/agent" -type f ! -name '.gitkeep' | sort | while read -r f; do
+			echo "agent/$(basename "$f")"
+		done
+	fi
+	echo ">>"
 } >"$STAGE/$NAME/MANIFEST.txt"
 
 # Root entrypoint for offline hosts that only extract the tarball.
 cp "$STAGE/$NAME/scripts/install.sh" "$STAGE/$NAME/install.sh"
-chmod +x "$STAGE/$NAME/scripts/install.sh" "$STAGE/$NAME/install.sh"
+chmod +x "$STAGE/$NAME/scripts/"*.sh "$STAGE/$NAME/install.sh" 2>/dev/null || true
+find "$STAGE/$NAME/skills" -type f -name '*.py' -exec chmod +x {} + 2>/dev/null || true
 
 ARCHIVE="$OUT_DIR/${NAME}.tar.gz"
 tar -C "$STAGE" -czf "$ARCHIVE" "$NAME"
 
-# Self-check: archive contains install entrypoint + at least one extension package.
+# Self-check: install entrypoint, extensions, skills, snapshot.
 python3 - "$ARCHIVE" <<'PY'
 import sys, tarfile
 path = sys.argv[1]
 with tarfile.open(path, "r:gz") as tf:
     names = tf.getnames()
-assert any(n.endswith("/install.sh") for n in names), "missing install.sh"
-assert any("/extensions/" in n and n.endswith("/package.json") for n in names), "missing extension packages"
-print("ok", path, "members", len(names))
+    assert any(n.endswith("/install.sh") for n in names), "missing install.sh"
+    assert any("/extensions/" in n and n.endswith("/package.json") for n in names), "missing extension packages"
+    assert any("/skills/" in n and n.endswith("/SKILL.md") for n in names), "missing skills"
+    assert any("/snapshot/agent/" in n for n in names), "missing agent snapshot"
+    manifest = None
+    for n in names:
+        if n.endswith("/MANIFEST.txt"):
+            member = tf.extractfile(n)
+            assert member is not None, "cannot read MANIFEST.txt"
+            manifest = member.read().decode("utf-8", errors="replace")
+            break
+    assert manifest and "skills<<" in manifest and "snapshot_agent<<" in manifest, "manifest incomplete"
+    print("ok", path, "members", len(names))
+    print("--- MANIFEST ---")
+    print(manifest)
 PY
 
 echo "packed: $ARCHIVE"

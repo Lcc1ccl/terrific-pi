@@ -1,0 +1,17 @@
+{
+  "lastChangelogVersion": "0.80.10",
+  "theme": "dark",
+  "defaultProvider": "openai",
+  "defaultModel": "gpt-5.6-sol",
+  "defaultThinkingLevel": "high",
+  "packages": [
+    "npm:cc-safety-net@1.0.6",
+    "npm:@ayulab/pi-rewind@0.4.6",
+    "git:github.com/DietrichGebert/ponytail",
+    "../vendor/terrific-pi/extensions/statusline",
+    "../vendor/terrific-pi/extensions/fast",
+    "../vendor/terrific-pi/extensions/context",
+    "../vendor/terrific-pi/extensions/mode",
+    "../vendor/terrific-pi/extensions/btw"
+  ]
+}
