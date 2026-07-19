@@ -9,8 +9,10 @@ import type {
 	StatuslineLayout,
 	StatuslineSeparator,
 	ToolActivityMode,
+	WidgetGroup,
 	WidgetId,
 } from "./types.ts";
+import { WIDGET_GROUP_ORDER, WIDGET_GROUPS } from "./types.ts";
 
 export const WIDGET_IDS = [
 	"path",
@@ -169,6 +171,48 @@ function asToolActivityMode(value: unknown): ToolActivityMode | undefined {
 	return value === "detailed" || value === "compact" ? value : undefined;
 }
 
+const WIDGET_GROUP_SET = new Set<string>(WIDGET_GROUP_ORDER);
+
+function asWidgetGroups(value: unknown): Partial<Record<WidgetId, WidgetGroup>> | undefined {
+	if (!isRecord(value)) return undefined;
+	const out: Partial<Record<WidgetId, WidgetGroup>> = {};
+	for (const [key, group] of Object.entries(value)) {
+		if (!WIDGET_ID_SET.has(key)) continue;
+		if (typeof group !== "string" || !WIDGET_GROUP_SET.has(group)) continue;
+		const id = key as WidgetId;
+		const next = group as WidgetGroup;
+		// Keep only real overrides of package defaults.
+		if (WIDGET_GROUPS[id] === next) continue;
+		out[id] = next;
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
+export function resolveWidgetGroup(
+	id: WidgetId,
+	overrides?: Partial<Record<WidgetId, WidgetGroup>>,
+): WidgetGroup {
+	return overrides?.[id] ?? WIDGET_GROUPS[id] ?? "activity";
+}
+
+/** Cycle project → usage → environment → activity. */
+export function nextWidgetGroup(group: WidgetGroup): WidgetGroup {
+	const index = WIDGET_GROUP_ORDER.indexOf(group);
+	return WIDGET_GROUP_ORDER[(index + 1) % WIDGET_GROUP_ORDER.length]!;
+}
+
+/** Store override only when different from package default. */
+export function withWidgetGroupOverride(
+	overrides: Partial<Record<WidgetId, WidgetGroup>> | undefined,
+	id: WidgetId,
+	group: WidgetGroup,
+): Partial<Record<WidgetId, WidgetGroup>> | undefined {
+	const next: Partial<Record<WidgetId, WidgetGroup>> = { ...overrides };
+	if (WIDGET_GROUPS[id] === group) delete next[id];
+	else next[id] = group;
+	return Object.keys(next).length > 0 ? next : undefined;
+}
+
 export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 	if (!isRecord(raw)) return { ...DEFAULT_CONFIG, widgets: [...DEFAULT_CONFIG.widgets] };
 
@@ -181,6 +225,7 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 	const separator = asSeparator(raw.separator);
 	const spacing = asWidgetSpacing(raw.spacing);
 	const toolActivityMode = asToolActivityMode(raw.toolActivityMode);
+	const widgetGroups = asWidgetGroups(raw.widgetGroups);
 
 	return {
 		widgets: widgets && widgets.length > 0 ? widgets : [...DEFAULT_CONFIG.widgets],
@@ -192,6 +237,7 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 		separator: separator ?? DEFAULT_CONFIG.separator,
 		spacing: spacing ?? DEFAULT_CONFIG.spacing,
 		toolActivityMode: toolActivityMode ?? DEFAULT_CONFIG.toolActivityMode,
+		...(widgetGroups ? { widgetGroups } : {}),
 	};
 }
 
@@ -223,6 +269,9 @@ export function saveStatuslineConfig(path: string, config: StatuslineConfig): vo
 		separator: config.separator ?? DEFAULT_CONFIG.separator,
 		spacing: config.spacing,
 		toolActivityMode: config.toolActivityMode ?? DEFAULT_CONFIG.toolActivityMode,
+		...(config.widgetGroups && Object.keys(config.widgetGroups).length > 0
+			? { widgetGroups: { ...config.widgetGroups } }
+			: {}),
 	};
 	const directory = dirname(path);
 	const temporary = join(directory, `.${basename(path)}.${process.pid}.${Date.now()}.tmp`);

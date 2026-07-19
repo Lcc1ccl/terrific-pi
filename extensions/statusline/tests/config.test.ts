@@ -12,10 +12,13 @@ import {
 	mergeStatuslineConfig,
 	MINIMAL_PROFILE,
 	MINIMAL_WIDGETS,
+	nextWidgetGroup,
 	resolveConfigPath,
 	resolveRuntimeConfigPath,
+	resolveWidgetGroup,
 	saveStatuslineConfig,
 	WIDGET_IDS,
+	withWidgetGroupOverride,
 } from "../lib/config.ts";
 
 function loadConfig(path: string) {
@@ -77,6 +80,17 @@ describe("mergeStatuslineConfig", () => {
 		assert.equal(WIDGET_IDS.indexOf("fast"), WIDGET_IDS.indexOf("mode") + 1);
 		assert.equal(DEFAULT_CONFIG.widgets.indexOf("mode"), DEFAULT_CONFIG.widgets.indexOf("model") + 1);
 		assert.equal(DEFAULT_CONFIG.widgets.indexOf("fast"), DEFAULT_CONFIG.widgets.indexOf("mode") + 1);
+	});
+
+	it("merges widget group overrides and drops no-op defaults", () => {
+		const merged = mergeStatuslineConfig({
+			widgetGroups: { tokens: "activity", path: "project", nope: "usage" },
+		});
+		assert.deepEqual(merged.widgetGroups, { tokens: "activity" });
+		assert.equal(resolveWidgetGroup("tokens", merged.widgetGroups), "activity");
+		assert.equal(resolveWidgetGroup("path", merged.widgetGroups), "project");
+		assert.equal(nextWidgetGroup("project"), "usage");
+		assert.deepEqual(withWidgetGroupOverride({ tokens: "activity" }, "tokens", "usage"), undefined);
 	});
 
 	it("filters unknown widgets and applies known options", () => {

@@ -77,17 +77,15 @@ describe("swapAdjacent", () => {
 describe("widget editor items", () => {
 	const catalog = ["path", "model", "cost", "state"] as const;
 
-	it("groups by semantics with enabled config order inside each group", () => {
+	it("keeps free config order: enabled first, then disabled catalog order", () => {
 		const items = buildWidgetEditorItems(["cost", "path"], catalog);
-		// project: path(on), model(off) · usage: cost(on) · activity: state(off)
 		assert.deepEqual(items, [
+			{ id: "cost", enabled: true },
 			{ id: "path", enabled: true },
 			{ id: "model", enabled: false },
-			{ id: "cost", enabled: true },
 			{ id: "state", enabled: false },
 		]);
-		// Projection order is group-based; config order is owned by WidgetsSetupComponent.enabledOrder.
-		assert.deepEqual(enabledFromEditorItems(items), ["path", "cost"]);
+		assert.deepEqual(enabledFromEditorItems(items), ["cost", "path"]);
 	});
 
 	it("toggles and refuses disabling the last enabled widget", () => {
@@ -255,8 +253,8 @@ describe("widget editor apply", () => {
 				selectMain: async () => choices.shift(),
 				select: async () => undefined,
 				input: async () => undefined,
-				editWidgets: async (_title, _all, _enabled, onChange) => {
-					accepted = onChange(["state"]);
+				editWidgets: async (_title, _all, _enabled, _groups, onChange) => {
+					accepted = onChange(["state"], undefined);
 					return undefined;
 				},
 				confirm: async () => true,

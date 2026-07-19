@@ -104,6 +104,21 @@ describe("groupSegmentsBySemantics", () => {
 			[["path", "model"], ["tokens", "context"], ["state"]],
 		);
 	});
+
+	it("honors widgetGroups overrides for stacked partition", () => {
+		const segs: WidgetSegment[] = [
+			{ id: "path", accent: "path", text: "p" },
+			{ id: "tokens", accent: "usage", text: "t" },
+			{ id: "state", accent: "state", text: "s" },
+		];
+		const groups = groupSegmentsBySemantics(segs, {
+			widgetGroups: { tokens: "activity", path: "environment" },
+		});
+		assert.deepEqual(
+			groups.map((group) => group.map((segment) => segment.id)),
+			[["path"], ["tokens", "state"]],
+		);
+	});
 });
 
 describe("responsive fitting", () => {

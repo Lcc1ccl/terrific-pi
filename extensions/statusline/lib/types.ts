@@ -221,6 +221,8 @@ export interface StatuslineConfig {
 	spacing: number;
 	/** detailed = per-tool; compact = core_tools + aux_tools aggregates. */
 	toolActivityMode: ToolActivityMode;
+	/** Optional stacked-line group overrides (defaults live in WIDGET_GROUPS). */
+	widgetGroups?: Partial<Record<WidgetId, WidgetGroup>>;
 }
 
 export interface WidgetSegment {

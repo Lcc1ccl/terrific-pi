@@ -261,7 +261,7 @@ These are account-level signals, not a guarantee of the current Pi session budge
 
 In TUI mode, `/statusline` opens a nested menu:
 
-- **Widgets**: grouped by project / usage / environment / activity; `Space` toggle, ↑/↓ select, ←/→ reorder **enabled** widgets, Enter done
+- **Widgets**: free order; `Space` toggle, `g` cycle stacked group (project/usage/environment/activity), ↑/↓ select, ←/→ reorder **enabled** widgets, Enter done. Live footer updates on each save (no separate preview strip).
 - **Appearance**: layout, icon mode, separator, spacing, **Minimal profile**
 - **Context & usage**: contextMode, contextBarWidth (only if `contextBar` enabled), toolActivityMode (only if `toolActivity` enabled)
 - show / reload / confirmed reset config

@@ -9,6 +9,7 @@ import {
 	MIN_CONTEXT_BAR_WIDTH,
 	MIN_WIDGET_SPACING,
 	MINIMAL_PROFILE,
+	resolveWidgetGroup,
 	WIDGET_SEPARATOR_GLYPHS,
 } from "./config.ts";
 import type {
@@ -21,7 +22,6 @@ import type {
 	WidgetGroup,
 	WidgetId,
 } from "./types.ts";
-import { WIDGET_GROUP_ORDER, WIDGET_GROUPS } from "./types.ts";
 
 export type MutationResult<T> =
 	| { ok: true; value: T }
@@ -62,12 +62,13 @@ export type ConfigureUi = {
 	select(title: string, items: string[]): Promise<string | undefined>;
 	input(title: string, initialValue: string): Promise<string | undefined>;
 	confirm(title: string, message: string): Promise<boolean>;
-	/** Codex-style multi-select: Space toggle, ↑/↓ select, ←/→ move. */
+	/** Codex-style multi-select: Space toggle, g cycle group, ↑/↓ select, ←/→ move. */
 	editWidgets(
 		title: string,
 		allWidgets: readonly WidgetId[],
 		enabled: WidgetId[],
-		onChange: (enabled: WidgetId[]) => boolean,
+		widgetGroups: StatuslineConfig["widgetGroups"],
+		onChange: (enabled: WidgetId[], widgetGroups: StatuslineConfig["widgetGroups"]) => boolean,
 		onReject?: (error: string) => void,
 	): Promise<WidgetId[] | undefined>;
 	notify(message: string, level?: "info" | "warning" | "error"): void;
@@ -110,33 +111,34 @@ export function swapAdjacent<T>(
 	return { items: next, index: target };
 }
 
-/** Group widgets for the editor: project → usage → environment → activity. */
-export function widgetGroupOf(id: string): WidgetGroup {
-	return WIDGET_GROUPS[id as WidgetId] ?? "activity";
+export function widgetGroupOf(
+	id: string,
+	overrides?: StatuslineConfig["widgetGroups"],
+): WidgetGroup {
+	return resolveWidgetGroup(id as WidgetId, overrides);
 }
 
 /**
- * Build editor rows grouped by semantics.
- * Within each group: enabled (config order) then disabled (catalog order).
+ * Free-order editor rows: enabled first (config order), then disabled (catalog order).
+ * Partition labels come from widgetGroups overrides + package defaults.
  */
 export function buildWidgetEditorItems(
 	enabled: readonly string[],
 	allWidgets: readonly string[],
 ): WidgetEditorItem[] {
 	const allSet = new Set(allWidgets);
-	const enabledOrder = enabled.filter((id, index) => allSet.has(id) && enabled.indexOf(id) === index);
-	const enabledSet = new Set(enabledOrder);
+	const seen = new Set<string>();
 	const items: WidgetEditorItem[] = [];
 
-	for (const group of WIDGET_GROUP_ORDER) {
-		for (const id of enabledOrder) {
-			if (widgetGroupOf(id) !== group) continue;
-			items.push({ id: id as WidgetId, enabled: true });
-		}
-		for (const id of allWidgets) {
-			if (enabledSet.has(id) || widgetGroupOf(id) !== group) continue;
-			items.push({ id: id as WidgetId, enabled: false });
-		}
+	for (const id of enabled) {
+		if (!allSet.has(id) || seen.has(id)) continue;
+		seen.add(id);
+		items.push({ id: id as WidgetId, enabled: true });
+	}
+	for (const id of allWidgets) {
+		if (seen.has(id)) continue;
+		seen.add(id);
+		items.push({ id: id as WidgetId, enabled: false });
 	}
 	return items;
 }
@@ -299,9 +301,17 @@ async function editWidgetsLoop(deps: ConfigureDeps, allWidgets: readonly WidgetI
 		"Widgets",
 		allWidgets,
 		[...config.widgets],
-		(widgets) => {
+		config.widgetGroups,
+		(widgets, widgetGroups) => {
 			const current = deps.getConfig();
-			return applyOrNotify(deps, { ...current, widgets }, `widgets: ${widgets.join(", ")}`);
+			const next: StatuslineConfig = { ...current, widgets };
+			if (widgetGroups && Object.keys(widgetGroups).length > 0) next.widgetGroups = widgetGroups;
+			else delete next.widgetGroups;
+			return applyOrNotify(
+				deps,
+				next,
+				`widgets: ${widgets.join(", ")}${widgetGroups && Object.keys(widgetGroups).length > 0 ? " · groups updated" : ""}`,
+			);
 		},
 		(error) => deps.ui.notify(error, "warning"),
 	);

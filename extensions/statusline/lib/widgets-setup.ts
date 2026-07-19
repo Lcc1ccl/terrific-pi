@@ -1,15 +1,18 @@
 import { isKeyRelease, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import {
+	nextWidgetGroup,
+	resolveWidgetGroup,
+	withWidgetGroupOverride,
+} from "./config.ts";
+import {
 	buildWidgetEditorItems,
 	toggleEditorItem,
 	widgetEditorAction,
-	widgetGroupOf,
 	type WidgetEditorBinding,
 	type WidgetEditorItem,
 } from "./configure.ts";
-import type { StatuslineConfig, WidgetGroup } from "./types.ts";
-import { formatWidgetsPreview } from "./widgets.ts";
+import type { StatuslineConfig, WidgetId } from "./types.ts";
 
 export type WidgetsSetupTheme = {
 	fg(color: string, text: string): string;
@@ -19,11 +22,14 @@ export type WidgetsSetupOptions = {
 	title: string;
 	allWidgets: readonly string[];
 	enabled: readonly string[];
+	widgetGroups?: StatuslineConfig["widgetGroups"];
 	theme: WidgetsSetupTheme;
-	previewConfig: StatuslineConfig;
 	keybindings: { matches(data: string, binding: WidgetEditorBinding): boolean };
 	/** Return true to commit the local editor state after persistence succeeds. */
-	onChange: (enabled: string[]) => boolean;
+	onChange: (
+		enabled: string[],
+		widgetGroups: StatuslineConfig["widgetGroups"],
+	) => boolean;
 	/** Called when a toggle/move is rejected (e.g. last widget). */
 	onReject?: (error: string) => void;
 	done: (enabled: string[] | undefined) => void;
@@ -31,16 +37,17 @@ export type WidgetsSetupOptions = {
 };
 
 /**
- * Codex-style multi-select + reorder:
- * Space toggle · ↑/↓ select · ←/→ move enabled · Enter done · Esc back
+ * Free-order multi-select:
+ * Space toggle · g cycle group · ↑/↓ select · ←/→ reorder enabled · Enter done · Esc back
  *
- * `enabledOrder` is the source of truth for config widget order.
- * Grouped `items` are a display/edit projection and must not rewrite that order on toggle.
+ * Live footer already reflects saved changes — no in-editor preview strip.
  */
 export class WidgetsSetupComponent {
 	private items: WidgetEditorItem[];
-	/** Config order of enabled widgets (not group display order). */
+	/** Config order of enabled widgets (source of truth). */
 	private enabledOrder: string[];
+	/** Stacked-line group overrides (source of truth). */
+	private widgetGroups: StatuslineConfig["widgetGroups"];
 	private selected = 0;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
@@ -48,9 +55,8 @@ export class WidgetsSetupComponent {
 	private readonly title: string;
 	private readonly allWidgets: readonly string[];
 	private readonly theme: WidgetsSetupTheme;
-	private readonly previewConfig: StatuslineConfig;
 	private readonly keybindings: WidgetsSetupOptions["keybindings"];
-	private readonly onChange: (enabled: string[]) => boolean;
+	private readonly onChange: WidgetsSetupOptions["onChange"];
 	private readonly onReject?: (error: string) => void;
 	private readonly done: (enabled: string[] | undefined) => void;
 	private readonly requestRender: () => void;
@@ -59,9 +65,9 @@ export class WidgetsSetupComponent {
 		this.title = options.title;
 		this.allWidgets = options.allWidgets;
 		this.enabledOrder = dedupeEnabled(options.enabled, options.allWidgets);
+		this.widgetGroups = options.widgetGroups ? { ...options.widgetGroups } : undefined;
 		this.items = buildWidgetEditorItems(this.enabledOrder, options.allWidgets);
 		this.theme = options.theme;
-		this.previewConfig = options.previewConfig;
 		this.keybindings = options.keybindings;
 		this.onChange = options.onChange;
 		this.onReject = options.onReject;
@@ -71,6 +77,11 @@ export class WidgetsSetupComponent {
 
 	handleInput(data: string): void {
 		if (isKeyRelease(data)) return;
+
+		if (data === "g" || data === "G") {
+			this.cycleGroup();
+			return;
+		}
 
 		const action = widgetEditorAction(data, this.keybindings);
 		switch (action) {
@@ -109,32 +120,23 @@ export class WidgetsSetupComponent {
 		const th = this.theme;
 		const lines: string[] = [
 			th.fg("accent", this.title),
-			th.fg("dim", "Space toggle · ↑/↓ select · ←/→ reorder enabled · Enter done · Esc back"),
-			th.fg("dim", "Groups: project · usage · environment · activity"),
+			th.fg("dim", "Space toggle · g cycle group · ↑/↓ select · ←/→ reorder · Enter done · Esc back"),
+			th.fg("dim", "Group affects stacked layout lines; live footer updates on each save"),
 			"",
 		];
 
-		let lastGroup: WidgetGroup | undefined;
 		for (let i = 0; i < this.items.length; i++) {
 			const item = this.items[i]!;
-			const group = widgetGroupOf(item.id);
-			if (group !== lastGroup) {
-				if (lastGroup !== undefined) lines.push("");
-				lines.push(th.fg("dim", `— ${group} —`));
-				lastGroup = group;
-			}
+			const group = resolveWidgetGroup(item.id, this.widgetGroups);
 			const cursor = i === this.selected ? "›" : " ";
 			const box = item.enabled ? "[x]" : "[ ]";
-			const raw = `${cursor} ${box} ${item.id}`;
+			const raw = `${cursor} ${box} ${item.id}  · ${group}`;
 			const label = i === this.selected ? th.fg("accent", raw) : th.fg("text", raw);
 			lines.push(truncateToWidth(label, width));
 		}
 
-		lines.push("");
-		lines.push(th.fg("dim", `enabled: ${this.enabledOrder.join(" · ") || "(none)"}`));
-		lines.push(th.fg("dim", `preview: ${formatWidgetsPreview(this.enabledOrder, this.previewConfig)}`));
-		lines.push(th.fg("dim", "Ⅰ after tokens/cost = auxiliary usage (dim, not a separate widget)"));
 		if (this.rejectMessage) {
+			lines.push("");
 			lines.push(th.fg("warning", this.rejectMessage));
 		}
 
@@ -150,11 +152,24 @@ export class WidgetsSetupComponent {
 		this.cachedLines = undefined;
 	}
 
+	private commit(nextEnabled: string[], nextGroups: StatuslineConfig["widgetGroups"]): boolean {
+		if (!this.onChange(nextEnabled, nextGroups)) {
+			this.rejectMessage = "Change was not saved";
+			this.bump();
+			return false;
+		}
+		this.enabledOrder = nextEnabled;
+		this.widgetGroups = nextGroups;
+		this.items = buildWidgetEditorItems(this.enabledOrder, this.allWidgets);
+		this.rejectMessage = undefined;
+		this.bump();
+		return true;
+	}
+
 	private toggle(): void {
 		const current = this.items[this.selected];
 		if (!current) return;
 
-		// Validate via shared toggle helper (last-widget guard).
 		const projected = toggleEditorItem(this.items, this.selected);
 		if (!projected.ok) {
 			this.rejectMessage = projected.error;
@@ -163,25 +178,25 @@ export class WidgetsSetupComponent {
 			return;
 		}
 
-		let nextEnabled: string[];
-		if (current.enabled) {
-			nextEnabled = this.enabledOrder.filter((id) => id !== current.id);
-		} else {
-			nextEnabled = [...this.enabledOrder, current.id];
-		}
+		const nextEnabled = current.enabled
+			? this.enabledOrder.filter((id) => id !== current.id)
+			: [...this.enabledOrder, current.id];
 
-		if (!this.onChange(nextEnabled)) {
-			this.rejectMessage = "Change was not saved";
-			this.bump();
-			return;
-		}
-
-		this.enabledOrder = nextEnabled;
-		this.items = buildWidgetEditorItems(this.enabledOrder, this.allWidgets);
+		if (!this.commit(nextEnabled, this.widgetGroups)) return;
 		const next = this.items.findIndex((item) => item.id === current.id);
 		if (next >= 0) this.selected = next;
-		this.rejectMessage = undefined;
-		this.bump();
+	}
+
+	private cycleGroup(): void {
+		const current = this.items[this.selected];
+		if (!current) return;
+		const id = current.id as WidgetId;
+		const group = resolveWidgetGroup(id, this.widgetGroups);
+		const nextGroup = nextWidgetGroup(group);
+		const nextGroups = withWidgetGroupOverride(this.widgetGroups, id, nextGroup);
+		if (!this.commit(this.enabledOrder, nextGroups)) return;
+		const next = this.items.findIndex((item) => item.id === id);
+		if (next >= 0) this.selected = next;
 	}
 
 	private move(delta: -1 | 1): void {
@@ -199,17 +214,9 @@ export class WidgetsSetupComponent {
 			this.rejectMessage = undefined;
 			return;
 		}
-		if (!this.onChange(swapped)) {
-			this.rejectMessage = "Change was not saved";
-			this.bump();
-			return;
-		}
-		this.enabledOrder = swapped;
-		this.items = buildWidgetEditorItems(this.enabledOrder, this.allWidgets);
+		if (!this.commit(swapped, this.widgetGroups)) return;
 		const next = this.items.findIndex((item) => item.id === current.id);
 		if (next >= 0) this.selected = next;
-		this.rejectMessage = undefined;
-		this.bump();
 	}
 
 	private bump(): void {

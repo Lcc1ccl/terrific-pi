@@ -1,6 +1,7 @@
 import {
 	MAX_WIDGET_SPACING,
 	MIN_WIDGET_SPACING,
+	resolveWidgetGroup,
 	WIDGET_SEPARATOR_GLYPHS,
 } from "./config.ts";
 import type {
@@ -11,7 +12,7 @@ import type {
 	WidgetGroup,
 	WidgetSegment,
 } from "./types.ts";
-import { WIDGET_GROUPS } from "./types.ts";
+import { WIDGET_GROUP_ORDER } from "./types.ts";
 
 export type HostThemeColor =
 	| "accent"
@@ -60,8 +61,11 @@ export function plainVisibleWidth(text: string): number {
 	return stripTerminalControls(text).length;
 }
 
-function segmentGroup(segment: WidgetSegment): WidgetGroup {
-	return WIDGET_GROUPS[segment.id] ?? "activity";
+function segmentGroup(
+	segment: WidgetSegment,
+	groups?: StatuslineConfig["widgetGroups"],
+): WidgetGroup {
+	return resolveWidgetGroup(segment.id, groups);
 }
 
 function hostThemeColor(accent: Accent, tone: SegmentTone = "value"): HostThemeColor {
@@ -193,10 +197,13 @@ export function fitSegmentsToWidth(
 	return current;
 }
 
-export function groupSegmentsBySemantics(segments: WidgetSegment[]): WidgetSegment[][] {
-	const order: WidgetGroup[] = ["project", "usage", "environment", "activity"];
+export function groupSegmentsBySemantics(
+	segments: WidgetSegment[],
+	config?: Pick<StatuslineConfig, "widgetGroups">,
+): WidgetSegment[][] {
+	const order = WIDGET_GROUP_ORDER;
 	const grouped = new Map(order.map((group) => [group, [] as WidgetSegment[]]));
-	for (const segment of segments) grouped.get(segmentGroup(segment))!.push(segment);
+	for (const segment of segments) grouped.get(segmentGroup(segment, config?.widgetGroups))!.push(segment);
 	return order.map((group) => grouped.get(group)!).filter((group) => group.length > 0);
 }
 
@@ -226,7 +233,7 @@ export function renderStatusLine(
 		return renderSingleLine(segments, config, theme, width, truncate, measure);
 	}
 
-	const groups = groupSegmentsBySemantics(segments);
+	const groups = groupSegmentsBySemantics(segments, config);
 	const lines: string[] = [];
 	for (const group of groups) {
 		if (group.length === 0) continue;

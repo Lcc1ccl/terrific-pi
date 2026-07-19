@@ -104,6 +104,7 @@ export default function statusline(pi: ExtensionAPI) {
 	const cloneConfig = (value: StatuslineConfig): StatuslineConfig => ({
 		...value,
 		widgets: [...value.widgets],
+		...(value.widgetGroups ? { widgetGroups: { ...value.widgetGroups } } : {}),
 	});
 
 	const syncQuota = async (ctx: QuotaContext) => {
@@ -369,16 +370,17 @@ export default function statusline(pi: ExtensionAPI) {
 								};
 							}),
 						confirm: (title, message) => ctx.ui.confirm(title, message),
-						editWidgets: (title, allWidgets, enabled, onChange, onReject) =>
+						editWidgets: (title, allWidgets, enabled, widgetGroups, onChange, onReject) =>
 							ctx.ui.custom<typeof enabled | undefined>((tui, theme, keybindings, done) =>
 								new WidgetsSetupComponent({
 									title,
 									allWidgets,
 									enabled,
+									widgetGroups,
 									theme,
-									previewConfig: cloneConfig(config),
 									keybindings,
-									onChange: (next) => onChange(next as typeof enabled),
+									onChange: (next, nextGroups) =>
+										onChange(next as typeof enabled, nextGroups),
 									onReject,
 									done: (next) => done(next as typeof enabled | undefined),
 									requestRender: () => tui.requestRender(),
