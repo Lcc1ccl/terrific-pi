@@ -67,5 +67,11 @@
       "allowHeadless": false,
       "allowPush": true
     }
+  },
+  "docsflow": {
+    "vaultEnabled": false,
+    "configReminder": true,
+    "vaultRoot": "/mnt/g/Mindriver",
+    "projectBase": "2_Career/01-INDIE/开发"
   }
 }

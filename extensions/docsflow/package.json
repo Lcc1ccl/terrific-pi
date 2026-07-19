@@ -1,0 +1,25 @@
+{
+  "name": "docsflow",
+  "version": "0.2.0",
+  "description": "Project docsflow profiles and Obsidian-backed workflow for pi-subagents",
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "docsflow", "subagents", "obsidian"],
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./extensions/docsflow.ts"],
+    "skills": ["./skills"],
+    "subagents": {
+      "agents": ["./agents"],
+      "chains": ["./chains"]
+    }
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "scripts": {
+    "test": "node --test --experimental-strip-types tests/*.test.ts",
+    "resolve-models": "node --experimental-strip-types lib/resolve-models-cli.ts",
+    "check": "npm test"
+  },
+  "files": ["agents", "chains", "docs-agents", "extensions", "lib", "schemas", "skills", "package.json", "README.md"]
+}

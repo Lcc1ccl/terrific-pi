@@ -13,7 +13,8 @@ terrific-pi/
 │   ├── auxiliary/       # task-scoped 辅助模型 runtime
 │   ├── mode/            # /mode 工具权限模式
 │   ├── btw/             # /btw 旁路问答
-│   └── process-view/    # 结构化任务进度与实时工具 HUD
+│   ├── process-view/    # 结构化任务进度与实时工具 HUD
+│   └── docsflow/        # 项目文档流水线 (/docsflow)
 ├── skills/              # Agent skills（安装到 ~/.agents/skills）
 │   └── pi-provider-sync # 自定义 provider /models 同步与 vision 字段补全
 ├── snapshot/            # 可迁移本机配置快照（无密钥）
@@ -38,6 +39,7 @@ terrific-pi/
 | mode | `extensions/mode` | `/mode ask\|plan\|edit\|auto` 工具权限模式；status key `pi-essentials-mode` |
 | btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话） |
 | process-view | `extensions/process-view` | `process_update` 结构化里程碑、步骤计时与任务级 usage；原生 `Ctrl+O` 展开实时详情面板 |
+| docsflow | `extensions/docsflow` | 项目文档流水线：research→product→interface→delivery；默认写 `./docsflow/`，可选 Obsidian vault；`/docsflow remind` 可关配置提醒 |
 
 > 配置文件仍兼容 `~/.pi/agent/pi-essentials.json`。Auxiliary 模型路由只读取 global config，不接受 project override。
 
