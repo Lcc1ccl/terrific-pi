@@ -68,14 +68,19 @@ function parseAuxiliaryBtw(raw: Record<string, unknown>): AuxiliaryBtwRoute | un
 	const defaults = isRecord(auxiliary.default) ? auxiliary.default : {};
 	const tasks = isRecord(auxiliary.tasks) ? auxiliary.tasks : {};
 	const task = isRecord(tasks.btw) ? tasks.btw : {};
-	const model = parseModelRef(task.model) ?? parseModelRef(defaults.model) ?? "openai/gpt-5.4-mini";
+	const useAuxiliary = task.useAuxiliary !== false;
+	const model = useAuxiliary
+		? parseModelRef(task.model) ?? parseModelRef(defaults.model) ?? "openai/gpt-5.4-mini"
+		: "current";
 	const thinkingValue = task.thinking ?? defaults.thinking ?? "low";
 	const thinking = typeof thinkingValue === "string" && THINKING_SET.has(thinkingValue as ThinkingLevel)
 		? thinkingValue as ThinkingLevel
 		: "low";
-	const rawFallbacks = Array.isArray(task.fallbackModels)
-		? task.fallbackModels
-		: Array.isArray(defaults.fallbackModels) ? defaults.fallbackModels : [];
+	const rawFallbacks = !useAuxiliary
+		? []
+		: Array.isArray(task.fallbackModels)
+			? task.fallbackModels
+			: Array.isArray(defaults.fallbackModels) ? defaults.fallbackModels : [];
 	const seen = new Set([model]);
 	const fallbacks: string[] = [];
 	for (const value of rawFallbacks) {

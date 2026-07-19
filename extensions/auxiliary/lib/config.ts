@@ -1,9 +1,27 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import {
+	chmodSync,
+	closeSync,
+	existsSync,
+	fsyncSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	renameSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 
-import type { AuxiliaryConfig, AuxiliaryRouteConfig, AuxiliaryTaskKey } from "./types.ts";
+import type {
+	AuxiliaryConfig,
+	AuxiliaryRouteConfig,
+	AuxiliaryTaskKey,
+	AuxiliaryTaskRouteConfig,
+} from "./types.ts";
 
 const DEFAULT_ROUTE: AuxiliaryRouteConfig = {
 	model: "openai/gpt-5.4-mini",
@@ -82,6 +100,21 @@ function mergeRoute(raw: unknown, base: AuxiliaryRouteConfig): AuxiliaryRouteCon
 	};
 }
 
+function mergeTaskRoute(
+	raw: unknown,
+	base: AuxiliaryRouteConfig,
+	previous: AuxiliaryTaskRouteConfig,
+): AuxiliaryTaskRouteConfig {
+	const route = mergeRoute(raw, base);
+	const useAuxiliary = isRecord(raw) && typeof raw.useAuxiliary === "boolean"
+		? raw.useAuxiliary
+		: previous.useAuxiliary;
+	return {
+		...route,
+		...(useAuxiliary === undefined ? {} : { useAuxiliary }),
+	};
+}
+
 function collectForbiddenWarnings(value: unknown, location: string, warnings: string[]): void {
 	if (!isRecord(value)) return;
 	for (const key of FORBIDDEN_ROUTE_KEYS) {
@@ -115,8 +148,9 @@ export function mergeAuxiliaryConfig(raw: unknown): MergeAuxiliaryConfigResult {
 	if (isRecord(root.tasks)) {
 		for (const [key, value] of Object.entries(root.tasks)) {
 			collectForbiddenWarnings(value, `tasks.${key}`, warnings);
-			const base = resolveTaskRoute(config, key);
-			config.tasks[key] = mergeRoute(value, base);
+			const previous = config.tasks[key] ?? {};
+			const base = mergeRoute(previous, config.default);
+			config.tasks[key] = mergeTaskRoute(value, base, previous);
 		}
 	}
 	if (isRecord(root.git)) {
@@ -132,6 +166,11 @@ export function mergeAuxiliaryConfig(raw: unknown): MergeAuxiliaryConfigResult {
 export function resolveTaskRoute(config: AuxiliaryConfig, task: AuxiliaryTaskKey | string): AuxiliaryRouteConfig {
 	const override = config.tasks[task] ?? {};
 	const merged = mergeRoute(override, config.default);
+	if (override.useAuxiliary === false) {
+		merged.model = "current";
+		merged.fallbackModels = [];
+		return merged;
+	}
 	const seen = new Set<string>([merged.model]);
 	merged.fallbackModels = merged.fallbackModels.filter((ref) => {
 		if (seen.has(ref)) return false;
@@ -143,6 +182,144 @@ export function resolveTaskRoute(config: AuxiliaryConfig, task: AuxiliaryTaskKey
 
 export function resolveAuxiliaryConfigPath(agentDir: string): string {
 	return join(agentDir, "pi-essentials.json");
+}
+
+type AuxiliaryConfigDocumentResult =
+	| { ok: true; root: Record<string, unknown>; auxiliary: Record<string, unknown> }
+	| { ok: false; error: string };
+
+function readAuxiliaryConfigDocument(path: string): AuxiliaryConfigDocumentResult {
+	if (!existsSync(path)) return { ok: true, root: {}, auxiliary: {} };
+	try {
+		const root: unknown = JSON.parse(readFileSync(path, "utf8"));
+		if (!isRecord(root)) throw new Error("Config root must be a JSON object");
+		if (!Object.hasOwn(root, "auxiliary")) return { ok: true, root, auxiliary: {} };
+		if (!isRecord(root.auxiliary)) throw new Error("auxiliary must be a JSON object");
+		return { ok: true, root, auxiliary: root.auxiliary };
+	} catch (error) {
+		return { ok: false, error: error instanceof Error ? error.message : String(error) };
+	}
+}
+
+export type AuxiliaryConfigSourceResult =
+	| { ok: true; value: Record<string, unknown> }
+	| { ok: false; error: string };
+
+export function readAuxiliaryConfigSource(agentDir: string): AuxiliaryConfigSourceResult {
+	const path = resolveAuxiliaryConfigPath(agentDir);
+	const document = readAuxiliaryConfigDocument(path);
+	return document.ok
+		? { ok: true, value: document.auxiliary }
+		: { ok: false, error: `auxiliary: failed to read ${path}: ${document.error}` };
+}
+
+export type UpdateAuxiliaryConfigResult = { ok: true } | { ok: false; error: string };
+
+type ConfigLockResult =
+	| { ok: true; path: string; token: string }
+	| { ok: false; error: string };
+
+function errorCode(error: unknown): string | undefined {
+	return error && typeof error === "object" && "code" in error && typeof error.code === "string"
+		? error.code
+		: undefined;
+}
+
+function acquireConfigLock(path: string): ConfigLockResult {
+	const lockPath = `${path}.lock`;
+	const token = randomUUID();
+	let created = false;
+	try {
+		const descriptor = openSync(lockPath, "wx", 0o600);
+		created = true;
+		try {
+			writeFileSync(descriptor, JSON.stringify({ pid: process.pid, createdAt: Date.now(), token }), "utf8");
+			fsyncSync(descriptor);
+		} finally {
+			closeSync(descriptor);
+		}
+		return { ok: true, path: lockPath, token };
+	} catch (error) {
+		if (created) {
+			try {
+				unlinkSync(lockPath);
+			} catch {}
+		}
+		if (errorCode(error) === "EEXIST") {
+			return {
+				ok: false,
+				error: `another process may be updating the config; remove ${lockPath} only after confirming it is stale`,
+			};
+		}
+		return { ok: false, error: error instanceof Error ? error.message : String(error) };
+	}
+}
+
+function releaseConfigLock(lock: Extract<ConfigLockResult, { ok: true }>): void {
+	try {
+		const value: unknown = JSON.parse(readFileSync(lock.path, "utf8"));
+		if (isRecord(value) && value.token === lock.token) unlinkSync(lock.path);
+	} catch {}
+}
+
+function syncDirectory(path: string): void {
+	let descriptor: number | undefined;
+	try {
+		descriptor = openSync(path, "r");
+		fsyncSync(descriptor);
+	} catch (error) {
+		if (!["EINVAL", "EPERM", "EISDIR"].includes(errorCode(error) ?? "")) throw error;
+	} finally {
+		if (descriptor !== undefined) closeSync(descriptor);
+	}
+}
+
+function writeConfigAtomically(path: string, temporary: string, content: string, mode: number): void {
+	const descriptor = openSync(temporary, "wx", 0o600);
+	try {
+		writeFileSync(descriptor, content, "utf8");
+		chmodSync(temporary, mode);
+		fsyncSync(descriptor);
+	} finally {
+		closeSync(descriptor);
+	}
+	renameSync(temporary, path);
+	syncDirectory(dirname(path));
+}
+
+export function updateAuxiliaryConfig(
+	agentDir: string,
+	mutate: (auxiliary: Record<string, unknown>) => void,
+): UpdateAuxiliaryConfigResult {
+	const path = resolveAuxiliaryConfigPath(agentDir);
+	try {
+		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+	} catch (error) {
+		return { ok: false, error: `auxiliary: failed to update ${path}: ${error instanceof Error ? error.message : String(error)}` };
+	}
+	const lock = acquireConfigLock(path);
+	if (!lock.ok) return { ok: false, error: `auxiliary: failed to update ${path}: ${lock.error}` };
+
+	const temporary = join(dirname(path), `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
+	try {
+		const document = readAuxiliaryConfigDocument(path);
+		if (!document.ok) return { ok: false, error: `auxiliary: failed to update ${path}: ${document.error}` };
+		mutate(document.auxiliary);
+		document.root.auxiliary = document.auxiliary;
+		const mode = existsSync(path) ? statSync(path).mode & 0o777 : 0o600;
+		writeConfigAtomically(path, temporary, `${JSON.stringify(document.root, null, 2)}\n`, mode);
+		return { ok: true };
+	} catch (error) {
+		return {
+			ok: false,
+			error: `auxiliary: failed to update ${path}: ${error instanceof Error ? error.message : String(error)}`,
+		};
+	} finally {
+		try {
+			unlinkSync(temporary);
+		} catch {}
+		releaseConfigLock(lock);
+	}
 }
 
 export function loadAuxiliaryConfig(agentDir: string): MergeAuxiliaryConfigResult {

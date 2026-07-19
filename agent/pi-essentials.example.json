@@ -23,33 +23,43 @@
     },
     "tasks": {
       "compression": {
+        "useAuxiliary": true,
         "thinking": "low",
         "timeoutMs": 120000,
         "maxOutputTokens": 12000,
         "maxRetries": 0
       },
       "title_generation": {
+        "useAuxiliary": true,
         "maxOutputTokens": 96,
         "timeoutMs": 30000
       },
       "text_summary": {
+        "useAuxiliary": true,
         "maxOutputTokens": 3000,
-        "fallbackModels": ["openai/gpt-5.6-luna"]
+        "fallbackModels": [
+          "openai/gpt-5.6-luna"
+        ]
       },
       "commit_message": {
+        "useAuxiliary": true,
         "maxOutputTokens": 256,
         "timeoutMs": 30000
       },
       "btw": {
+        "useAuxiliary": true,
         "model": "openai/gpt-5.4-mini",
         "thinking": "low",
         "maxOutputTokens": 2000
       },
       "web_research": {
+        "useAuxiliary": true,
         "model": "openai/gpt-5.6-luna",
         "thinking": "low",
         "timeoutMs": 300000,
-        "fallbackModels": ["openai/gpt-5.4-mini"]
+        "fallbackModels": [
+          "openai/gpt-5.4-mini"
+        ]
       }
     },
     "git": {

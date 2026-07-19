@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -9,8 +9,10 @@ import {
 	loadAuxiliaryConfig,
 	mergeAuxiliaryConfig,
 	parseModelRef,
+	readAuxiliaryConfigSource,
 	resolveAuxiliaryConfigPath,
 	resolveTaskRoute,
+	updateAuxiliaryConfig,
 } from "../lib/config.ts";
 
 describe("auxiliary config", () => {
@@ -34,6 +36,89 @@ describe("auxiliary config", () => {
 		assert.match(loaded.warnings[0]!, /failed to read/i);
 	});
 
+	test("updates only auxiliary while preserving unknown root and task fields", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-config-write-"));
+		const path = join(agentDir, "pi-essentials.json");
+		writeFileSync(path, JSON.stringify({
+			docsflow: { vaultEnabled: false },
+			auxiliary: {
+				futureOption: "keep",
+				tasks: { custom_task: { model: "openai/custom" } },
+			},
+		}), "utf8");
+
+		const updated = updateAuxiliaryConfig(agentDir, (auxiliary) => {
+			auxiliary.enabled = false;
+			const tasks = auxiliary.tasks as Record<string, unknown>;
+			tasks.compression = { useAuxiliary: false };
+		});
+		assert.deepEqual(updated, { ok: true });
+
+		const saved = JSON.parse(readFileSync(path, "utf8")) as Record<string, any>;
+		assert.deepEqual(saved.docsflow, { vaultEnabled: false });
+		assert.equal(saved.auxiliary.futureOption, "keep");
+		assert.deepEqual(saved.auxiliary.tasks.custom_task, { model: "openai/custom" });
+		assert.deepEqual(saved.auxiliary.tasks.compression, { useAuxiliary: false });
+		assert.deepEqual(readAuxiliaryConfigSource(agentDir), { ok: true, value: saved.auxiliary });
+		assert.match(readFileSync(path, "utf8"), /\n$/);
+	});
+
+	test("preserves existing file permissions and creates private config paths", () => {
+		const root = mkdtempSync(join(tmpdir(), "aux-config-mode-"));
+		const path = join(root, "pi-essentials.json");
+		writeFileSync(path, "{}\n", "utf8");
+		chmodSync(path, 0o600);
+		assert.deepEqual(updateAuxiliaryConfig(root, (auxiliary) => {
+			auxiliary.enabled = true;
+		}), { ok: true });
+		assert.equal(statSync(path).mode & 0o777, 0o600);
+
+		const newAgentDir = join(root, "new", "agent");
+		assert.deepEqual(updateAuxiliaryConfig(newAgentDir, (auxiliary) => {
+			auxiliary.enabled = true;
+		}), { ok: true });
+		assert.equal(statSync(newAgentDir).mode & 0o777, 0o700);
+		assert.equal(statSync(join(newAgentDir, "pi-essentials.json")).mode & 0o777, 0o600);
+	});
+
+	test("refuses to overwrite while another process owns the config lock", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-config-locked-"));
+		const path = join(agentDir, "pi-essentials.json");
+		writeFileSync(path, JSON.stringify({ docsflow: { keep: true } }), "utf8");
+		writeFileSync(`${path}.lock`, JSON.stringify({ pid: process.pid, createdAt: Date.now(), token: "active" }), "utf8");
+		const updated = updateAuxiliaryConfig(agentDir, (auxiliary) => {
+			auxiliary.enabled = false;
+		});
+		assert.equal(updated.ok, false);
+		assert.match(updated.ok ? "" : updated.error, /another process/i);
+		assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), { docsflow: { keep: true } });
+	});
+
+	test("refuses to reclaim a stale-looking lock without an atomic recovery protocol", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-config-stale-lock-"));
+		const path = join(agentDir, "pi-essentials.json");
+		writeFileSync(path, "{}\n", "utf8");
+		writeFileSync(`${path}.lock`, JSON.stringify({ pid: process.pid + 1_000_000_000, createdAt: Date.now() - 60_000, token: "stale" }), "utf8");
+		const updated = updateAuxiliaryConfig(agentDir, (auxiliary) => {
+			auxiliary.enabled = true;
+		});
+		assert.equal(updated.ok, false);
+		assert.equal(existsSync(`${path}.lock`), true);
+		assert.equal(readFileSync(path, "utf8"), "{}\n");
+	});
+
+	test("refuses to overwrite malformed JSON", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-config-refuse-"));
+		const path = join(agentDir, "pi-essentials.json");
+		writeFileSync(path, "{ bad", "utf8");
+		const updated = updateAuxiliaryConfig(agentDir, (auxiliary) => {
+			auxiliary.enabled = false;
+		});
+		assert.equal(updated.ok, false);
+		assert.match(updated.ok ? "" : updated.error, /failed to update/i);
+		assert.equal(readFileSync(path, "utf8"), "{ bad");
+	});
+
 	test("merges task routes, clamps budgets, and deduplicates fallbacks", () => {
 		const loaded = mergeAuxiliaryConfig({
 			auxiliary: {
@@ -53,6 +138,30 @@ describe("auxiliary config", () => {
 		assert.equal(route.maxOutputTokens, 3_000);
 		assert.equal(route.maxRetries, 2);
 		assert.deepEqual(route.fallbackModels, ["openai/fallback", "grok/a", "grok/b"]);
+	});
+
+	test("routes a task through the current model when its auxiliary route is disabled", () => {
+		const loaded = mergeAuxiliaryConfig({
+			auxiliary: {
+				tasks: {
+					compression: {
+						useAuxiliary: false,
+						model: "openai/saved-auxiliary",
+						fallbackModels: ["openai/saved-fallback"],
+					},
+				},
+			},
+		});
+		assert.equal(loaded.config.tasks.compression?.useAuxiliary, false);
+		assert.equal(loaded.config.tasks.compression?.model, "openai/saved-auxiliary");
+		assert.deepEqual(resolveTaskRoute(loaded.config, "compression"), {
+			model: "current",
+			thinking: "low",
+			timeoutMs: 120_000,
+			maxOutputTokens: 12_000,
+			maxRetries: 0,
+			fallbackModels: [],
+		});
 	});
 
 	test("keeps invalid primary model refs unavailable instead of silently selecting current", () => {

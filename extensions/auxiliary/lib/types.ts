@@ -33,10 +33,14 @@ export interface AuxiliaryRouteConfig {
 	fallbackModels: string[];
 }
 
+export interface AuxiliaryTaskRouteConfig extends Partial<AuxiliaryRouteConfig> {
+	useAuxiliary?: boolean;
+}
+
 export interface AuxiliaryConfig {
 	enabled: boolean;
 	default: AuxiliaryRouteConfig;
-	tasks: Record<string, Partial<AuxiliaryRouteConfig>>;
+	tasks: Record<string, AuxiliaryTaskRouteConfig>;
 	git: {
 		confirm: boolean;
 		allowHeadless: boolean;

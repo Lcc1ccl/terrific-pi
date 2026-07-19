@@ -34,7 +34,7 @@ terrific-pi/
 | statusline | `extensions/statusline` | 可配置底栏：single/stacked HUD、emoji/plain、原生 OAuth quota、token/cache/cost、git、运行状态；`/statusline` 交互配置 |
 | fast | `extensions/fast` | `/fast` 开关 OpenAI Priority processing（`service_tier=priority`）；开启后 footer 显示单列图标 `` |
 | context | `extensions/context` | `/context` 上下文占用拆解（不调模型、不写 session） |
-| auxiliary | `extensions/auxiliary` | task-key 辅助模型 runtime：compression/title/summary/web research/Git finalize、独立 usage 与 HUD |
+| auxiliary | `extensions/auxiliary` | task-key 辅助模型 runtime：`/aux config` TUI、compression/title/summary/web research/Git finalize、独立 usage 与 HUD |
 | mode | `extensions/mode` | `/mode ask\|plan\|edit\|auto` 工具权限模式；status key `pi-essentials-mode` |
 | btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话） |
 | process-view | `extensions/process-view` | `process_update` 结构化里程碑、步骤计时与任务级 usage；原生 `Ctrl+O` 展开实时详情面板 |

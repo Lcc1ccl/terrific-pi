@@ -38,6 +38,23 @@ describe("mergeConfig", () => {
 		});
 	});
 
+	it("uses the current model when the BTW auxiliary route is disabled", () => {
+		const config = mergeConfig({
+			auxiliary: {
+				default: { model: "openai/default", fallbackModels: ["openai/default-fallback"] },
+				tasks: {
+					btw: {
+						useAuxiliary: false,
+						model: "openai/saved-btw",
+						fallbackModels: ["openai/saved-fallback"],
+					},
+				},
+			},
+		});
+		assert.equal(config.auxiliaryBtw?.model, "current");
+		assert.deepEqual(config.auxiliaryBtw?.fallbackModels, []);
+	});
+
 	it("uses only the global auxiliary route while retaining trusted project legacy settings", () => {
 		const root = mkdtempSync(join(tmpdir(), "btw-config-"));
 		const agent = join(root, "agent");

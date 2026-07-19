@@ -70,20 +70,21 @@ Only the global file is read for auxiliary routing:
 
 Project-local `auxiliary` config is intentionally ignored because a model route decides which provider receives project data. The config must not contain API keys, headers, or base URLs; authentication and endpoints stay in Pi's model registry.
 
+Run `/aux config` in TUI mode to edit the global runtime, default route, and task routes. Each confirmed change is written atomically while preserving other `pi-essentials.json` sections; malformed JSON is never overwritten.
+
 See [`../../agent/pi-essentials.example.json`](../../agent/pi-essentials.example.json) for the complete template. Each task can set:
 
+- `useAuxiliary`: set `false` to run the task with the current main model while preserving its saved auxiliary route
 - `model`: explicit `provider/model`, or `current` only when intentionally configured
-- `thinking`
-- `timeoutMs`
-- `maxOutputTokens`
-- `maxRetries`
-- up to three `fallbackModels`
+- `thinking`, `timeoutMs`, `maxOutputTokens`, and `maxRetries`
+- up to three ordered `fallbackModels`
 
-Built-in task keys are `compression`, `title_generation`, `text_summary`, `commit_message`, `btw`, `web_research`, and `vision`.
+Configurable task keys are `compression`, `title_generation`, `text_summary`, `commit_message`, `btw`, and `web_research`. Vision routing remains owned by `/vision-handoff`; `/aux config` exposes that external entry without writing an ineffective `tasks.vision` block.
 
 ## Commands And Tools
 
 ```text
+/aux config
 /aux status
 /aux tasks
 /aux summarize <text>

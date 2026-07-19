@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import auxiliary, { summarizeText } from "../extensions/auxiliary.ts";
+import auxiliary, { canConfigureAuxiliary, summarizeText } from "../extensions/auxiliary.ts";
 
 class Events {
 	private handlers = new Map<string, Array<(value: unknown) => void>>();
@@ -17,7 +17,7 @@ class Events {
 }
 
 describe("auxiliary extension registration", () => {
-	test("registers the bounded command, summary tool, and lifecycle hooks", () => {
+	test("registers the bounded command, summary tool, and lifecycle hooks", async () => {
 		const commands = new Map<string, unknown>();
 		const tools = new Map<string, any>();
 		const hooks = new Map<string, unknown[]>();
@@ -35,6 +35,17 @@ describe("auxiliary extension registration", () => {
 		};
 		auxiliary(pi as never);
 		assert.deepEqual([...commands.keys()], ["aux"]);
+		const auxCommand = commands.get("aux") as {
+			description: string;
+			handler(args: string, ctx: unknown): Promise<void>;
+		};
+		assert.match(auxCommand.description, /config/);
+		const notifications: string[] = [];
+		await auxCommand.handler("config", {
+			mode: "print",
+			ui: { notify(message: string) { notifications.push(message); } },
+		});
+		assert.match(notifications.at(-1) ?? "", /TUI mode/);
 		assert.equal(tools.has("aux_summarize"), true);
 		assert.equal(tools.has("git_finalize"), true);
 		assert.equal(tools.has("web_research"), true);
@@ -56,6 +67,32 @@ describe("auxiliary extension registration", () => {
 		for (const event of ["session_start", "session_before_compact", "agent_settled", "session_shutdown"]) {
 			assert.equal(hooks.has(event), true, event);
 		}
+	});
+});
+
+describe("auxiliary configuration permissions", () => {
+	test("requires write permission before opening the config TUI", async () => {
+		const commands = new Map<string, any>();
+		const pi = {
+			events: new Events(),
+			registerCommand(name: string, value: unknown) { commands.set(name, value); },
+			registerTool() {},
+			on() {},
+			appendEntry() {},
+			setSessionName() {},
+			getSessionName() { return undefined; },
+			exec: async () => ({ code: 0, stdout: "", stderr: "", killed: false }),
+			getActiveTools() { return ["read", "grep"]; },
+		};
+		auxiliary(pi as never);
+		const notifications: string[] = [];
+		await commands.get("aux").handler("config", {
+			mode: "tui",
+			ui: { notify(message: string) { notifications.push(message); } },
+		});
+		assert.match(notifications.at(-1) ?? "", /write permission/i);
+		assert.equal(canConfigureAuxiliary(["read", "grep", "find", "ls"]), false);
+		assert.equal(canConfigureAuxiliary(["read", "bash", "edit", "write"]), true);
 	});
 });
 

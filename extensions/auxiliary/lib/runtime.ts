@@ -93,6 +93,10 @@ function intendedModel(ref: string, current: Model<Api> | undefined): { provider
 	return { provider: slash > 0 ? ref.slice(0, slash) : "", model: slash > 0 ? ref.slice(slash + 1) : ref };
 }
 
+function modelIdentity(model: Model<Api>): string {
+	return `${model.provider}\u0000${model.id}`;
+}
+
 function statusFor(code: AuxiliaryErrorCode): AuxiliaryUsageEntryV1["status"] {
 	if (code === "aborted") return "aborted";
 	if (code === "timeout") return "timeout";
@@ -185,6 +189,7 @@ export class AuxiliaryRuntime {
 		const label = intendedModel(route.model, current).model;
 		const activeId = this.active.start(request.task, label);
 		const candidates = [route.model, ...route.fallbackModels];
+		const seenModels = new Set<string>();
 		let lastError = new AuxiliaryError("model_not_found", "No auxiliary model was attempted");
 		try {
 			if (request.signal?.aborted || this.lifecycle.signal.aborted) {
@@ -192,13 +197,16 @@ export class AuxiliaryRuntime {
 			}
 			for (let fallbackIndex = 0; fallbackIndex < candidates.length; fallbackIndex++) {
 				const ref = candidates[fallbackIndex]!;
-				const startedAt = Date.now();
 				const intended = intendedModel(ref, current);
+				const startedAt = Date.now();
 				let selected: Model<Api> | undefined;
 				let response: AssistantMessage | undefined;
 				let timeoutSignal: AbortSignal | undefined;
 				try {
 					selected = this.resolveModel(ref, request.requiredInput);
+					const selectedKey = modelIdentity(selected);
+					if (seenModels.has(selectedKey)) continue;
+					seenModels.add(selectedKey);
 					const auth = await this.options.registry.getApiKeyAndHeaders(selected);
 					if (!auth.ok) throw new AuxiliaryError("auth_unavailable", "Auxiliary model authentication is unavailable", true);
 					const runtime = await this.getRuntime();
@@ -294,6 +302,7 @@ export class AuxiliaryRuntime {
 		const current = this.options.getCurrentModel();
 		const activeId = this.active.start("compression", intendedModel(route.model, current).model);
 		const candidates = [route.model, ...route.fallbackModels];
+		const seenModels = new Set<string>();
 		let lastError = new AuxiliaryError("model_not_found", "No compression model was attempted");
 		try {
 			for (let fallbackIndex = 0; fallbackIndex < candidates.length; fallbackIndex++) {
@@ -305,6 +314,9 @@ export class AuxiliaryRuntime {
 				try {
 					if (request.signal.aborted || this.lifecycle.signal.aborted) throw new AuxiliaryError("aborted", "Compaction was aborted");
 					selected = this.resolveModel(ref, "text");
+					const selectedKey = modelIdentity(selected);
+					if (seenModels.has(selectedKey)) continue;
+					seenModels.add(selectedKey);
 					const estimatedInput = [
 						...request.preparation.messagesToSummarize,
 						...request.preparation.turnPrefixMessages,
