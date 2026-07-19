@@ -15,7 +15,8 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 - Execution mode and fast priority badges when active
 - Active-branch token usage (`🔼input` / `🔽output`, or plain `in` / `out`)
 - Active-branch cumulative cache hit rate (`🎯…%` or `cache …%`)
-- Active-branch cost (`$x.xx`, hidden when zero)
+- Active-branch main cost (`$x.xx`, hidden when zero)
+- Optional branch-local auxiliary usage (`aux tokens · cost · calls`), kept separate from main cost
 - Context bar (remaining/used mode)
 - Native OAuth **quota** for official Claude / Codex only
 - Environment counts (context files / skills / tools) after first agent start
@@ -101,6 +102,7 @@ Single-line layout follows the configured order exactly. Stacked layout uses can
     "tokens",
     "cache",
     "cost",
+    "auxUsage",
     "quota",
     "environment",
     "toolActivity",
@@ -120,7 +122,7 @@ Example stacked output:
 
 ```text
 ~/vendor/terrific-pi │ [Fable 5] │ gpt-5 high │ main │ +12 -3 │ EDIT │ fast
-Context [█░░░░░░░░░] 4% │ in 12.5K · out 3.2K │ cache 76.9% │ $0.42 │ usage 5h [░░░░░░] 7% · 7d [██░░░░] 33%
+Context [█░░░░░░░░░] 4% │ in 12.5K · out 3.2K │ cache 76.9% │ $0.42 │ aux 18.2K · $0.03 · 4 calls │ usage 5h [░░░░░░] 7% · 7d [██░░░░] 33%
 2 context files · 67 skills · 7 tools
 ok Read x6 · ok Bash x3 │ time 12.3s / 1m45s │ Ready
 ```
@@ -147,7 +149,8 @@ The footer follows the active pi theme rather than maintaining separate RGB pale
 | `fast` | `` (or `fast` in plain mode) while `/fast` is on |
 | `tokens` | active-branch input/output totals, kept as one responsive unit |
 | `cache` | active-branch cumulative cache hit rate |
-| `cost` | active-branch cost USD |
+| `cost` | active-branch main-session cost USD |
+| `auxUsage` | branch-local auxiliary tokens, optional known cost, and call count; not auto-added to existing widget lists |
 | `context` | text context percent |
 | `contextBar` | `Context` label + compact bar + percent |
 | `branch` | git branch (`main`/`master` → `🏠` in emoji mode) |
@@ -214,7 +217,8 @@ Each successful change is atomically written to the config file and the footer r
 | data | source and scope |
 |------|------------------|
 | path, model, context | live pi context; unavailable context renders as `Context ?` |
-| tokens, cache, cost | assistant usage entries on the active session branch; refreshed after assistant completion and branch/tree changes |
+| tokens, cache, cost | main assistant usage entries on the active session branch; refreshed after assistant completion and branch/tree changes |
+| auxUsage | validated `terrific-pi:auxiliary-usage-v1` entries on the active branch; refreshed immediately through the auxiliary usage event |
 | branch | pi footer data; branch diff is local Git committed-line data only and excludes the working tree |
 | mode, fast, progress | pi extension status map; dedicated mode/fast/ponytail statuses are excluded from progress, and terminal controls are removed |
 | duration, tools, environment | process-local event data; tool counts reset per agent run and are not restored from session history |

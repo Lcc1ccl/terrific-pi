@@ -106,6 +106,26 @@ describe("buildWidgetSegments", () => {
 		);
 	});
 
+	it("renders auxiliary usage separately and omits unknown cost", () => {
+		const known = buildWidgetSegments(
+			{ ...baseSnapshot, auxUsage: { calls: 4, tokens: 18_200, cost: 0.03 } },
+			{ ...DEFAULT_CONFIG, widgets: ["cost", "auxUsage"] },
+		);
+		assert.deepEqual(known.map((segment) => segment.text), ["$0.42", "aux 18.2K · $0.03 · 4 calls"]);
+
+		const unknown = buildWidgetSegments(
+			{ ...baseSnapshot, auxUsage: { calls: 1, tokens: 800 } },
+			{ ...DEFAULT_CONFIG, widgets: ["auxUsage"] },
+		);
+		assert.deepEqual(unknown.map((segment) => segment.text), ["aux 800 · 1 call"]);
+
+		const unavailable = buildWidgetSegments(
+			{ ...baseSnapshot, auxUsage: { calls: 1, tokens: 0, hasUnknownUsage: true } },
+			{ ...DEFAULT_CONFIG, widgets: ["auxUsage"] },
+		);
+		assert.deepEqual(unavailable.map((segment) => segment.text), ["aux usage ? · 1 call"]);
+	});
+
 	it("renders fast independently and hides it when inactive", () => {
 		const active = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,

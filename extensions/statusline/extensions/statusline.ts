@@ -25,7 +25,7 @@ import type {
 	StatusSnapshot,
 	ToolActivity,
 } from "../lib/types.ts";
-import { aggregateSessionUsage } from "../lib/usage.ts";
+import { aggregateAuxiliaryUsage, aggregateSessionUsage } from "../lib/usage.ts";
 import {
 	buildWidgetSegments,
 	FAST_STATUS_KEY,
@@ -49,6 +49,8 @@ function parseNumstat(output: string): BranchChangeStats {
 
 	return { additions, deletions };
 }
+
+const AUXILIARY_USAGE_CHANGED_EVENT = "terrific-pi:auxiliary-usage:changed-v1";
 
 function emptyToolActivity(): ToolActivity {
 	return { active: 0, success: 0, error: 0 };
@@ -84,7 +86,9 @@ export default function statusline(pi: ExtensionAPI) {
 	let configPath = resolveRuntimeConfigPath();
 	let configLoadError: string | undefined;
 	let quotaContext: QuotaContext | undefined;
+	let usageContext: UsageContext | undefined;
 	let usage = aggregateSessionUsage([]);
+	let auxiliaryUsage = aggregateAuxiliaryUsage([]);
 	const activeTools = new Set<string>();
 	const toolCallNames = new Map<string, string>();
 	const toolStats: Record<string, ToolActivity> = {};
@@ -126,9 +130,15 @@ export default function statusline(pi: ExtensionAPI) {
 	};
 
 	const refreshUsage = (ctx: UsageContext) => {
-		usage = aggregateSessionUsage(ctx.sessionManager.getBranch());
+		const branch = ctx.sessionManager.getBranch();
+		usage = aggregateSessionUsage(branch);
+		auxiliaryUsage = aggregateAuxiliaryUsage(branch);
 		requestRender();
 	};
+
+	pi.events.on(AUXILIARY_USAGE_CHANGED_EVENT, () => {
+		if (usageContext) refreshUsage(usageContext);
+	});
 
 	const applyConfig = (next: StatuslineConfig, overwriteInvalid = false): MutationResult<void> => {
 		if (configLoadError && !overwriteInvalid) {
@@ -391,6 +401,7 @@ export default function statusline(pi: ExtensionAPI) {
 		gitRefreshTimer = undefined;
 		renderRequest = undefined;
 		quotaContext = ctx;
+		usageContext = ctx;
 		quotaMonitor.clear();
 		runState = "Ready";
 		branchChanges = undefined;
@@ -436,6 +447,7 @@ export default function statusline(pi: ExtensionAPI) {
 						fast: fastStatus ? sanitizeStatus(fastStatus) || undefined : undefined,
 						tokens: usage.tokens,
 						cost: usage.cost,
+						auxUsage: auxiliaryUsage.calls > 0 ? auxiliaryUsage : undefined,
 						context: context
 							? {
 								tokens: context.tokens,
@@ -542,6 +554,7 @@ export default function statusline(pi: ExtensionAPI) {
 	});
 	pi.on("session_tree", async (_event, ctx) => {
 		quotaContext = ctx;
+		usageContext = ctx;
 		resetToolActivity();
 		refreshUsage(ctx);
 		requestQuotaSync();
@@ -559,8 +572,10 @@ export default function statusline(pi: ExtensionAPI) {
 		renderRequest = undefined;
 		clearActiveTools();
 		quotaContext = undefined;
+		usageContext = undefined;
 		quotaMonitor.dispose();
 		usage = aggregateSessionUsage([]);
+		auxiliaryUsage = aggregateAuxiliaryUsage([]);
 		environment = undefined;
 	});
 }
