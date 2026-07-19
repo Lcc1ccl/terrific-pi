@@ -34,7 +34,7 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 Package defaults stay single-line emoji and do **not** enable the new widgets:
 
 ```text
-~/proj · session · model high ·  · 🔼 1.5K · 🔽 800 · 🎯 66.7% · $0.42 · Context [██████░░░░] 60% · 🏠 · +12 -3 · 🕒 12.3s / 1m45s · Ready
+~/proj · session · model high ·  · 🔼 1.5K · 🔽 800 · 🎯 66.7% · $0.42 · Context [██████░░░░] 60% · 🏠 · +12 -3 · 🕒 12s / 1m45s · Ready
 ```
 
 ## Install
@@ -156,7 +156,7 @@ Example stacked output:
 ~/vendor/terrific-pi │ [Fable 5] │ gpt-5 high │ main │ +12 -3 │ EDIT │ fast
 Context [█░░░░░░░░░] 4% │ in 12.5KⅠ 3.7K · out 3.2KⅠ 0.9K │ cache 76.9% │ $0.42Ⅰ $0.03 │ usage 5h [░░░░░░] 7% · 7d [██░░░░] 33%
 2 context files · 67 skills · 7 tools
-ok Read x6 · ok Bash x3 │ time 12.3s / 1m45s │ Ready
+ok Read x6 · ok Bash x3 │ time 12s / 1m45s │ Ready
 ```
 
 ### Color hierarchy

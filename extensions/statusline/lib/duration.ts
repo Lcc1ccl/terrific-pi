@@ -40,12 +40,11 @@ export class AgentDurationTracker {
 	}
 }
 
-/** Compact duration: `4.2s`, `1m05s`, `1h02m03s`. */
+/** Compact duration: `4s`, `1m05s`, `1h02m03s`. */
 export function formatDuration(ms: number): string {
 	const clamped = Math.max(0, ms);
 	if (clamped < 60_000) {
-		const tenths = Math.floor(clamped / 100) / 10;
-		return Number.isInteger(tenths) ? `${tenths.toFixed(0)}s` : `${tenths.toFixed(1)}s`;
+		return `${Math.floor(clamped / 1000)}s`;
 	}
 
 	const totalSec = Math.floor(clamped / 1000);

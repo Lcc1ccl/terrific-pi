@@ -6,7 +6,7 @@ import { AgentDurationTracker, formatDuration, formatDurationPair } from "../lib
 describe("formatDuration", () => {
 	it("formats sub-minute and longer spans", () => {
 		assert.equal(formatDuration(0), "0s");
-		assert.equal(formatDuration(1_200), "1.2s");
+		assert.equal(formatDuration(1_200), "1s");
 		assert.equal(formatDuration(4_000), "4s");
 		assert.equal(formatDuration(65_000), "1m05s");
 		assert.equal(formatDuration(3_725_000), "1h02m05s");
@@ -15,8 +15,8 @@ describe("formatDuration", () => {
 
 describe("formatDurationPair", () => {
 	it("joins round and session", () => {
-		assert.equal(formatDurationPair(12_300, 105_000), "12.3s / 1m45s");
-		assert.equal(formatDurationPair(12_300, 105_000, true), "12.3s/1m45s");
+		assert.equal(formatDurationPair(12_300, 105_000), "12s / 1m45s");
+		assert.equal(formatDurationPair(12_300, 105_000, true), "12s/1m45s");
 	});
 });
 

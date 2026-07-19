@@ -256,9 +256,9 @@ describe("modeTone", () => {
 
 describe("formatDurationContent", () => {
 	it("prefixes a clock emoji in emoji mode", () => {
-		assert.equal(formatDurationContent("12.3s / 1m45s", "emoji").text, "🕒 12.3s / 1m45s");
-		assert.equal(formatDurationContent("12.3s / 1m45s", "plain").text, "time 12.3s / 1m45s");
-		assert.equal(formatDurationContent("12.3s/1m45s", "emoji", true).text, "12.3s/1m45s");
+		assert.equal(formatDurationContent("12s / 1m45s", "emoji").text, "🕒 12s / 1m45s");
+		assert.equal(formatDurationContent("12s / 1m45s", "plain").text, "time 12s / 1m45s");
+		assert.equal(formatDurationContent("12s/1m45s", "emoji", true).text, "12s/1m45s");
 	});
 });
 

@@ -65,7 +65,7 @@ describe("buildWidgetSegments", () => {
 				"🏠",
 				"+12 -3",
 				"task 1/2",
-				"🕒 12.3s / 1m45s",
+				"🕒 12s / 1m45s",
 				"Ready",
 			],
 		);
@@ -311,7 +311,7 @@ describe("buildWidgetSegments", () => {
 		});
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
-			["🕒 12.3s / 1m45s", "Ready"],
+			["🕒 12s / 1m45s", "Ready"],
 		);
 	});
 
@@ -372,7 +372,7 @@ describe("buildWidgetSegments", () => {
 		assert.equal(texts[1], "66.7%");
 		assert.equal(texts[2], "0.42");
 		assert.equal(texts[3], "60%");
-		assert.equal(texts[4], "12.3s/1m45s");
+		assert.equal(texts[4], "12s/1m45s");
 		assert.equal(texts[5], "[██████░░░░] 60%");
 		assert.ok(texts.every((text) => !text.includes("Context ") && !text.includes("🕒") && !text.includes("$")));
 	});
