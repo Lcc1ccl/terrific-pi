@@ -2,7 +2,17 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+
 export type ModeName = "ask" | "plan" | "edit" | "auto";
+
+export interface AuxiliaryBtwRoute {
+	model: string;
+	thinking: ThinkingLevel;
+	timeoutMs: number;
+	maxOutputTokens: number;
+	fallbackModels: string[];
+}
 
 export interface EssentialsConfig {
 	context: { topEntries: number };
@@ -12,6 +22,7 @@ export interface EssentialsConfig {
 		maxContextTokens: number;
 		maxOutputTokens: number;
 	};
+	auxiliaryBtw?: AuxiliaryBtwRoute;
 }
 
 export const DEFAULT_CONFIG: EssentialsConfig = {
@@ -25,6 +36,7 @@ export const DEFAULT_CONFIG: EssentialsConfig = {
 };
 
 const MODE_SET = new Set<ModeName>(["ask", "plan", "edit", "auto"]);
+const THINKING_SET = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -34,6 +46,56 @@ function asPositiveInt(value: unknown, fallback: number, maximum: number): numbe
 	if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
 	const n = Math.floor(value);
 	return n > 0 ? Math.min(n, maximum) : fallback;
+}
+
+function clampInt(value: unknown, fallback: number, minimum: number, maximum: number): number {
+	if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+	return Math.min(maximum, Math.max(minimum, Math.floor(value)));
+}
+
+function parseModelRef(value: unknown): string | undefined {
+	if (value === "current") return value;
+	if (typeof value !== "string") return undefined;
+	const ref = value.trim();
+	const slash = ref.indexOf("/");
+	return slash > 0 && slash < ref.length - 1 ? ref : undefined;
+}
+
+function parseAuxiliaryBtw(raw: Record<string, unknown>): AuxiliaryBtwRoute | undefined {
+	if (!Object.hasOwn(raw, "auxiliary")) return undefined;
+	const auxiliary = isRecord(raw.auxiliary) ? raw.auxiliary : {};
+	if (auxiliary.enabled === false) return undefined;
+	const defaults = isRecord(auxiliary.default) ? auxiliary.default : {};
+	const tasks = isRecord(auxiliary.tasks) ? auxiliary.tasks : {};
+	const task = isRecord(tasks.btw) ? tasks.btw : {};
+	const model = parseModelRef(task.model) ?? parseModelRef(defaults.model) ?? "openai/gpt-5.4-mini";
+	const thinkingValue = task.thinking ?? defaults.thinking ?? "low";
+	const thinking = typeof thinkingValue === "string" && THINKING_SET.has(thinkingValue as ThinkingLevel)
+		? thinkingValue as ThinkingLevel
+		: "low";
+	const rawFallbacks = Array.isArray(task.fallbackModels)
+		? task.fallbackModels
+		: Array.isArray(defaults.fallbackModels) ? defaults.fallbackModels : [];
+	const seen = new Set([model]);
+	const fallbacks: string[] = [];
+	for (const value of rawFallbacks) {
+		const ref = parseModelRef(value);
+		if (!ref || seen.has(ref)) continue;
+		seen.add(ref);
+		fallbacks.push(ref);
+		if (fallbacks.length === 3) break;
+	}
+	return {
+		model,
+		thinking,
+		timeoutMs: clampInt(task.timeoutMs ?? defaults.timeoutMs, 60_000, 1_000, 600_000),
+		maxOutputTokens: clampInt(task.maxOutputTokens ?? defaults.maxOutputTokens, 2_000, 16, 128_000),
+		fallbackModels: fallbacks,
+	};
+}
+
+function cloneAuxiliaryBtw(value: AuxiliaryBtwRoute | undefined): AuxiliaryBtwRoute | undefined {
+	return value ? { ...value, fallbackModels: [...value.fallbackModels] } : undefined;
 }
 
 function asMode(value: unknown, fallback: ModeName): ModeName {
@@ -54,6 +116,7 @@ export function mergeConfig(raw: unknown, base: EssentialsConfig = DEFAULT_CONFI
 			context: { ...base.context },
 			mode: { ...base.mode },
 			btw: { ...base.btw },
+			...(base.auxiliaryBtw ? { auxiliaryBtw: cloneAuxiliaryBtw(base.auxiliaryBtw) } : {}),
 		};
 	}
 
@@ -75,6 +138,9 @@ export function mergeConfig(raw: unknown, base: EssentialsConfig = DEFAULT_CONFI
 			maxContextTokens: asPositiveInt(btw.maxContextTokens, base.btw.maxContextTokens, 1_000_000),
 			maxOutputTokens: asPositiveInt(btw.maxOutputTokens, base.btw.maxOutputTokens, 100_000),
 		},
+		...(Object.hasOwn(raw, "auxiliary")
+			? { auxiliaryBtw: parseAuxiliaryBtw(raw) }
+			: base.auxiliaryBtw ? { auxiliaryBtw: cloneAuxiliaryBtw(base.auxiliaryBtw) } : {}),
 	};
 }
 
@@ -113,14 +179,19 @@ export function loadConfig(
 	const warnings: string[] = [];
 	let config = mergeConfig({});
 
-	for (const path of resolveConfigPaths(cwd, agentDir, projectTrusted, configDirName)) {
+	for (const [index, path] of resolveConfigPaths(cwd, agentDir, projectTrusted, configDirName).entries()) {
 		const result = readJsonFile(path);
 		if (!result.ok) {
 			warnings.push(`pi-essentials: failed to read ${path}: ${result.error}`);
 			continue;
 		}
 		if (result.value !== undefined) {
+			const globalAuxiliary = config.auxiliaryBtw;
 			config = mergeConfig(result.value, config);
+			if (index > 0) {
+				delete config.auxiliaryBtw;
+				if (globalAuxiliary) config.auxiliaryBtw = globalAuxiliary;
+			}
 		}
 	}
 

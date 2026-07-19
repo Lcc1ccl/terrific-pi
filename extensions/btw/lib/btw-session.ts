@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Api, Message, Model } from "@earendil-works/pi-ai";
+import { InMemoryCredentialStore, type Api, type Message, type Model } from "@earendil-works/pi-ai";
 import type { AgentSession, ModelRegistry, ResourceLoader } from "@earendil-works/pi-coding-agent";
 import {
 	createAgentSession,
@@ -34,15 +34,21 @@ async function createSidecarModelRuntime(
 	model: Model<Api>,
 	registry?: RegistryBridge,
 ): Promise<ModelRuntime> {
-	const runtime = await ModelRuntime.create({ allowModelNetwork: false });
-	if (!registry) return runtime;
+	const credentials = new InMemoryCredentialStore();
+	if (!registry) return ModelRuntime.create({ credentials, allowModelNetwork: false });
 
+	const auth = await registry.getApiKeyAndHeaders(model);
+	if (!auth.ok) throw new Error(auth.error);
+	if (!auth.apiKey) throw new Error(`No API key for ${model.provider}`);
+	await credentials.modify(model.provider, async () => ({ type: "api_key", key: auth.apiKey, env: auth.env }));
+	const runtime = await ModelRuntime.create({ credentials, allowModelNetwork: false });
 	for (const providerId of registry.getRegisteredProviderIds()) {
 		const config = registry.getRegisteredProviderConfig(providerId);
-		if (config) runtime.registerProvider(providerId, config);
+		if (!config) continue;
+		runtime.registerProvider(providerId, providerId === model.provider && auth.headers
+			? { ...config, headers: { ...config.headers, ...auth.headers } }
+			: config);
 	}
-	const auth = await registry.getApiKeyAndHeaders(model);
-	if (auth.ok && auth.apiKey) await runtime.setRuntimeApiKey(model.provider, auth.apiKey);
 	return runtime;
 }
 
