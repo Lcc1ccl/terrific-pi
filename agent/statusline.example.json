@@ -7,6 +7,7 @@
     "tokens",
     "cache",
     "cost",
+    "auxUsage",
     "contextBar",
     "branch",
     "branchDiff",
