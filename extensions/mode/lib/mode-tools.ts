@@ -2,6 +2,7 @@ import type { ModeName } from "./config.ts";
 
 export const ASK_TOOLS = ["read", "grep", "find", "ls"] as const;
 export const PLAN_TOOLS = ["read", "grep", "find", "ls"] as const;
+const READ_ONLY_AUXILIARY_TOOLS = new Set(["aux_summarize", "web_research"]);
 
 export const MODE_STATUS_KEY = "pi-essentials-mode";
 export const MODE_ENTRY_TYPE = "pi-essentials-mode";
@@ -14,9 +15,9 @@ export function uniqueTools(tools: readonly string[]): string[] {
 export function toolsForMode(mode: ModeName, baselineTools: readonly string[]): string[] {
 	switch (mode) {
 		case "ask":
-			return uniqueTools([...ASK_TOOLS]);
+			return uniqueTools([...ASK_TOOLS, ...baselineTools.filter((tool) => READ_ONLY_AUXILIARY_TOOLS.has(tool))]);
 		case "plan":
-			return uniqueTools([...PLAN_TOOLS]);
+			return uniqueTools([...PLAN_TOOLS, ...baselineTools.filter((tool) => READ_ONLY_AUXILIARY_TOOLS.has(tool))]);
 		case "edit":
 		case "auto":
 			return uniqueTools(baselineTools.length > 0 ? baselineTools : ["read", "bash", "edit", "write"]);

@@ -5,8 +5,8 @@ import { parseModeArg, toolsForMode, uniqueTools } from "../lib/mode-tools.ts";
 
 describe("toolsForMode", () => {
 	it("restricts ask and plan to read-only tools", () => {
-		assert.deepEqual(toolsForMode("ask", ["read", "bash", "edit", "write"]), ["read", "grep", "find", "ls"]);
-		assert.deepEqual(toolsForMode("plan", ["read", "bash", "edit", "write"]), ["read", "grep", "find", "ls"]);
+		assert.deepEqual(toolsForMode("ask", ["read", "bash", "edit", "write", "aux_summarize", "web_research", "git_finalize"]), ["read", "grep", "find", "ls", "aux_summarize", "web_research"]);
+		assert.deepEqual(toolsForMode("plan", ["read", "bash", "edit", "write", "aux_summarize", "web_research", "git_finalize"]), ["read", "grep", "find", "ls", "aux_summarize", "web_research"]);
 	});
 
 	it("restores baseline for edit and auto", () => {
