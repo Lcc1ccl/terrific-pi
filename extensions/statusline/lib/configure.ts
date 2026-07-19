@@ -244,7 +244,7 @@ export function formatConfigSummary(config: StatuslineConfig, configPath: string
 		`iconMode: ${config.iconMode}`,
 		`contextMode: ${config.contextMode}`,
 		`contextBarWidth: ${config.contextBarWidth} (default ${DEFAULT_CONTEXT_BAR_WIDTH}, min ${MIN_CONTEXT_BAR_WIDTH}, max ${MAX_CONTEXT_BAR_WIDTH})`,
-		`minimal: ${config.minimal}${isMinimalProfile(config) ? " (profile)" : config.minimal ? " (dense labels)" : ""}`,
+		`minimal: ${config.minimal}${isMinimalProfile(config) ? " (profile)" : config.minimal ? " (abbr labels)" : ""}`,
 		`toolActivityMode: ${config.toolActivityMode}`,
 		`separator: ${separatorLabel(config.separator)}`,
 		`spacing: ${config.spacing} (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
@@ -256,7 +256,7 @@ function mainMenuTitle(config: StatuslineConfig, configPath: string): string {
 	const minimalLabel = isMinimalProfile(config)
 		? "profile"
 		: config.minimal
-			? "dense labels"
+			? "abbr labels"
 			: "off";
 	return [
 		"Statusline Config",
@@ -391,9 +391,10 @@ async function setMinimalMode(deps: ConfigureDeps): Promise<void> {
 		deps,
 		[
 			"Minimal profile",
-			`on  = write ${MINIMAL_PROFILE.widgets.join(", ")}`,
-			"     + single/plain/used + dense labels",
-			"off = clear dense labels only (widgets unchanged)",
+			"pi-core widgets + mode/fast/state",
+			`on  = ${MINIMAL_PROFILE.widgets.join(", ")}`,
+			"     + single/plain · abbr labels (ctx/CH, keep in/out/$)",
+			"off = clear abbr labels only (widgets unchanged)",
 		].join("\n"),
 		["on", "off"],
 		current,
@@ -410,7 +411,7 @@ async function setMinimalMode(deps: ConfigureDeps): Promise<void> {
 		applyOrNotify(
 			deps,
 			profile,
-			`minimal profile: ${profile.widgets.join(", ")} · single/plain · dense labels`,
+			`minimal profile: ${profile.widgets.join(", ")} · single/plain · abbr labels`,
 		);
 		return;
 	}

@@ -44,8 +44,21 @@ describe("mergeStatuslineConfig", () => {
 		assert.equal(WIDGET_IDS.includes("auxUsage" as never), false);
 	});
 
-	it("defines a true minimal profile with core widgets only", () => {
-		assert.deepEqual(MINIMAL_WIDGETS, ["model", "tokens", "context", "cost", "mode", "fast", "state"]);
+	it("defines a minimal profile around pi footer core + light extras", () => {
+		assert.deepEqual(MINIMAL_WIDGETS, [
+			"path",
+			"session",
+			"model",
+			"branch",
+			"tokens",
+			"cache",
+			"cost",
+			"context",
+			"mode",
+			"fast",
+			"progress",
+			"state",
+		]);
 		assert.equal(MINIMAL_PROFILE.layout, "single");
 		assert.equal(MINIMAL_PROFILE.iconMode, "plain");
 		assert.equal(MINIMAL_PROFILE.minimal, true);

@@ -101,19 +101,18 @@ export function appendAuxSuffix(parts: SegmentPart[], auxText?: string, uncertai
 
 export function formatCost(
 	value: number,
-	minimal = false,
+	_minimal = false,
 	auxCost = 0,
 	auxUnknown = false,
 ): SegmentContent {
+	// Keep `$` always — minimal shortens other labels, not currency identity.
 	const amount = Math.max(0, value).toFixed(2);
 	const aux = Math.max(0, auxCost);
-	const parts: SegmentPart[] = minimal
-		? [{ text: amount, tone: "value" }]
-		: [
-			{ text: "$", tone: "label" },
-			{ text: amount, tone: "value" },
-		];
-	if (aux > 0) appendAuxSuffix(parts, minimal ? aux.toFixed(2) : `$${aux.toFixed(2)}`, auxUnknown);
+	const parts: SegmentPart[] = [
+		{ text: "$", tone: "label" },
+		{ text: amount, tone: "value" },
+	];
+	if (aux > 0) appendAuxSuffix(parts, `$${aux.toFixed(2)}`, auxUnknown);
 	else if (auxUnknown) appendAuxSuffix(parts);
 	return content(parts);
 }
@@ -129,7 +128,13 @@ export function formatCache(
 	const prompt = input + cacheRead + cacheWrite;
 	const hitRate = prompt > 0 ? ((cacheRead / prompt) * 100).toFixed(1) : "0.0";
 	const value = `${hitRate}%`;
-	if (minimal) return content([{ text: value, tone: "value" }]);
+	// Pi footer uses CH%; keep that short label in minimal mode.
+	if (minimal) {
+		return content([
+			{ text: "CH ", tone: "label" },
+			{ text: value, tone: "value" },
+		]);
+	}
 	if (iconMode === "plain") {
 		return content([
 			{ text: "cache ", tone: "label" },
@@ -153,7 +158,13 @@ export function formatContextText(
 	const remaining = Math.max(0, Math.min(100, 100 - used));
 	const value = mode === "used" ? used : remaining;
 	const tone = usageValueTone(usedPercent);
-	if (minimal) return content([{ text: `${value}%`, tone }]);
+	if (minimal) {
+		const suffix = mode === "used" ? "%" : "% left";
+		return content([
+			{ text: "ctx ", tone: "label" },
+			{ text: `${value}${suffix}`, tone },
+		]);
+	}
 	const suffix = mode === "used" ? "% used" : "% left";
 	return content([
 		{ text: "Context ", tone: "label" },
@@ -179,8 +190,11 @@ export function formatContextBar(
 	const label = mode === "used"
 		? `${Math.round(used)}%`
 		: `${Math.max(0, Math.min(100, Math.round(100 - used)))}%`;
-	const parts: SegmentPart[] = minimal ? [] : [{ text: "Context ", tone: "label" }];
-	parts.push(...formatBarParts(filledRatio, width), { text: label, tone: usageValueTone(used) });
+	const parts: SegmentPart[] = [
+		{ text: minimal ? "ctx " : "Context ", tone: "label" },
+		...formatBarParts(filledRatio, width),
+		{ text: label, tone: usageValueTone(used) },
+	];
 	return content(parts);
 }
 
@@ -247,27 +261,25 @@ export function appendAuxTokenExtras(parts: SegmentPart[], extras: AuxTokenExtra
 	else if (extras.unknown) appendAuxSuffix(parts);
 }
 
-/** Dense token pair for minimal mode: `1.5K/800` (optional dim Ⅰ aux). iconMode unused. */
+/** Compact token pair for minimal mode — keeps in/out (or emoji) labels. */
 export function formatTokenPairMinimal(
 	input: number,
 	output: number,
-	_iconMode: IconMode = "emoji",
+	iconMode: IconMode = "emoji",
 	auxInput = 0,
 	auxOutput = 0,
 	extras: AuxTokenExtras = {},
 ): SegmentContent {
-	const left = formatTokensCompact(input);
-	const right = formatTokensCompact(output);
-	const auxIn = Math.max(0, auxInput);
-	const auxOut = Math.max(0, auxOutput);
-	const parts: SegmentPart[] = [{ text: left, tone: "value" }];
-	if (auxIn > 0) appendAuxSuffix(parts, formatTokensCompact(auxIn));
-	parts.push({ text: "/", tone: "label" });
-	parts.push({ text: right, tone: "value" });
-	if (auxOut > 0) appendAuxSuffix(parts, formatTokensCompact(auxOut));
+	const left = formatTokenDirection("in", input, iconMode, auxInput);
+	const right = formatTokenDirection("out", output, iconMode, auxOutput);
+	const parts: SegmentPart[] = [
+		...left.parts,
+		{ text: " · ", tone: "dim" },
+		...right.parts,
+	];
 	appendAuxTokenExtras(parts, {
-		input: auxIn,
-		output: auxOut,
+		input: Math.max(0, auxInput),
+		output: Math.max(0, auxOutput),
 		unsplit: extras.unsplit,
 		unknown: extras.unknown,
 	});
@@ -447,7 +459,12 @@ export function formatDurationContent(
 	iconMode: IconMode = "emoji",
 	minimal = false,
 ): SegmentContent {
-	if (minimal) return content([{ text: pair, tone: "value" }]);
+	if (minimal) {
+		return content([
+			{ text: "t ", tone: "label" },
+			{ text: pair, tone: "value" },
+		]);
+	}
 	if (iconMode === "emoji") {
 		return content([
 			{ text: "🕒 ", tone: "icon" },

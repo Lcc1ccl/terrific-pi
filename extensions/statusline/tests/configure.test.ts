@@ -520,7 +520,20 @@ describe("minimal profile menu", () => {
 
 		assert.ok(mainItems.includes("Minimal profile"));
 		assert.equal(mainItems.includes("Minimal mode"), false);
-		assert.deepEqual(config.widgets, ["model", "tokens", "context", "cost", "mode", "fast", "state"]);
+		assert.deepEqual(config.widgets, [
+			"path",
+			"session",
+			"model",
+			"branch",
+			"tokens",
+			"cache",
+			"cost",
+			"context",
+			"mode",
+			"fast",
+			"progress",
+			"state",
+		]);
 		assert.equal(config.layout, "single");
 		assert.equal(config.iconMode, "plain");
 		assert.equal(config.minimal, true);
@@ -529,9 +542,22 @@ describe("minimal profile menu", () => {
 		assert.equal(config.toolActivityMode, "compact");
 	});
 
-	it("clears dense labels only when turning off", async () => {
+	it("clears abbr labels only when turning off", async () => {
 		let config: StatuslineConfig = {
-			widgets: ["model", "tokens", "context", "cost", "mode", "fast", "state"],
+			widgets: [
+				"path",
+				"session",
+				"model",
+				"branch",
+				"tokens",
+				"cache",
+				"cost",
+				"context",
+				"mode",
+				"fast",
+				"progress",
+				"state",
+			],
 			layout: "single",
 			iconMode: "plain",
 			contextMode: "used",
@@ -563,7 +589,20 @@ describe("minimal profile menu", () => {
 		}, ["path"]);
 
 		assert.equal(config.minimal, false);
-		assert.deepEqual(config.widgets, ["model", "tokens", "context", "cost", "mode", "fast", "state"]);
+		assert.deepEqual(config.widgets, [
+			"path",
+			"session",
+			"model",
+			"branch",
+			"tokens",
+			"cache",
+			"cost",
+			"context",
+			"mode",
+			"fast",
+			"progress",
+			"state",
+		]);
 		assert.equal(config.layout, "single");
 	});
 });

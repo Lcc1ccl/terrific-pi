@@ -271,7 +271,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 			case "context": {
 				const body = formatContextText(snapshot.context?.percent, config.contextMode, minimal)
 					?? (minimal
-						? { text: "?", parts: [{ text: "?", tone: "dim" }] }
+						? { text: "ctx ?", parts: [{ text: "ctx ", tone: "label" }, { text: "?", tone: "dim" }] }
 						: { text: "Context ?", parts: [{ text: "Context ", tone: "label" }, { text: "?", tone: "dim" }] });
 				pushContent(segments, id, "usage", body, priority);
 				break;
@@ -281,7 +281,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				const body = formatContextBar(percent, config.contextBarWidth, config.contextMode, minimal);
 				if (!body || percent === null || percent === undefined || Number.isNaN(percent)) {
 					pushContent(segments, id, "neutral", minimal
-						? { text: "?", parts: [{ text: "?", tone: "dim" }] }
+						? { text: "ctx ?", parts: [{ text: "ctx ", tone: "label" }, { text: "?", tone: "dim" }] }
 						: {
 							text: "Context ?",
 							parts: [{ text: "Context ", tone: "label" }, { text: "?", tone: "dim" }],

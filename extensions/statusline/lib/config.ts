@@ -75,16 +75,22 @@ export const DEFAULT_CONFIG: StatuslineConfig = {
 };
 
 /**
- * True minimal footer profile: single-line plain chrome + short core widgets.
- * mode/fast stay enabled (render only when active). Task detail stays in process-view.
+ * Minimal profile ≈ pi built-in footer core + light plugin extras.
+ * Pi core: path/branch/session, tokens in/out, cache hit, $, context %, model, statuses.
+ * Plugin adds: mode/fast (active-only), run state. Abbr labels: ctx/CH; keep in/out/$.
  */
 export const MINIMAL_WIDGETS: WidgetId[] = [
+	"path",
+	"session",
 	"model",
+	"branch",
 	"tokens",
-	"context",
+	"cache",
 	"cost",
+	"context",
 	"mode",
 	"fast",
+	"progress",
 	"state",
 ];
 

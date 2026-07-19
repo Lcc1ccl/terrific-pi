@@ -360,21 +360,21 @@ describe("buildWidgetSegments", () => {
 		assert.ok(segments[2]?.parts?.some((part) => part.tone === "label"));
 	});
 
-	it("uses dense bare labels when minimal is enabled", () => {
+	it("uses abbreviated labels when minimal is enabled", () => {
 		const segments = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,
 			widgets: ["tokens", "cache", "cost", "context", "duration", "contextBar"],
 			minimal: true,
+			iconMode: "plain",
 			contextMode: "remaining",
 		});
 		const texts = segments.map((segment) => segment.text);
-		assert.equal(texts[0], "1.5K/800");
-		assert.equal(texts[1], "66.7%");
-		assert.equal(texts[2], "0.42");
-		assert.equal(texts[3], "60%");
-		assert.equal(texts[4], "12s/1m45s");
-		assert.equal(texts[5], "[██████░░░░] 60%");
-		assert.ok(texts.every((text) => !text.includes("Context ") && !text.includes("🕒") && !text.includes("$")));
+		assert.equal(texts[0], "in 1.5K · out 800");
+		assert.equal(texts[1], "CH 66.7%");
+		assert.equal(texts[2], "$0.42");
+		assert.equal(texts[3], "ctx 60% left");
+		assert.equal(texts[4], "t 12s/1m45s");
+		assert.equal(texts[5], "ctx [██████░░░░] 60%");
 	});
 });
 

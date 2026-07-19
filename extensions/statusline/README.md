@@ -8,7 +8,7 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 
 - Configurable widget order, `·` / `│` separator, and numeric spacing
 - `layout: "single" | "stacked"` with canonical project/usage/environment/activity lines (`session`/`mode` share the environment line)
-- **Minimal profile**: one-shot single/plain core widgets + dense labels (task detail stays in process-view)
+- **Minimal profile**: pi built-in footer core + mode/fast/state, with abbreviated labels (`ctx`/`CH`, keep `in`/`out`/`$`)
 - `toolActivityMode: "detailed" | "compact"` for per-tool or core_tools/aux_tools aggregates
 - `iconMode: "emoji" | "plain"` (plugin-owned glyphs only; bars/colors unchanged)
 - Path (home-relative `~`)
@@ -88,13 +88,28 @@ Single-line layout follows the configured order exactly. Stacked layout uses can
 
 ### Minimal profile
 
-`/statusline` → **Minimal profile** → `on` writes this package preset (not just a label toggle):
+Based on **pi's built-in footer** (path/branch/session, tokens in/out, cache hit, `$` cost, context %, model, extension statuses), plus light plugin extras (`mode`/`fast` when active, run `state`).
+
+`/statusline` → **Minimal profile** → `on` writes:
 
 ```json
 {
   "layout": "single",
   "iconMode": "plain",
-  "widgets": ["model", "tokens", "context", "cost", "mode", "fast", "state"],
+  "widgets": [
+    "path",
+    "session",
+    "model",
+    "branch",
+    "tokens",
+    "cache",
+    "cost",
+    "context",
+    "mode",
+    "fast",
+    "progress",
+    "state"
+  ],
   "contextMode": "used",
   "contextBarWidth": 10,
   "minimal": true,
@@ -107,15 +122,18 @@ Single-line layout follows the configured order exactly. Stacked layout uses can
 Example:
 
 ```text
-model high · 1.5KⅠ 3.7K/800Ⅰ 900 · 40% · 0.42Ⅰ 0.03 · EDIT · fast · Ready
+~/proj · session · model high · main · in 1.5KⅠ 3.7K · out 800Ⅰ 900 · CH 66.7% · $0.42Ⅰ $0.03 · ctx 40% · EDIT · fast · task 1/2 · Ready
 ```
 
 - **on**: overwrites widgets/layout/iconMode/contextMode/separator/spacing/toolActivityMode and sets `minimal: true`
 - **off**: sets `minimal: false` only (widgets stay as configured)
-- `minimal: true` alone (JSON) enables **dense labels** without changing the widget list:
-  - tokens → `1.5K/800` (no in/out icons)
-  - cost/cache/context → bare numbers; contextBar drops the `Context` prefix; duration drops `🕒`/`time`
-- mode/fast still render only while active; progress/toolActivity/quota/environment are intentionally omitted from the profile (process-view owns task HUD)
+- `minimal: true` alone (JSON) enables **abbreviated labels** without changing the widget list:
+  - tokens keep `in`/`out` (or emoji arrows)
+  - cost keeps `$`
+  - cache → `CH …%` (pi-style)
+  - context / contextBar → `ctx …`
+  - duration → `t …`
+- omitted from the profile (still available via Widgets): `branchDiff`, `contextBar`, `duration`, `quota`, `environment`, `toolActivity`
 
 ### Recommended stacked HUD
 
@@ -239,7 +257,7 @@ In TUI mode, `/statusline` opens a nested menu:
 
 - **Widgets**: `Space` toggle, configured select keys to navigate, configured cursor keys to move, Enter done
 - appearance: `layout`, `iconMode`, widget separator/spacing
-- **Minimal profile**: apply core single/plain preset + dense labels, or clear dense labels only
+- **Minimal profile**: apply pi-core single/plain preset + abbreviated labels, or clear abbr labels only
 - `contextMode` (context/contextBar percent); `contextBarWidth` only matters when `contextBar` is enabled
 - `toolActivityMode` only matters when `toolActivity` is enabled
 - enum menus put the current value first and mark current/default values

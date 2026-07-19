@@ -39,7 +39,7 @@ describe("formatCost", () => {
 	it("formats usd with two decimals by default", () => {
 		assert.equal(formatCost(0).text, "$0.00");
 		assert.equal(formatCost(0.421).text, "$0.42");
-		assert.equal(formatCost(12.5, true).text, "12.50");
+		assert.equal(formatCost(12.5, true).text, "$12.50");
 		assert.deepEqual(formatCost(0.42).parts.map((part) => part.tone), ["label", "value"]);
 	});
 
@@ -64,7 +64,7 @@ describe("formatCache", () => {
 		);
 		assert.equal(
 			formatCache({ input: 100, output: 0, cacheRead: 400, cacheWrite: 100 }, true)?.text,
-			"66.7%",
+			"CH 66.7%",
 		);
 		assert.equal(
 			formatCache({ input: 100, output: 0, cacheRead: 400, cacheWrite: 100 }, false, "plain")?.text,
@@ -77,7 +77,8 @@ describe("formatContextText", () => {
 	it("formats remaining and used modes", () => {
 		assert.equal(formatContextText(37.2, "remaining")?.text, "Context 63% left");
 		assert.equal(formatContextText(37.2, "used")?.text, "Context 37% used");
-		assert.equal(formatContextText(37.2, "remaining", true)?.text, "63%");
+		assert.equal(formatContextText(37.2, "remaining", true)?.text, "ctx 63% left");
+		assert.equal(formatContextText(37.2, "used", true)?.text, "ctx 37%");
 		assert.equal(formatContextText(70.1, "used")?.parts.at(-1)?.tone, "warn");
 		assert.equal(formatContextText(null, "remaining"), undefined);
 	});
@@ -96,7 +97,7 @@ describe("formatContextBar", () => {
 	it("prefixes Context and keeps the bar", () => {
 		assert.equal(formatContextBar(40, 10, "remaining")?.text, "Context [██████░░░░] 60%");
 		assert.equal(formatContextBar(40, 10, "used")?.text, "Context [████░░░░░░] 40%");
-		assert.equal(formatContextBar(40, 10, "used", true)?.text, "[████░░░░░░] 40%");
+		assert.equal(formatContextBar(40, 10, "used", true)?.text, "ctx [████░░░░░░] 40%");
 		assert.equal(formatContextBar(null, 10, "remaining"), undefined);
 		const tones = formatContextBar(40, 10, "used")?.parts.map((part) => part.tone);
 		assert.ok(tones?.includes("label"));
@@ -258,7 +259,7 @@ describe("formatDurationContent", () => {
 	it("prefixes a clock emoji in emoji mode", () => {
 		assert.equal(formatDurationContent("12s / 1m45s", "emoji").text, "🕒 12s / 1m45s");
 		assert.equal(formatDurationContent("12s / 1m45s", "plain").text, "time 12s / 1m45s");
-		assert.equal(formatDurationContent("12s/1m45s", "emoji", true).text, "12s/1m45s");
+		assert.equal(formatDurationContent("12s/1m45s", "emoji", true).text, "t 12s/1m45s");
 	});
 });
 
