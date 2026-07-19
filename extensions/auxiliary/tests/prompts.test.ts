@@ -9,6 +9,7 @@ import {
 	findLastToolResultText,
 	sanitizeTitle,
 	splitTextForSummary,
+	TITLE_MAX_CHARS,
 	validateCommitSubject,
 } from "../lib/prompts.ts";
 
@@ -17,9 +18,15 @@ describe("title output", () => {
 		assert.equal(sanitizeTitle("  **Fix login retry**\nextra  "), "Fix login retry");
 		assert.equal(sanitizeTitle("New Session"), undefined);
 		assert.equal(sanitizeTitle("x"), undefined);
-		assert.equal(sanitizeTitle("a".repeat(81)), undefined);
+		assert.equal(sanitizeTitle("a".repeat(81)), "a".repeat(TITLE_MAX_CHARS));
 		assert.equal(sanitizeTitle("ok\u001b[31m title"), "ok title");
 		assert.equal(sanitizeTitle("unsafe\ttitle"), undefined);
+	});
+
+	test("hard-caps long titles for HUD-friendly storage", () => {
+		const title = sanitizeTitle("Investigate why statusline session titles overflow stacked HUD rows");
+		assert.equal(title, "Investigate why statusli");
+		assert.equal(Array.from(title!).length, TITLE_MAX_CHARS);
 	});
 });
 

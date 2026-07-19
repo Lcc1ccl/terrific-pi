@@ -10,6 +10,8 @@ import {
 	formatCost,
 	formatCwd,
 	formatDurationContent,
+	formatSessionName,
+	SESSION_NAME_MAX_CHARS,
 	formatEnvironment,
 	formatFastBadge,
 	formatModelContent,
@@ -213,5 +215,19 @@ describe("formatCwd", () => {
 		assert.ok(home);
 		assert.equal(formatCwd(home), "~");
 		assert.equal(formatCwd(`${home}/projects/pi`), `~/projects/pi`);
+	});
+});
+
+describe("formatSessionName", () => {
+	it("keeps short names and truncates long ones", () => {
+		assert.equal(formatSessionName("demo"), "demo");
+		const long = "A".repeat(SESSION_NAME_MAX_CHARS + 8);
+		const truncated = formatSessionName(long);
+		assert.equal(Array.from(truncated).length, SESSION_NAME_MAX_CHARS);
+		assert.ok(truncated.endsWith("…"));
+	});
+
+	it("counts unicode by code point", () => {
+		assert.equal(formatSessionName("标题生成测试用的很长会话名再加一点", 8), "标题生成测试用…");
 	});
 });

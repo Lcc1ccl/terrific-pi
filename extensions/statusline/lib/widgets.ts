@@ -13,6 +13,7 @@ import {
 	formatCost,
 	formatCwd,
 	formatDurationContent,
+	formatSessionName,
 	formatEnvironment,
 	formatFastBadge,
 	formatModelContent,
@@ -188,11 +189,12 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				break;
 			case "session":
 				if (snapshot.sessionName) {
+					const sessionName = formatSessionName(snapshot.sessionName);
 					segments.push({
 						id,
 						accent: "session",
-						text: snapshot.sessionName,
-						parts: [{ text: snapshot.sessionName, tone: "muted" }],
+						text: sessionName,
+						parts: [{ text: sessionName, tone: "muted" }],
 						priority,
 					});
 				}

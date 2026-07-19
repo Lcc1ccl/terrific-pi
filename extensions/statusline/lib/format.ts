@@ -166,6 +166,17 @@ export function formatCwd(cwd: string): string {
 	return fromHome === "" ? "~" : `~${sep}${fromHome}`;
 }
 
+/** Cap session title width so stacked/split HUD project rows stay scannable. */
+export const SESSION_NAME_MAX_CHARS = 24;
+
+export function formatSessionName(name: string, maxChars = SESSION_NAME_MAX_CHARS): string {
+	const limit = Math.max(1, Math.floor(maxChars));
+	const chars = Array.from(name.trim());
+	if (chars.length <= limit) return chars.join("");
+	if (limit === 1) return "…";
+	return `${chars.slice(0, limit - 1).join("")}…`;
+}
+
 export function formatTokensPair(input: number, output: number, minimal = false): string {
 	const left = formatTokensCompact(input);
 	const right = formatTokensCompact(output);

@@ -95,6 +95,14 @@ describe("buildWidgetSegments", () => {
 		);
 	});
 
+	it("truncates long session names for HUD space", () => {
+		const segments = buildWidgetSegments(
+			{ ...baseSnapshot, sessionName: "Investigate why statusline session titles overflow stacked HUD rows" },
+			{ ...DEFAULT_CONFIG, widgets: ["session"] },
+		);
+		assert.deepEqual(segments.map((segment) => segment.text), ["Investigate why statusl…"]);
+	});
+
 	it("hides zero cost", () => {
 		const segments = buildWidgetSegments(
 			{ ...baseSnapshot, cost: 0 },

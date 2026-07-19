@@ -5,6 +5,9 @@ const CONTROL_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
 const INLINE_CONTROL_RE = /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f]/;
 const COMMIT_TYPES = new Set(["feat", "fix", "refactor", "perf", "docs", "test", "build", "chore", "style", "ci"]);
 
+/** Keep generated titles HUD-friendly (matches statusline session cap). */
+export const TITLE_MAX_CHARS = 24;
+
 export function sanitizeTitle(value: string): string | undefined {
 	const withoutAnsi = value.replace(ANSI_RE, "");
 	if (INLINE_CONTROL_RE.test(withoutAnsi)) return undefined;
@@ -14,10 +17,11 @@ export function sanitizeTitle(value: string): string | undefined {
 		.trim()
 		.replace(/^(?:["'`]+|\*\*|__)+|(?:["'`]+|\*\*|__)+$/g, "")
 		.trim();
-	const length = Array.from(firstLine).length;
-	if (length < 2 || length > 80) return undefined;
-	if (/^(?:untitled|new session)$/i.test(firstLine)) return undefined;
-	return firstLine;
+	const chars = Array.from(firstLine);
+	if (chars.length < 2) return undefined;
+	const title = chars.slice(0, TITLE_MAX_CHARS).join("");
+	if (/^(?:untitled|new session)$/i.test(title)) return undefined;
+	return title;
 }
 
 export function extractAssistantText(content: AssistantMessage["content"]): string {
