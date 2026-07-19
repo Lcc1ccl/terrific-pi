@@ -378,6 +378,7 @@ export default function statusline(pi: ExtensionAPI) {
 									enabled,
 									widgetGroups,
 									theme,
+									previewConfig: cloneConfig(config),
 									keybindings,
 									onChange: (next, nextGroups) =>
 										onChange(next as typeof enabled, nextGroups),

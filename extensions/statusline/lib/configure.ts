@@ -11,6 +11,7 @@ import {
 	MINIMAL_PROFILE,
 	resolveWidgetGroup,
 	WIDGET_SEPARATOR_GLYPHS,
+	withWidgetGroupOverride,
 } from "./config.ts";
 import type {
 	ContextMode,
@@ -22,6 +23,7 @@ import type {
 	WidgetGroup,
 	WidgetId,
 } from "./types.ts";
+import { WIDGET_GROUP_ORDER } from "./types.ts";
 
 export type MutationResult<T> =
 	| { ok: true; value: T }
@@ -118,27 +120,149 @@ export function widgetGroupOf(
 	return resolveWidgetGroup(id as WidgetId, overrides);
 }
 
+/** Widgets in stacked visual order: project → usage → environment → activity. */
+export function flattenByGroup(
+	order: readonly string[],
+	overrides?: StatuslineConfig["widgetGroups"],
+): WidgetId[] {
+	const out: WidgetId[] = [];
+	const seen = new Set<string>();
+	for (const group of WIDGET_GROUP_ORDER) {
+		for (const id of order) {
+			if (seen.has(id)) continue;
+			if (resolveWidgetGroup(id as WidgetId, overrides) !== group) continue;
+			seen.add(id);
+			out.push(id as WidgetId);
+		}
+	}
+	return out;
+}
+
+/** @deprecated alias — enabled-only lists still use the same flatten. */
+export function flattenEnabledByGroup(
+	enabled: readonly string[],
+	overrides?: StatuslineConfig["widgetGroups"],
+): WidgetId[] {
+	return flattenByGroup(enabled, overrides);
+}
+
 /**
- * Free-order editor rows: enabled first (config order), then disabled (catalog order).
- * Partition labels come from widgetGroups overrides + package defaults.
+ * Move any widget (enabled or not) along partition visual order.
+ *
+ * Model: one linear order of all widgets + per-widget group. Visual list is
+ * group-major; each partition is a contiguous range.
+ *
+ * - Same partition: swap with the neighbor.
+ * - Cross right: become destination partition's **first**.
+ * - Cross left: become destination partition's **last**.
  */
-export function buildWidgetEditorItems(
+export function moveInGroups(
+	order: readonly string[],
+	overrides: StatuslineConfig["widgetGroups"] | undefined,
+	id: string,
+	delta: -1 | 1,
+): { order: WidgetId[]; widgetGroups: StatuslineConfig["widgetGroups"] } | undefined {
+	const visual = flattenByGroup(order, overrides);
+	const index = visual.indexOf(id as WidgetId);
+	if (index < 0) return undefined;
+	const target = index + delta;
+	if (target < 0 || target >= visual.length) return undefined;
+
+	const item = visual[index]!;
+	const currentGroup = resolveWidgetGroup(item, overrides);
+	const neighborGroup = resolveWidgetGroup(visual[target]!, overrides);
+
+	if (neighborGroup === currentGroup) {
+		const nextVisual = [...visual];
+		nextVisual[index] = nextVisual[target]!;
+		nextVisual[target] = item;
+		return { order: nextVisual, widgetGroups: overrides };
+	}
+
+	const destGroup = neighborGroup;
+	const without = visual.filter((_, i) => i !== index);
+	const destIndexes = without
+		.map((widget, i) => (resolveWidgetGroup(widget, overrides) === destGroup ? i : -1))
+		.filter((i) => i >= 0);
+
+	let insertAt: number;
+	if (destIndexes.length === 0) {
+		insertAt = delta > 0 ? without.length : 0;
+	} else if (delta > 0) {
+		insertAt = destIndexes[0]!;
+	} else {
+		insertAt = destIndexes[destIndexes.length - 1]! + 1;
+	}
+
+	const nextVisual = [...without];
+	nextVisual.splice(insertAt, 0, item);
+	const widgetGroups = withWidgetGroupOverride(overrides, item, destGroup);
+	return { order: nextVisual, widgetGroups };
+}
+
+/** @deprecated use moveInGroups */
+export function moveEnabledInGroups(
+	enabled: readonly string[],
+	overrides: StatuslineConfig["widgetGroups"] | undefined,
+	id: string,
+	delta: -1 | 1,
+): { enabled: WidgetId[]; widgetGroups: StatuslineConfig["widgetGroups"] } | undefined {
+	const moved = moveInGroups(enabled, overrides, id, delta);
+	if (!moved) return undefined;
+	return { enabled: moved.order, widgetGroups: moved.widgetGroups };
+}
+
+/** Initial full catalog order: enabled (config order) then remaining catalog ids. */
+export function initialWidgetOrder(
 	enabled: readonly string[],
 	allWidgets: readonly string[],
-): WidgetEditorItem[] {
+): WidgetId[] {
 	const allSet = new Set(allWidgets);
 	const seen = new Set<string>();
-	const items: WidgetEditorItem[] = [];
-
+	const order: WidgetId[] = [];
 	for (const id of enabled) {
 		if (!allSet.has(id) || seen.has(id)) continue;
 		seen.add(id);
-		items.push({ id: id as WidgetId, enabled: true });
+		order.push(id as WidgetId);
 	}
 	for (const id of allWidgets) {
 		if (seen.has(id)) continue;
 		seen.add(id);
-		items.push({ id: id as WidgetId, enabled: false });
+		order.push(id as WidgetId);
+	}
+	return order;
+}
+
+/**
+ * Editor rows by partition using full order (enabled and disabled interleave by order).
+ */
+export function buildWidgetEditorItems(
+	enabled: readonly string[],
+	allWidgets: readonly string[],
+	overrides?: StatuslineConfig["widgetGroups"],
+	order: readonly string[] = initialWidgetOrder(enabled, allWidgets),
+): WidgetEditorItem[] {
+	const allSet = new Set(allWidgets);
+	const enabledSet = new Set(
+		enabled.filter((id, index) => allSet.has(id) && enabled.indexOf(id) === index),
+	);
+	const ordered = flattenByGroup(
+		order.filter((id) => allSet.has(id)),
+	overrides,
+	);
+	const seen = new Set(ordered);
+	const items: WidgetEditorItem[] = ordered.map((id) => ({
+		id,
+		enabled: enabledSet.has(id),
+	}));
+	// Any catalog id missing from order (shouldn't happen) append by group defaults.
+	for (const group of WIDGET_GROUP_ORDER) {
+		for (const id of allWidgets) {
+			if (seen.has(id)) continue;
+			if (resolveWidgetGroup(id as WidgetId, overrides) !== group) continue;
+			seen.add(id);
+			items.push({ id: id as WidgetId, enabled: enabledSet.has(id) });
+		}
 	}
 	return items;
 }

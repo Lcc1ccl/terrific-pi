@@ -7,12 +7,17 @@ import {
 } from "./config.ts";
 import {
 	buildWidgetEditorItems,
+	flattenByGroup,
+	flattenEnabledByGroup,
+	initialWidgetOrder,
+	moveInGroups,
 	toggleEditorItem,
 	widgetEditorAction,
 	type WidgetEditorBinding,
 	type WidgetEditorItem,
 } from "./configure.ts";
-import type { StatuslineConfig, WidgetId } from "./types.ts";
+import type { StatuslineConfig, WidgetGroup, WidgetId } from "./types.ts";
+import { formatWidgetsPreviewLines } from "./widgets.ts";
 
 export type WidgetsSetupTheme = {
 	fg(color: string, text: string): string;
@@ -24,29 +29,28 @@ export type WidgetsSetupOptions = {
 	enabled: readonly string[];
 	widgetGroups?: StatuslineConfig["widgetGroups"];
 	theme: WidgetsSetupTheme;
+	previewConfig: StatuslineConfig;
 	keybindings: { matches(data: string, binding: WidgetEditorBinding): boolean };
-	/** Return true to commit the local editor state after persistence succeeds. */
 	onChange: (
 		enabled: string[],
 		widgetGroups: StatuslineConfig["widgetGroups"],
 	) => boolean;
-	/** Called when a toggle/move is rejected (e.g. last widget). */
 	onReject?: (error: string) => void;
 	done: (enabled: string[] | undefined) => void;
 	requestRender: () => void;
 };
 
 /**
- * Free-order multi-select:
- * Space toggle · g cycle group · ↑/↓ select · ←/→ reorder enabled · Enter done · Esc back
+ * Partition-aware multi-select:
+ * Space toggle · g cycle group · ↑/↓ select · ←/→ move any row · Enter done · Esc back
  *
- * Live footer already reflects saved changes — no in-editor preview strip.
+ * Enabled and disabled widgets both reorder; enablement is independent of sort.
  */
 export class WidgetsSetupComponent {
 	private items: WidgetEditorItem[];
-	/** Config order of enabled widgets (source of truth). */
-	private enabledOrder: string[];
-	/** Stacked-line group overrides (source of truth). */
+	/** Full catalog order (enabled + disabled). */
+	private order: string[];
+	private enabledSet: Set<string>;
 	private widgetGroups: StatuslineConfig["widgetGroups"];
 	private selected = 0;
 	private cachedWidth?: number;
@@ -55,6 +59,7 @@ export class WidgetsSetupComponent {
 	private readonly title: string;
 	private readonly allWidgets: readonly string[];
 	private readonly theme: WidgetsSetupTheme;
+	private readonly previewConfig: StatuslineConfig;
 	private readonly keybindings: WidgetsSetupOptions["keybindings"];
 	private readonly onChange: WidgetsSetupOptions["onChange"];
 	private readonly onReject?: (error: string) => void;
@@ -64,10 +69,12 @@ export class WidgetsSetupComponent {
 	constructor(options: WidgetsSetupOptions) {
 		this.title = options.title;
 		this.allWidgets = options.allWidgets;
-		this.enabledOrder = dedupeEnabled(options.enabled, options.allWidgets);
+		this.order = initialWidgetOrder(options.enabled, options.allWidgets);
+		this.enabledSet = new Set(dedupeEnabled(options.enabled, options.allWidgets));
 		this.widgetGroups = options.widgetGroups ? { ...options.widgetGroups } : undefined;
-		this.items = buildWidgetEditorItems(this.enabledOrder, options.allWidgets);
+		this.items = this.rebuildItems();
 		this.theme = options.theme;
+		this.previewConfig = options.previewConfig;
 		this.keybindings = options.keybindings;
 		this.onChange = options.onChange;
 		this.onReject = options.onReject;
@@ -89,7 +96,7 @@ export class WidgetsSetupComponent {
 				this.done(undefined);
 				return;
 			case "done":
-				this.done([...this.enabledOrder]);
+				this.done(this.enabledList());
 				return;
 			case "up":
 			case "down": {
@@ -120,19 +127,39 @@ export class WidgetsSetupComponent {
 		const th = this.theme;
 		const lines: string[] = [
 			th.fg("accent", this.title),
-			th.fg("dim", "Space toggle · g cycle group · ↑/↓ select · ←/→ reorder · Enter done · Esc back"),
-			th.fg("dim", "Group affects stacked layout lines; live footer updates on each save"),
+			th.fg("dim", "Space toggle · g cycle group · ↑/↓ select · ←/→ move any · Enter done · Esc back"),
+			th.fg("dim", "Section = stacked line; mock preview uses sample data"),
 			"",
 		];
 
+		let lastGroup: WidgetGroup | undefined;
 		for (let i = 0; i < this.items.length; i++) {
 			const item = this.items[i]!;
 			const group = resolveWidgetGroup(item.id, this.widgetGroups);
+			if (group !== lastGroup) {
+				if (lastGroup !== undefined) lines.push("");
+				lines.push(th.fg("dim", `— ${group} —`));
+				lastGroup = group;
+			}
 			const cursor = i === this.selected ? "›" : " ";
 			const box = item.enabled ? "[x]" : "[ ]";
-			const raw = `${cursor} ${box} ${item.id}  · ${group}`;
+			const raw = `${cursor} ${box} ${item.id}`;
 			const label = i === this.selected ? th.fg("accent", raw) : th.fg("text", raw);
 			lines.push(truncateToWidth(label, width));
+		}
+
+		const enabled = this.enabledList();
+		const visualEnabled = flattenEnabledByGroup(enabled, this.widgetGroups);
+		const previewLines = formatWidgetsPreviewLines(visualEnabled, {
+			...this.previewConfig,
+			widgets: visualEnabled,
+			...(this.widgetGroups ? { widgetGroups: { ...this.widgetGroups } } : {}),
+		});
+
+		lines.push("");
+		lines.push(th.fg("dim", "mock:"));
+		for (const line of previewLines) {
+			lines.push(th.fg("dim", truncateToWidth(`  ${line}`, width)));
 		}
 
 		if (this.rejectMessage) {
@@ -152,18 +179,42 @@ export class WidgetsSetupComponent {
 		this.cachedLines = undefined;
 	}
 
-	private commit(nextEnabled: string[], nextGroups: StatuslineConfig["widgetGroups"]): boolean {
-		if (!this.onChange(nextEnabled, nextGroups)) {
+	private enabledList(): string[] {
+		return flattenByGroup(this.order, this.widgetGroups).filter((id) => this.enabledSet.has(id));
+	}
+
+	private rebuildItems(): WidgetEditorItem[] {
+		return buildWidgetEditorItems(
+			[...this.enabledSet],
+			this.allWidgets,
+			this.widgetGroups,
+			this.order,
+		);
+	}
+
+	private commit(
+		nextOrder: string[],
+		nextEnabled: ReadonlySet<string>,
+		nextGroups: StatuslineConfig["widgetGroups"],
+	): boolean {
+		const enabled = flattenByGroup(nextOrder, nextGroups).filter((id) => nextEnabled.has(id));
+		if (!this.onChange(enabled, nextGroups)) {
 			this.rejectMessage = "Change was not saved";
 			this.bump();
 			return false;
 		}
-		this.enabledOrder = nextEnabled;
+		this.order = nextOrder;
+		this.enabledSet = new Set(nextEnabled);
 		this.widgetGroups = nextGroups;
-		this.items = buildWidgetEditorItems(this.enabledOrder, this.allWidgets);
+		this.items = this.rebuildItems();
 		this.rejectMessage = undefined;
 		this.bump();
 		return true;
+	}
+
+	private focusId(id: string): void {
+		const next = this.items.findIndex((item) => item.id === id);
+		if (next >= 0) this.selected = next;
 	}
 
 	private toggle(): void {
@@ -178,13 +229,12 @@ export class WidgetsSetupComponent {
 			return;
 		}
 
-		const nextEnabled = current.enabled
-			? this.enabledOrder.filter((id) => id !== current.id)
-			: [...this.enabledOrder, current.id];
+		const nextEnabled = new Set(this.enabledSet);
+		if (current.enabled) nextEnabled.delete(current.id);
+		else nextEnabled.add(current.id);
 
-		if (!this.commit(nextEnabled, this.widgetGroups)) return;
-		const next = this.items.findIndex((item) => item.id === current.id);
-		if (next >= 0) this.selected = next;
+		if (!this.commit(this.order, nextEnabled, this.widgetGroups)) return;
+		this.focusId(current.id);
 	}
 
 	private cycleGroup(): void {
@@ -192,31 +242,22 @@ export class WidgetsSetupComponent {
 		if (!current) return;
 		const id = current.id as WidgetId;
 		const group = resolveWidgetGroup(id, this.widgetGroups);
-		const nextGroup = nextWidgetGroup(group);
-		const nextGroups = withWidgetGroupOverride(this.widgetGroups, id, nextGroup);
-		if (!this.commit(this.enabledOrder, nextGroups)) return;
-		const next = this.items.findIndex((item) => item.id === id);
-		if (next >= 0) this.selected = next;
+		const nextGroups = withWidgetGroupOverride(this.widgetGroups, id, nextWidgetGroup(group));
+		if (!this.commit(this.order, this.enabledSet, nextGroups)) return;
+		this.focusId(id);
 	}
 
 	private move(delta: -1 | 1): void {
 		const current = this.items[this.selected];
-		if (!current?.enabled) {
-			this.rejectMessage = "Select an enabled widget to reorder";
-			this.bump();
-			return;
-		}
+		if (!current) return;
 
-		const index = this.enabledOrder.indexOf(current.id);
-		if (index < 0) return;
-		const swapped = swapEnabled(this.enabledOrder, index, delta);
-		if (!swapped) {
+		const moved = moveInGroups(this.order, this.widgetGroups, current.id, delta);
+		if (!moved) {
 			this.rejectMessage = undefined;
 			return;
 		}
-		if (!this.commit(swapped, this.widgetGroups)) return;
-		const next = this.items.findIndex((item) => item.id === current.id);
-		if (next >= 0) this.selected = next;
+		if (!this.commit(moved.order, this.enabledSet, moved.widgetGroups)) return;
+		this.focusId(current.id);
 	}
 
 	private bump(): void {
@@ -235,16 +276,4 @@ function dedupeEnabled(enabled: readonly string[], allWidgets: readonly string[]
 		out.push(id);
 	}
 	return out;
-}
-
-function swapEnabled(enabled: readonly string[], index: number, delta: -1 | 1): string[] | undefined {
-	const target = index + delta;
-	if (index < 0 || index >= enabled.length || target < 0 || target >= enabled.length) {
-		return undefined;
-	}
-	const next = [...enabled];
-	const current = next[index]!;
-	next[index] = next[target]!;
-	next[target] = current;
-	return next;
 }

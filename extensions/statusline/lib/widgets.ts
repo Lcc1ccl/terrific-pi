@@ -26,7 +26,7 @@ import {
 	thinkingLevelTone,
 	type SegmentContent,
 } from "./format.ts";
-import { formatWidgetSeparator, stripTerminalControls } from "./render.ts";
+import { formatWidgetSeparator, groupSegmentsBySemantics, stripTerminalControls } from "./render.ts";
 import type {
 	RunState,
 	StatusSnapshot,
@@ -148,15 +148,30 @@ export function formatWidgetsPreview(
 	enabled: readonly string[],
 	config: StatuslineConfig = DEFAULT_CONFIG,
 ): string {
+	return formatWidgetsPreviewLines(enabled, config).join(" / ");
+}
+
+/** Mock preview lines using PREVIEW_SNAPSHOT so empty live data still shows chrome. */
+export function formatWidgetsPreviewLines(
+	enabled: readonly string[],
+	config: StatuslineConfig = DEFAULT_CONFIG,
+): string[] {
 	const widgets = enabled.filter((id): id is WidgetId => typeof id === "string");
-	if (widgets.length === 0) return "(none)";
-	const segments = buildWidgetSegments(PREVIEW_SNAPSHOT, {
+	if (widgets.length === 0) return ["(none)"];
+	const previewConfig: StatuslineConfig = {
 		...config,
-		widgets,
-	});
-	return segments
-		.map((segment) => segment.text)
-		.join(formatWidgetSeparator(config.spacing, config.separator ?? "dot")) || "(empty)";
+		widgets: [...widgets],
+		...(config.widgetGroups ? { widgetGroups: { ...config.widgetGroups } } : {}),
+	};
+	const segments = buildWidgetSegments(PREVIEW_SNAPSHOT, previewConfig);
+	const sep = formatWidgetSeparator(previewConfig.spacing, previewConfig.separator ?? "dot");
+	if (segments.length === 0) return ["(empty)"];
+	if (previewConfig.layout !== "stacked") {
+		return [segments.map((segment) => segment.text).join(sep)];
+	}
+	const groups = groupSegmentsBySemantics(segments, previewConfig);
+	if (groups.length === 0) return ["(empty)"];
+	return groups.map((group) => group.map((segment) => segment.text).join(sep));
 }
 
 export function buildWidgetSegments(snapshot: StatusSnapshot, config: StatuslineConfig): WidgetSegment[] {

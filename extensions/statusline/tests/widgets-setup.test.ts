@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 import { DEFAULT_CONFIG } from "../lib/config.ts";
 import { widgetEditorAction } from "../lib/configure.ts";
-import { formatWidgetsPreview } from "../lib/widgets.ts";
+import { formatWidgetsPreview, formatWidgetsPreviewLines } from "../lib/widgets.ts";
 
 describe("formatWidgetsPreview", () => {
 	it("renders sample segments for enabled widgets", () => {
@@ -30,6 +30,29 @@ describe("formatWidgetsPreview", () => {
 
 	it("returns none when empty", () => {
 		assert.equal(formatWidgetsPreview([]), "(none)");
+	});
+
+	it("mock preview still shows optional widgets with sample data", () => {
+		const lines = formatWidgetsPreviewLines(
+			["quota", "environment", "toolActivity", "mode", "cost"],
+			{ ...DEFAULT_CONFIG, iconMode: "plain", toolActivityMode: "detailed" },
+		);
+		const joined = lines.join(" ");
+		assert.match(joined, /usage|5h/);
+		assert.match(joined, /context files|skills/);
+		assert.match(joined, /Read|ok/);
+		assert.match(joined, /EDIT/);
+		assert.match(joined, /\$0\.42/);
+	});
+
+	it("stacked mock preview returns one line per partition with data", () => {
+		const lines = formatWidgetsPreviewLines(
+			["path", "tokens", "session", "state"],
+			{ ...DEFAULT_CONFIG, layout: "stacked", iconMode: "plain" },
+		);
+		assert.ok(lines.length >= 2);
+		assert.match(lines[0]!, /proj|~/);
+		assert.match(lines.join(" "), /in |Ready|session/);
 	});
 });
 

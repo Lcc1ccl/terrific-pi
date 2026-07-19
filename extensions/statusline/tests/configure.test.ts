@@ -4,9 +4,12 @@ import { describe, it } from "node:test";
 import {
 	buildWidgetEditorItems,
 	enabledFromEditorItems,
+	flattenEnabledByGroup,
 	formatConfigSummary,
 	formatSettingChoices,
 	moveEditorItem,
+	moveEnabledInGroups,
+	moveInGroups,
 	moveWidget,
 	parseContextBarWidth,
 	parseWidgetSpacing,
@@ -77,15 +80,54 @@ describe("swapAdjacent", () => {
 describe("widget editor items", () => {
 	const catalog = ["path", "model", "cost", "state"] as const;
 
-	it("keeps free config order: enabled first, then disabled catalog order", () => {
+	it("lists all widgets by partition (enabled flag independent of order)", () => {
 		const items = buildWidgetEditorItems(["cost", "path"], catalog);
+		// order: cost, path, model, state → project: path, model · usage: cost · activity: state
 		assert.deepEqual(items, [
-			{ id: "cost", enabled: true },
 			{ id: "path", enabled: true },
 			{ id: "model", enabled: false },
+			{ id: "cost", enabled: true },
 			{ id: "state", enabled: false },
 		]);
-		assert.deepEqual(enabledFromEditorItems(items), ["cost", "path"]);
+		assert.deepEqual(enabledFromEditorItems(items), ["path", "cost"]);
+	});
+
+	it("moves disabled widgets across partitions too", () => {
+		// Full order includes disabled model between path and tokens visually after group flatten.
+		const order = ["path", "model", "tokens", "state"];
+		const moved = moveInGroups(order, undefined, "model", 1);
+		assert.ok(moved);
+		assert.equal(moved!.widgetGroups?.model, "usage");
+		assert.deepEqual(moved!.order, ["path", "model", "tokens", "state"]);
+	});
+
+	it("crosses partitions landing on the near edge of the destination section", () => {
+		const movedRight = moveEnabledInGroups(["path", "model", "tokens", "state"], undefined, "model", 1);
+		assert.ok(movedRight);
+		// path, model | tokens | state → path | model, tokens | state (first of next section)
+		assert.deepEqual(movedRight!.enabled, ["path", "model", "tokens", "state"]);
+		assert.equal(movedRight!.widgetGroups?.model, "usage");
+		assert.deepEqual(
+			flattenEnabledByGroup(movedRight!.enabled, movedRight!.widgetGroups),
+			["path", "model", "tokens", "state"],
+		);
+
+		const movedLeft = moveEnabledInGroups(["path", "model", "tokens", "state"], undefined, "tokens", -1);
+		assert.ok(movedLeft);
+		// tokens enters project as last: path, model, tokens | state
+		assert.deepEqual(movedLeft!.enabled, ["path", "model", "tokens", "state"]);
+		assert.equal(movedLeft!.widgetGroups?.tokens, "project");
+		assert.deepEqual(
+			flattenEnabledByGroup(movedLeft!.enabled, movedLeft!.widgetGroups),
+			["path", "model", "tokens", "state"],
+		);
+	});
+
+	it("swaps with the neighbor inside the same partition", () => {
+		const moved = moveEnabledInGroups(["path", "model", "tokens"], undefined, "path", 1);
+		assert.ok(moved);
+		assert.deepEqual(moved!.enabled, ["model", "path", "tokens"]);
+		assert.equal(moved!.widgetGroups, undefined);
 	});
 
 	it("toggles and refuses disabling the last enabled widget", () => {
