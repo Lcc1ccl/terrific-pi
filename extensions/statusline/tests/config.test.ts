@@ -40,7 +40,8 @@ describe("mergeStatuslineConfig", () => {
 		assert.equal(DEFAULT_CONFIG.widgets.includes("quota"), false);
 		assert.equal(DEFAULT_CONFIG.widgets.includes("environment"), false);
 		assert.equal(DEFAULT_CONFIG.widgets.includes("toolActivity"), false);
-		assert.equal(DEFAULT_CONFIG.toolActivityMode, "detailed");
+		assert.equal(DEFAULT_CONFIG.toolActivityMode, "compact");
+		assert.equal(DEFAULT_CONFIG.widgets.includes("mode"), true);
 		assert.equal(WIDGET_IDS.includes("auxUsage" as never), false);
 	});
 
@@ -74,7 +75,8 @@ describe("mergeStatuslineConfig", () => {
 
 	it("registers fast as a dedicated widget and enables it by default", () => {
 		assert.equal(WIDGET_IDS.indexOf("fast"), WIDGET_IDS.indexOf("mode") + 1);
-		assert.equal(DEFAULT_CONFIG.widgets.indexOf("fast"), DEFAULT_CONFIG.widgets.indexOf("model") + 1);
+		assert.equal(DEFAULT_CONFIG.widgets.indexOf("mode"), DEFAULT_CONFIG.widgets.indexOf("model") + 1);
+		assert.equal(DEFAULT_CONFIG.widgets.indexOf("fast"), DEFAULT_CONFIG.widgets.indexOf("mode") + 1);
 	});
 
 	it("filters unknown widgets and applies known options", () => {
@@ -228,7 +230,7 @@ describe("saveStatuslineConfig", () => {
 			minimal: true,
 			separator: "bar",
 			spacing: 2,
-			toolActivityMode: "detailed",
+			toolActivityMode: "compact",
 		});
 		assert.deepEqual(loadConfig(nested), {
 			widgets: ["path", "cost"],
@@ -239,7 +241,7 @@ describe("saveStatuslineConfig", () => {
 			minimal: true,
 			separator: "bar",
 			spacing: 2,
-			toolActivityMode: "detailed",
+			toolActivityMode: "compact",
 		});
 	});
 });

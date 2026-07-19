@@ -2,14 +2,13 @@ import { isKeyRelease, truncateToWidth, visibleWidth } from "@earendil-works/pi-
 
 import {
 	buildWidgetEditorItems,
-	enabledFromEditorItems,
-	moveEditorItem,
 	toggleEditorItem,
 	widgetEditorAction,
+	widgetGroupOf,
 	type WidgetEditorBinding,
 	type WidgetEditorItem,
 } from "./configure.ts";
-import type { StatuslineConfig } from "./types.ts";
+import type { StatuslineConfig, WidgetGroup } from "./types.ts";
 import { formatWidgetsPreview } from "./widgets.ts";
 
 export type WidgetsSetupTheme = {
@@ -33,15 +32,21 @@ export type WidgetsSetupOptions = {
 
 /**
  * Codex-style multi-select + reorder:
- * Space toggle · ↑/↓ select · ←/→ move · Enter done · Esc back
+ * Space toggle · ↑/↓ select · ←/→ move enabled · Enter done · Esc back
+ *
+ * `enabledOrder` is the source of truth for config widget order.
+ * Grouped `items` are a display/edit projection and must not rewrite that order on toggle.
  */
 export class WidgetsSetupComponent {
 	private items: WidgetEditorItem[];
+	/** Config order of enabled widgets (not group display order). */
+	private enabledOrder: string[];
 	private selected = 0;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
 	private rejectMessage?: string;
 	private readonly title: string;
+	private readonly allWidgets: readonly string[];
 	private readonly theme: WidgetsSetupTheme;
 	private readonly previewConfig: StatuslineConfig;
 	private readonly keybindings: WidgetsSetupOptions["keybindings"];
@@ -52,7 +57,9 @@ export class WidgetsSetupComponent {
 
 	constructor(options: WidgetsSetupOptions) {
 		this.title = options.title;
-		this.items = buildWidgetEditorItems(options.enabled, options.allWidgets);
+		this.allWidgets = options.allWidgets;
+		this.enabledOrder = dedupeEnabled(options.enabled, options.allWidgets);
+		this.items = buildWidgetEditorItems(this.enabledOrder, options.allWidgets);
 		this.theme = options.theme;
 		this.previewConfig = options.previewConfig;
 		this.keybindings = options.keybindings;
@@ -71,7 +78,7 @@ export class WidgetsSetupComponent {
 				this.done(undefined);
 				return;
 			case "done":
-				this.done(enabledFromEditorItems(this.items));
+				this.done([...this.enabledOrder]);
 				return;
 			case "up":
 			case "down": {
@@ -100,15 +107,22 @@ export class WidgetsSetupComponent {
 		}
 
 		const th = this.theme;
-		const enabled = enabledFromEditorItems(this.items);
 		const lines: string[] = [
 			th.fg("accent", this.title),
-			th.fg("dim", "Space toggle · ↑/↓ select · ←/→ move · Enter done · Esc back"),
+			th.fg("dim", "Space toggle · ↑/↓ select · ←/→ reorder enabled · Enter done · Esc back"),
+			th.fg("dim", "Groups: project · usage · environment · activity"),
 			"",
 		];
 
+		let lastGroup: WidgetGroup | undefined;
 		for (let i = 0; i < this.items.length; i++) {
 			const item = this.items[i]!;
+			const group = widgetGroupOf(item.id);
+			if (group !== lastGroup) {
+				if (lastGroup !== undefined) lines.push("");
+				lines.push(th.fg("dim", `— ${group} —`));
+				lastGroup = group;
+			}
 			const cursor = i === this.selected ? "›" : " ";
 			const box = item.enabled ? "[x]" : "[ ]";
 			const raw = `${cursor} ${box} ${item.id}`;
@@ -117,8 +131,8 @@ export class WidgetsSetupComponent {
 		}
 
 		lines.push("");
-		lines.push(th.fg("dim", `enabled: ${enabled.join(" · ") || "(none)"}`));
-		lines.push(th.fg("dim", `preview: ${formatWidgetsPreview(enabled, this.previewConfig)}`));
+		lines.push(th.fg("dim", `enabled: ${this.enabledOrder.join(" · ") || "(none)"}`));
+		lines.push(th.fg("dim", `preview: ${formatWidgetsPreview(this.enabledOrder, this.previewConfig)}`));
 		lines.push(th.fg("dim", "Ⅰ after tokens/cost = auxiliary usage (dim, not a separate widget)"));
 		if (this.rejectMessage) {
 			lines.push(th.fg("warning", this.rejectMessage));
@@ -137,38 +151,63 @@ export class WidgetsSetupComponent {
 	}
 
 	private toggle(): void {
-		const result = toggleEditorItem(this.items, this.selected);
-		if (!result.ok) {
-			this.rejectMessage = result.error;
-			this.onReject?.(result.error);
+		const current = this.items[this.selected];
+		if (!current) return;
+
+		// Validate via shared toggle helper (last-widget guard).
+		const projected = toggleEditorItem(this.items, this.selected);
+		if (!projected.ok) {
+			this.rejectMessage = projected.error;
+			this.onReject?.(projected.error);
 			this.bump();
 			return;
 		}
-		const enabled = enabledFromEditorItems(result.value);
-		if (!this.onChange(enabled)) {
+
+		let nextEnabled: string[];
+		if (current.enabled) {
+			nextEnabled = this.enabledOrder.filter((id) => id !== current.id);
+		} else {
+			nextEnabled = [...this.enabledOrder, current.id];
+		}
+
+		if (!this.onChange(nextEnabled)) {
 			this.rejectMessage = "Change was not saved";
 			this.bump();
 			return;
 		}
-		this.items = result.value;
+
+		this.enabledOrder = nextEnabled;
+		this.items = buildWidgetEditorItems(this.enabledOrder, this.allWidgets);
+		const next = this.items.findIndex((item) => item.id === current.id);
+		if (next >= 0) this.selected = next;
 		this.rejectMessage = undefined;
 		this.bump();
 	}
 
 	private move(delta: -1 | 1): void {
-		const result = moveEditorItem(this.items, this.selected, delta);
-		if (!result.ok) {
+		const current = this.items[this.selected];
+		if (!current?.enabled) {
+			this.rejectMessage = "Select an enabled widget to reorder";
+			this.bump();
+			return;
+		}
+
+		const index = this.enabledOrder.indexOf(current.id);
+		if (index < 0) return;
+		const swapped = swapEnabled(this.enabledOrder, index, delta);
+		if (!swapped) {
 			this.rejectMessage = undefined;
 			return;
 		}
-		const enabled = enabledFromEditorItems(result.value.items);
-		if (!this.onChange(enabled)) {
+		if (!this.onChange(swapped)) {
 			this.rejectMessage = "Change was not saved";
 			this.bump();
 			return;
 		}
-		this.items = result.value.items;
-		this.selected = result.value.index;
+		this.enabledOrder = swapped;
+		this.items = buildWidgetEditorItems(this.enabledOrder, this.allWidgets);
+		const next = this.items.findIndex((item) => item.id === current.id);
+		if (next >= 0) this.selected = next;
 		this.rejectMessage = undefined;
 		this.bump();
 	}
@@ -177,4 +216,28 @@ export class WidgetsSetupComponent {
 		this.invalidate();
 		this.requestRender();
 	}
+}
+
+function dedupeEnabled(enabled: readonly string[], allWidgets: readonly string[]): string[] {
+	const allSet = new Set(allWidgets);
+	const seen = new Set<string>();
+	const out: string[] = [];
+	for (const id of enabled) {
+		if (!allSet.has(id) || seen.has(id)) continue;
+		seen.add(id);
+		out.push(id);
+	}
+	return out;
+}
+
+function swapEnabled(enabled: readonly string[], index: number, delta: -1 | 1): string[] | undefined {
+	const target = index + delta;
+	if (index < 0 || index >= enabled.length || target < 0 || target >= enabled.length) {
+		return undefined;
+	}
+	const next = [...enabled];
+	const current = next[index]!;
+	next[index] = next[target]!;
+	next[target] = current;
+	return next;
 }

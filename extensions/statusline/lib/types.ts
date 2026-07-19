@@ -65,6 +65,14 @@ export interface SegmentPart {
 
 export type WidgetGroup = "project" | "usage" | "environment" | "activity";
 
+/** Display / stacked-line order for widget groups. */
+export const WIDGET_GROUP_ORDER: readonly WidgetGroup[] = [
+	"project",
+	"usage",
+	"environment",
+	"activity",
+] as const;
+
 /** Semantic groups for stacked layout. session/mode share environment line but stay independent widgets. */
 export const WIDGET_GROUPS: Record<WidgetId, WidgetGroup> = {
 	path: "project",

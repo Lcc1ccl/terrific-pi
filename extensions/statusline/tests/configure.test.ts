@@ -77,15 +77,17 @@ describe("swapAdjacent", () => {
 describe("widget editor items", () => {
 	const catalog = ["path", "model", "cost", "state"] as const;
 
-	it("puts enabled widgets first in config order", () => {
+	it("groups by semantics with enabled config order inside each group", () => {
 		const items = buildWidgetEditorItems(["cost", "path"], catalog);
+		// project: path(on), model(off) · usage: cost(on) · activity: state(off)
 		assert.deepEqual(items, [
-			{ id: "cost", enabled: true },
 			{ id: "path", enabled: true },
 			{ id: "model", enabled: false },
+			{ id: "cost", enabled: true },
 			{ id: "state", enabled: false },
 		]);
-		assert.deepEqual(enabledFromEditorItems(items), ["cost", "path"]);
+		// Projection order is group-based; config order is owned by WidgetsSetupComponent.enabledOrder.
+		assert.deepEqual(enabledFromEditorItems(items), ["path", "cost"]);
 	});
 
 	it("toggles and refuses disabling the last enabled widget", () => {
@@ -277,9 +279,10 @@ describe("setting menus", () => {
 			minimal: false,
 			separator: "dot",
 			spacing: 1,
-			toolActivityMode: "detailed",
+			toolActivityMode: "compact",
 		};
-		const choices = ["Layout", "Done"];
+		const mainChoices = ["Appearance", "Done"];
+		const appearanceChoices = ["Layout", "Back"];
 		let nestedItems: string[] | undefined;
 
 		await runStatuslineConfigurator({
@@ -289,8 +292,9 @@ describe("setting menus", () => {
 			reloadConfig: () => ({ ok: true, value: config }),
 			resetConfig: () => ({ ok: true, value: undefined }),
 			ui: {
-				selectMain: async () => choices.shift(),
-				select: async (_title, items) => {
+				selectMain: async () => mainChoices.shift(),
+				select: async (title, items) => {
+					if (title.startsWith("Appearance")) return appearanceChoices.shift();
 					nestedItems = items;
 					return undefined;
 				},
@@ -305,9 +309,9 @@ describe("setting menus", () => {
 	});
 });
 
-describe("widget separator menu", () => {
-	it("places separator next to spacing and applies the selected style", async () => {
-		const config: StatuslineConfig = {
+describe("appearance submenu", () => {
+	it("groups appearance settings and applies separator from the submenu", async () => {
+		let config: StatuslineConfig = {
 			widgets: ["path"],
 			layout: "single",
 			iconMode: "emoji",
@@ -316,17 +320,18 @@ describe("widget separator menu", () => {
 			minimal: false,
 			separator: "dot",
 			spacing: 1,
-			toolActivityMode: "detailed",
+			toolActivityMode: "compact",
 		};
-		const choices = ["Widget separator", "Done"];
+		const mainChoices = ["Appearance", "Done"];
+		const appearanceChoices = ["Widget separator", "Back"];
 		let mainItems: string[] = [];
-		let selected: StatuslineConfig | undefined;
+		let appearanceItems: string[] = [];
 
 		await runStatuslineConfigurator({
 			getConfig: () => config,
 			getConfigPath: () => "/tmp/statusline.json",
 			applyConfig: (next) => {
-				selected = next;
+				config = next;
 				return { ok: true, value: undefined };
 			},
 			reloadConfig: () => ({ ok: true, value: config }),
@@ -334,9 +339,16 @@ describe("widget separator menu", () => {
 			ui: {
 				selectMain: async (_title, items) => {
 					mainItems = items;
-					return choices.shift();
+					return mainChoices.shift();
 				},
-				select: async (title) => title.includes("· / │") ? "bar" : undefined,
+				select: async (title, items) => {
+					if (title.startsWith("Appearance")) {
+						appearanceItems = items;
+						return appearanceChoices.shift();
+					}
+					if (title.includes("Widget separator")) return "bar";
+					return undefined;
+				},
 				input: async () => undefined,
 				editWidgets: async () => undefined,
 				confirm: async () => true,
@@ -344,8 +356,22 @@ describe("widget separator menu", () => {
 			},
 		}, ["path"]);
 
-		assert.equal(mainItems.indexOf("Widget separator") + 1, mainItems.indexOf("Widget spacing"));
-		assert.equal(selected?.separator, "bar");
+		assert.deepEqual(mainItems, [
+			"Widgets",
+			"Appearance",
+			"Context & usage",
+			"Show config",
+			"Reload from file",
+			"Reset to defaults",
+			"Done",
+		]);
+		assert.ok(appearanceItems.includes("Widget separator"));
+		assert.ok(appearanceItems.includes("Minimal profile"));
+		assert.equal(
+			appearanceItems.indexOf("Widget separator") + 1,
+			appearanceItems.indexOf("Widget spacing"),
+		);
+		assert.equal(config.separator, "bar");
 	});
 });
 
@@ -404,9 +430,10 @@ describe("widget spacing prompt", () => {
 			minimal: false,
 			separator: "dot",
 			spacing: 1,
-			toolActivityMode: "detailed",
+			toolActivityMode: "compact",
 		};
-		const choices = ["Widget spacing", "Done"];
+		const mainChoices = ["Appearance", "Done"];
+		const appearanceChoices = ["Widget spacing", "Back"];
 		let inputTitle: string | undefined;
 		let inputValue: string | undefined;
 
@@ -417,8 +444,11 @@ describe("widget spacing prompt", () => {
 			reloadConfig: () => ({ ok: true, value: config }),
 			resetConfig: () => ({ ok: true, value: undefined }),
 			ui: {
-				selectMain: async () => choices.shift(),
-				select: async () => undefined,
+				selectMain: async () => mainChoices.shift(),
+				select: async (title) => {
+					if (title.startsWith("Appearance")) return appearanceChoices.shift();
+					return undefined;
+				},
 				input: async (title, value) => {
 					inputTitle = title;
 					inputValue = value;
@@ -430,7 +460,10 @@ describe("widget spacing prompt", () => {
 			},
 		}, ["path"]);
 
-		assert.equal(inputTitle, "Widget spacing per side (default 1, min 0, max 4)");
+		assert.equal(
+			inputTitle,
+			"Widget spacing — spaces on each side of separator (default 1, min 0, max 4)",
+		);
 		assert.equal(inputValue, "1");
 	});
 });
@@ -446,9 +479,10 @@ describe("context bar width prompt", () => {
 			minimal: false,
 			separator: "dot",
 			spacing: 1,
-			toolActivityMode: "detailed",
+			toolActivityMode: "compact",
 		};
-		const choices = ["Context bar width", "Done"];
+		const mainChoices = ["Context & usage", "Done"];
+		const usageChoices = ["Context bar width", "Back"];
 		let inputTitle: string | undefined;
 		let inputValue: string | undefined;
 
@@ -459,8 +493,11 @@ describe("context bar width prompt", () => {
 			reloadConfig: () => ({ ok: true, value: config }),
 			resetConfig: () => ({ ok: true, value: undefined }),
 			ui: {
-				selectMain: async () => choices.shift(),
-				select: async () => undefined,
+				selectMain: async () => mainChoices.shift(),
+				select: async (title) => {
+					if (title.startsWith("Context & usage")) return usageChoices.shift();
+					return undefined;
+				},
 				input: async (title, value) => {
 					inputTitle = title;
 					inputValue = value;
@@ -493,7 +530,8 @@ describe("minimal profile menu", () => {
 			spacing: 2,
 			toolActivityMode: "detailed",
 		};
-		const choices = ["Minimal profile", "Done"];
+		const mainChoices = ["Appearance", "Done"];
+		const appearanceChoices = ["Minimal profile", "Back"];
 		let mainItems: string[] = [];
 
 		await runStatuslineConfigurator({
@@ -508,9 +546,13 @@ describe("minimal profile menu", () => {
 			ui: {
 				selectMain: async (_title, items) => {
 					mainItems = items;
-					return choices.shift();
+					return mainChoices.shift();
 				},
-				select: async (title) => title.includes("Minimal profile") ? "on" : undefined,
+				select: async (title) => {
+					if (title.startsWith("Appearance")) return appearanceChoices.shift();
+					if (title.includes("Minimal profile")) return "on";
+					return undefined;
+				},
 				input: async () => undefined,
 				editWidgets: async () => undefined,
 				confirm: async () => true,
@@ -518,7 +560,8 @@ describe("minimal profile menu", () => {
 			},
 		}, ["path"]);
 
-		assert.ok(mainItems.includes("Minimal profile"));
+		assert.ok(mainItems.includes("Appearance"));
+		assert.equal(mainItems.includes("Minimal profile"), false);
 		assert.equal(mainItems.includes("Minimal mode"), false);
 		assert.deepEqual(config.widgets, [
 			"path",
@@ -567,7 +610,8 @@ describe("minimal profile menu", () => {
 			spacing: 1,
 			toolActivityMode: "compact",
 		};
-		const choices = ["Minimal profile", "Done"];
+		const mainChoices = ["Appearance", "Done"];
+		const appearanceChoices = ["Minimal profile", "Back"];
 
 		await runStatuslineConfigurator({
 			getConfig: () => config,
@@ -579,8 +623,12 @@ describe("minimal profile menu", () => {
 			reloadConfig: () => ({ ok: true, value: config }),
 			resetConfig: () => ({ ok: true, value: undefined }),
 			ui: {
-				selectMain: async () => choices.shift(),
-				select: async (title) => title.includes("Minimal profile") ? "off" : undefined,
+				selectMain: async () => mainChoices.shift(),
+				select: async (title) => {
+					if (title.startsWith("Appearance")) return appearanceChoices.shift();
+					if (title.includes("Minimal profile")) return "off";
+					return undefined;
+				},
 				input: async () => undefined,
 				editWidgets: async () => undefined,
 				confirm: async () => true,

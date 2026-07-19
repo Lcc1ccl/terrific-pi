@@ -53,6 +53,7 @@ export const DEFAULT_CONFIG: StatuslineConfig = {
 		"path",
 		"session",
 		"model",
+		"mode",
 		"fast",
 		"tokens",
 		"cache",
@@ -71,7 +72,8 @@ export const DEFAULT_CONFIG: StatuslineConfig = {
 	minimal: false,
 	separator: "dot",
 	spacing: DEFAULT_WIDGET_SPACING,
-	toolActivityMode: "detailed",
+	// Prefer compact buckets if/when toolActivity is enabled later.
+	toolActivityMode: "compact",
 };
 
 /**

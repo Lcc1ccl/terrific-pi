@@ -346,6 +346,7 @@ describe("buildWidgetSegments", () => {
 			{
 				...DEFAULT_CONFIG,
 				widgets: ["quota", "environment", "toolActivity"],
+				toolActivityMode: "detailed",
 			},
 		);
 		assert.deepEqual(

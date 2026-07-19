@@ -18,8 +18,10 @@ import type {
 	StatuslineLayout,
 	StatuslineSeparator,
 	ToolActivityMode,
+	WidgetGroup,
 	WidgetId,
 } from "./types.ts";
+import { WIDGET_GROUP_ORDER, WIDGET_GROUPS } from "./types.ts";
 
 export type MutationResult<T> =
 	| { ok: true; value: T }
@@ -108,24 +110,33 @@ export function swapAdjacent<T>(
 	return { items: next, index: target };
 }
 
-/** Enabled widgets first (config order), then disabled (catalog order). */
+/** Group widgets for the editor: project → usage → environment → activity. */
+export function widgetGroupOf(id: string): WidgetGroup {
+	return WIDGET_GROUPS[id as WidgetId] ?? "activity";
+}
+
+/**
+ * Build editor rows grouped by semantics.
+ * Within each group: enabled (config order) then disabled (catalog order).
+ */
 export function buildWidgetEditorItems(
 	enabled: readonly string[],
 	allWidgets: readonly string[],
 ): WidgetEditorItem[] {
 	const allSet = new Set(allWidgets);
-	const seen = new Set<string>();
+	const enabledOrder = enabled.filter((id, index) => allSet.has(id) && enabled.indexOf(id) === index);
+	const enabledSet = new Set(enabledOrder);
 	const items: WidgetEditorItem[] = [];
 
-	for (const id of enabled) {
-		if (!allSet.has(id) || seen.has(id)) continue;
-		seen.add(id);
-		items.push({ id: id as WidgetId, enabled: true });
-	}
-	for (const id of allWidgets) {
-		if (seen.has(id)) continue;
-		seen.add(id);
-		items.push({ id: id as WidgetId, enabled: false });
+	for (const group of WIDGET_GROUP_ORDER) {
+		for (const id of enabledOrder) {
+			if (widgetGroupOf(id) !== group) continue;
+			items.push({ id: id as WidgetId, enabled: true });
+		}
+		for (const id of allWidgets) {
+			if (enabledSet.has(id) || widgetGroupOf(id) !== group) continue;
+			items.push({ id: id as WidgetId, enabled: false });
+		}
 	}
 	return items;
 }
@@ -300,7 +311,7 @@ async function setLayout(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
 	const layout = await selectSetting(
 		deps,
-		"Layout",
+		"Layout — single line, or stacked HUD rows (project/usage/env/activity)",
 		["single", "stacked"] satisfies readonly StatuslineLayout[],
 		config.layout,
 		DEFAULT_CONFIG.layout,
@@ -317,7 +328,7 @@ async function setIconMode(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
 	const iconMode = await selectSetting(
 		deps,
-		"Icon mode",
+		"Icon mode — emoji glyphs, or plain text labels (bars/colors unchanged)",
 		["emoji", "plain"] satisfies readonly IconMode[],
 		config.iconMode,
 		DEFAULT_CONFIG.iconMode,
@@ -335,7 +346,7 @@ async function setWidgetSeparator(deps: ConfigureDeps): Promise<void> {
 	const current = config.separator ?? DEFAULT_CONFIG.separator;
 	const separator = await selectSetting(
 		deps,
-		"Widget separator (· / │)",
+		"Widget separator — between widgets only (· or │; inner pairs stay ·)",
 		["dot", "bar"] satisfies readonly StatuslineSeparator[],
 		current,
 		DEFAULT_CONFIG.separator,
@@ -444,7 +455,7 @@ async function setToolActivityMode(deps: ConfigureDeps): Promise<void> {
 async function setWidgetSpacing(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
 	const raw = await deps.ui.input(
-		`Widget spacing per side (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
+		`Widget spacing — spaces on each side of separator (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
 		String(config.spacing),
 	);
 	if (raw === undefined) return;
@@ -458,35 +469,24 @@ async function setWidgetSpacing(deps: ConfigureDeps): Promise<void> {
 	applyOrNotify(deps, { ...config, spacing: parsed.value }, `spacing: ${parsed.value}`);
 }
 
-export async function runStatuslineConfigurator(
-	deps: ConfigureDeps,
-	allWidgets: readonly WidgetId[],
-): Promise<void> {
+async function runAppearanceMenu(deps: ConfigureDeps): Promise<void> {
 	while (true) {
-		const config = deps.getConfig();
-		const configPath = deps.getConfigPath();
-		const choice = await deps.ui.selectMain(mainMenuTitle(config, configPath), [
-			"Widgets",
-			"Layout",
-			"Icon mode",
-			"Widget separator",
-			"Widget spacing",
-			"Minimal profile",
-			"Context mode",
-			"Context bar width",
-			"Tool activity mode",
-			"Show config",
-			"Reload from file",
-			"Reset to defaults",
-			"Done",
-		]);
-
-		if (!choice || choice === "Done") return;
-
+		const choice = await deps.ui.select(
+			[
+				"Appearance",
+				"layout · icons · separator · spacing · minimal profile",
+			].join("\n"),
+			[
+				"Layout",
+				"Icon mode",
+				"Widget separator",
+				"Widget spacing",
+				"Minimal profile",
+				"Back",
+			],
+		);
+		if (!choice || choice === "Back") return;
 		switch (choice) {
-			case "Widgets":
-				await editWidgetsLoop(deps, allWidgets);
-				break;
 			case "Layout":
 				await setLayout(deps);
 				break;
@@ -502,6 +502,28 @@ export async function runStatuslineConfigurator(
 			case "Minimal profile":
 				await setMinimalMode(deps);
 				break;
+			default:
+				break;
+		}
+	}
+}
+
+async function runContextUsageMenu(deps: ConfigureDeps): Promise<void> {
+	while (true) {
+		const choice = await deps.ui.select(
+			[
+				"Context & usage",
+				"percent mode · bar width · tool activity density",
+			].join("\n"),
+			[
+				"Context mode",
+				"Context bar width",
+				"Tool activity mode",
+				"Back",
+			],
+		);
+		if (!choice || choice === "Back") return;
+		switch (choice) {
 			case "Context mode":
 				await setContextMode(deps);
 				break;
@@ -510,6 +532,41 @@ export async function runStatuslineConfigurator(
 				break;
 			case "Tool activity mode":
 				await setToolActivityMode(deps);
+				break;
+			default:
+				break;
+		}
+	}
+}
+
+export async function runStatuslineConfigurator(
+	deps: ConfigureDeps,
+	allWidgets: readonly WidgetId[],
+): Promise<void> {
+	while (true) {
+		const config = deps.getConfig();
+		const configPath = deps.getConfigPath();
+		const choice = await deps.ui.selectMain(mainMenuTitle(config, configPath), [
+			"Widgets",
+			"Appearance",
+			"Context & usage",
+			"Show config",
+			"Reload from file",
+			"Reset to defaults",
+			"Done",
+		]);
+
+		if (!choice || choice === "Done") return;
+
+		switch (choice) {
+			case "Widgets":
+				await editWidgetsLoop(deps, allWidgets);
+				break;
+			case "Appearance":
+				await runAppearanceMenu(deps);
+				break;
+			case "Context & usage":
+				await runContextUsageMenu(deps);
 				break;
 			case "Show config":
 				deps.ui.notify(formatConfigSummary(config, configPath), "info");

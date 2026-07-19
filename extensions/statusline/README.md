@@ -37,6 +37,8 @@ Package defaults stay single-line emoji and do **not** enable the new widgets:
 ~/proj · session · model high ·  · 🔼 1.5K · 🔽 800 · 🎯 66.7% · $0.42 · Context [██████░░░░] 60% · 🏠 · +12 -3 · 🕒 12s / 1m45s · Ready
 ```
 
+(`mode` is enabled by default but only appears while `/mode` is non-default/active.)
+
 ## Install
 
 ```bash
@@ -67,6 +69,7 @@ Single-line layout follows the configured order exactly. Stacked layout uses can
     "path",
     "session",
     "model",
+    "mode",
     "fast",
     "tokens",
     "cache",
@@ -82,9 +85,12 @@ Single-line layout follows the configured order exactly. Stacked layout uses can
   "contextBarWidth": 10,
   "minimal": false,
   "separator": "dot",
-  "spacing": 1
+  "spacing": 1,
+  "toolActivityMode": "compact"
 }
 ```
+
+Package default is a single-line showcase (not the minimal profile). `mode`/`fast` render only while active. `toolActivityMode` defaults to `compact` so enabling `toolActivity` later stays dense.
 
 ### Minimal profile
 
@@ -255,14 +261,11 @@ These are account-level signals, not a guarantee of the current Pi session budge
 
 In TUI mode, `/statusline` opens a nested menu:
 
-- **Widgets**: `Space` toggle, configured select keys to navigate, configured cursor keys to move, Enter done
-- appearance: `layout`, `iconMode`, widget separator/spacing
-- **Minimal profile**: apply pi-core single/plain preset + abbreviated labels, or clear abbr labels only
-- `contextMode` (context/contextBar percent); `contextBarWidth` only matters when `contextBar` is enabled
-- `toolActivityMode` only matters when `toolActivity` is enabled
-- enum menus put the current value first and mark current/default values
-- numeric inputs are prefilled with the current value
+- **Widgets**: grouped by project / usage / environment / activity; `Space` toggle, ↑/↓ select, ←/→ reorder **enabled** widgets, Enter done
+- **Appearance**: layout, icon mode, separator, spacing, **Minimal profile**
+- **Context & usage**: contextMode, contextBarWidth (only if `contextBar` enabled), toolActivityMode (only if `toolActivity` enabled)
 - show / reload / confirmed reset config
+- enum menus put the current value first and mark current/default values; numeric inputs are prefilled
 
 Each successful change is atomically written to the config file and the footer refreshes. Invalid JSON is reported and is not overwritten by ordinary menu changes; use a successful reload or confirmed reset to clear that state.
 
