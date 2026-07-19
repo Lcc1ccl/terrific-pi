@@ -24,10 +24,15 @@ type BranchEntry = {
 };
 
 export interface AuxiliaryUsageTotals {
-	calls: number;
+	input: number;
+	output: number;
+	/** Unsplit totalTokens when provider only exposed a combined count. */
+	unsplit: number;
 	tokens: number;
-	cost?: number;
+	/** Sum of known aux costs; always present when > 0 even if some calls omit cost. */
+	cost: number;
 	hasUnknownUsage?: boolean;
+	hasUnknownCost?: boolean;
 }
 
 const AUXILIARY_USAGE_ENTRY_TYPE = "terrific-pi:auxiliary-usage-v1";
@@ -49,7 +54,15 @@ function finite(value: unknown): value is number {
 
 function canonicalAuxiliaryUsage(value: unknown): value is Record<string, unknown> & {
 	id: string;
-	usage?: { totalTokens: number; cost?: { total: number } };
+	status: string;
+	usage?: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		totalTokens: number;
+		cost?: { total: number };
+	};
 } {
 	if (!isRecord(value) || Object.keys(value).some((key) => !AUXILIARY_KEYS.has(key))) return false;
 	const usage = value.usage;
@@ -71,24 +84,57 @@ function canonicalAuxiliaryUsage(value: unknown): value is Record<string, unknow
 }
 
 export function aggregateAuxiliaryUsage(entries: readonly BranchEntry[]): AuxiliaryUsageTotals {
-	let calls = 0;
+	let input = 0;
+	let output = 0;
+	let unsplit = 0;
 	let tokens = 0;
 	let cost = 0;
-	let allCostsKnown = true;
 	let hasUnknownUsage = false;
+	let hasUnknownCost = false;
 	const seen = new Set<string>();
 	for (const entry of entries) {
 		if (entry.type !== "custom" || entry.customType !== AUXILIARY_USAGE_ENTRY_TYPE || !canonicalAuxiliaryUsage(entry.data)) continue;
 		if (seen.has(entry.data.id)) continue;
 		seen.add(entry.data.id);
-		calls += 1;
-		tokens += entry.data.usage?.totalTokens ?? 0;
-		if (!entry.data.usage) hasUnknownUsage = true;
-		const total = entry.data.usage?.cost?.total;
+		const usage = entry.data.usage;
+		if (!usage) {
+			if (entry.data.status === "ok") {
+				hasUnknownUsage = true;
+				hasUnknownCost = true;
+			}
+			continue;
+		}
+		tokens += usage.totalTokens;
+		// Keep unsplit totals neutral — do not pretend they are all input.
+		if (usage.input === 0 && usage.output === 0 && usage.totalTokens > 0) unsplit += usage.totalTokens;
+		else {
+			input += usage.input;
+			output += usage.output;
+		}
+		const total = usage.cost?.total;
 		if (typeof total === "number") cost += total;
-		else allCostsKnown = false;
+		else if (entry.data.status === "ok") hasUnknownCost = true;
 	}
-	return { calls, tokens, ...(allCostsKnown ? { cost } : {}), ...(hasUnknownUsage ? { hasUnknownUsage: true } : {}) };
+	return {
+		input,
+		output,
+		unsplit,
+		tokens,
+		cost,
+		...(hasUnknownUsage ? { hasUnknownUsage: true } : {}),
+		...(hasUnknownCost ? { hasUnknownCost: true } : {}),
+	};
+}
+
+export function hasAuxUsage(value: AuxiliaryUsageTotals | undefined): boolean {
+	if (!value) return false;
+	return value.input > 0
+		|| value.output > 0
+		|| value.unsplit > 0
+		|| value.tokens > 0
+		|| value.cost > 0
+		|| Boolean(value.hasUnknownUsage)
+		|| Boolean(value.hasUnknownCost);
 }
 
 export function aggregateSessionUsage(entries: readonly BranchEntry[]): SessionUsageTotals {

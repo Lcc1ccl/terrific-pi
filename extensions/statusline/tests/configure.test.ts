@@ -168,6 +168,7 @@ describe("formatConfigSummary", () => {
 			minimal: false,
 			separator: "dot",
 			spacing: 1,
+			toolActivityMode: "detailed",
 		};
 		const summary = formatConfigSummary(config, "/tmp/statusline.json");
 		assert.match(summary, /widgets: path, cost/);
@@ -176,6 +177,7 @@ describe("formatConfigSummary", () => {
 		assert.match(summary, /contextMode: remaining/);
 		assert.match(summary, /contextBarWidth: 10 \(default 10, min 4, max 40\)/);
 		assert.match(summary, /minimal: false/);
+		assert.match(summary, /toolActivityMode: detailed/);
 		assert.match(summary, /separator: dot \(·\)/);
 		assert.match(summary, /spacing: 1 \(default 1, min 0, max 4\)/);
 		assert.match(summary, /config: \/tmp\/statusline\.json/);
@@ -193,6 +195,7 @@ describe("main menu selector", () => {
 			minimal: false,
 			separator: "dot",
 			spacing: 1,
+			toolActivityMode: "detailed",
 		};
 		let mainCalls = 0;
 		let nestedCalls = 0;
@@ -235,6 +238,7 @@ describe("widget editor apply", () => {
 			minimal: false,
 			separator: "dot",
 			spacing: 1,
+			toolActivityMode: "detailed",
 		};
 		const choices = ["Widgets", "Done"];
 		let accepted: boolean | undefined;
@@ -273,6 +277,7 @@ describe("setting menus", () => {
 			minimal: false,
 			separator: "dot",
 			spacing: 1,
+			toolActivityMode: "detailed",
 		};
 		const choices = ["Layout", "Done"];
 		let nestedItems: string[] | undefined;
@@ -311,6 +316,7 @@ describe("widget separator menu", () => {
 			minimal: false,
 			separator: "dot",
 			spacing: 1,
+			toolActivityMode: "detailed",
 		};
 		const choices = ["Widget separator", "Done"];
 		let mainItems: string[] = [];
@@ -354,6 +360,7 @@ describe("reset confirmation", () => {
 			minimal: false,
 			separator: "dot",
 			spacing: 1,
+			toolActivityMode: "detailed",
 		};
 		const choices = ["Reset to defaults", "Done"];
 		let resets = 0;
@@ -397,6 +404,7 @@ describe("widget spacing prompt", () => {
 			minimal: false,
 			separator: "dot",
 			spacing: 1,
+			toolActivityMode: "detailed",
 		};
 		const choices = ["Widget spacing", "Done"];
 		let inputTitle: string | undefined;
@@ -438,6 +446,7 @@ describe("context bar width prompt", () => {
 			minimal: false,
 			separator: "dot",
 			spacing: 1,
+			toolActivityMode: "detailed",
 		};
 		const choices = ["Context bar width", "Done"];
 		let inputTitle: string | undefined;
@@ -463,7 +472,98 @@ describe("context bar width prompt", () => {
 			},
 		}, ["path"]);
 
-		assert.equal(inputTitle, "Context bar width (default 10, min 4, max 40)");
+		assert.equal(
+			inputTitle,
+			"Context bar width — only when contextBar enabled (default 10, min 4, max 40)",
+		);
 		assert.equal(inputValue, "10");
+	});
+});
+
+describe("minimal profile menu", () => {
+	it("writes the package minimal profile on on", async () => {
+		let config: StatuslineConfig = {
+			widgets: ["path", "session", "model", "state"],
+			layout: "stacked",
+			iconMode: "emoji",
+			contextMode: "remaining",
+			contextBarWidth: 10,
+			minimal: false,
+			separator: "bar",
+			spacing: 2,
+			toolActivityMode: "detailed",
+		};
+		const choices = ["Minimal profile", "Done"];
+		let mainItems: string[] = [];
+
+		await runStatuslineConfigurator({
+			getConfig: () => config,
+			getConfigPath: () => "/tmp/statusline.json",
+			applyConfig: (next) => {
+				config = next;
+				return { ok: true, value: undefined };
+			},
+			reloadConfig: () => ({ ok: true, value: config }),
+			resetConfig: () => ({ ok: true, value: undefined }),
+			ui: {
+				selectMain: async (_title, items) => {
+					mainItems = items;
+					return choices.shift();
+				},
+				select: async (title) => title.includes("Minimal profile") ? "on" : undefined,
+				input: async () => undefined,
+				editWidgets: async () => undefined,
+				confirm: async () => true,
+				notify: () => {},
+			},
+		}, ["path"]);
+
+		assert.ok(mainItems.includes("Minimal profile"));
+		assert.equal(mainItems.includes("Minimal mode"), false);
+		assert.deepEqual(config.widgets, ["model", "tokens", "context", "cost", "mode", "fast", "state"]);
+		assert.equal(config.layout, "single");
+		assert.equal(config.iconMode, "plain");
+		assert.equal(config.minimal, true);
+		assert.equal(config.contextMode, "used");
+		assert.equal(config.separator, "dot");
+		assert.equal(config.toolActivityMode, "compact");
+	});
+
+	it("clears dense labels only when turning off", async () => {
+		let config: StatuslineConfig = {
+			widgets: ["model", "tokens", "context", "cost", "mode", "fast", "state"],
+			layout: "single",
+			iconMode: "plain",
+			contextMode: "used",
+			contextBarWidth: 10,
+			minimal: true,
+			separator: "dot",
+			spacing: 1,
+			toolActivityMode: "compact",
+		};
+		const choices = ["Minimal profile", "Done"];
+
+		await runStatuslineConfigurator({
+			getConfig: () => config,
+			getConfigPath: () => "/tmp/statusline.json",
+			applyConfig: (next) => {
+				config = next;
+				return { ok: true, value: undefined };
+			},
+			reloadConfig: () => ({ ok: true, value: config }),
+			resetConfig: () => ({ ok: true, value: undefined }),
+			ui: {
+				selectMain: async () => choices.shift(),
+				select: async (title) => title.includes("Minimal profile") ? "off" : undefined,
+				input: async () => undefined,
+				editWidgets: async () => undefined,
+				confirm: async () => true,
+				notify: () => {},
+			},
+		}, ["path"]);
+
+		assert.equal(config.minimal, false);
+		assert.deepEqual(config.widgets, ["model", "tokens", "context", "cost", "mode", "fast", "state"]);
+		assert.equal(config.layout, "single");
 	});
 });

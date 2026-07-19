@@ -42,7 +42,7 @@ Tool calls execute sequentially. Invalid snapshots throw without changing memory
 
 ## HUD
 
-The Widget key is `terrific-pi:process-view` and uses Pi theme tokens. Its compact first line keeps the goal, completed/total task count, current step, and current-step active time together. Activity and the latest update use at most two additional lines.
+The Widget key is `terrific-pi:process-view` and uses Pi theme tokens. Its compact first line keeps the goal, completed/total task count, current step, and current-step active time together. Activity and the latest update use at most two additional lines. Auxiliary tools (for example `web_research`) promote their streaming `details.model` into the activity label so profile/model lives here instead of the statusline progress row.
 
 When Pi's native tool expansion is enabled, compact mode switches to a live panel with:
 

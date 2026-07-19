@@ -109,14 +109,9 @@ It never stages files, creates an upstream, force pushes, pushes tags, or rebase
 
 Each attempt appends `terrific-pi:auxiliary-usage-v1` to the current session branch. Entries contain model/task/status/usage metadata only, never prompts, responses, diffs, URLs, tool arguments, or error stacks.
 
-While a call is active, status key `auxiliary` renders as:
+While a call is active, status key `auxiliary` still tracks the task, but statusline progress ignores it so process-view can own live tool/model display (`web_research · provider/model` via tool updates).
 
-```text
-aux compression · gpt-5.4-mini
-aux 2 tasks
-```
-
-The statusline's optional `auxUsage` widget reads only the active branch and keeps auxiliary cost separate from main session cost.
+Branch-local usage is folded into the statusline main `tokens` / `cost` widgets as dim `Ⅰ` suffixes (no separate aux widget or call counter).
 
 ## Mode Semantics
 

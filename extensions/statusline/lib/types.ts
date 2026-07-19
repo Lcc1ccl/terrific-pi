@@ -3,6 +3,7 @@ export type RunState = "Ready" | "Working" | "Thinking" | "Waiting";
 export type StatuslineLayout = "single" | "stacked";
 export type IconMode = "emoji" | "plain";
 export type StatuslineSeparator = "dot" | "bar";
+export type ToolActivityMode = "detailed" | "compact";
 
 export type WidgetId =
 	| "path"
@@ -13,7 +14,6 @@ export type WidgetId =
 	| "tokens"
 	| "cache"
 	| "cost"
-	| "auxUsage"
 	| "context"
 	| "contextBar"
 	| "branch"
@@ -65,22 +65,21 @@ export interface SegmentPart {
 
 export type WidgetGroup = "project" | "usage" | "environment" | "activity";
 
-/** Semantic groups for stacked layout. */
+/** Semantic groups for stacked layout. session/mode share environment line but stay independent widgets. */
 export const WIDGET_GROUPS: Record<WidgetId, WidgetGroup> = {
 	path: "project",
-	session: "project",
 	model: "project",
 	branch: "project",
 	branchDiff: "project",
-	mode: "project",
 	fast: "project",
 	context: "usage",
 	contextBar: "usage",
 	tokens: "usage",
 	cache: "usage",
 	cost: "usage",
-	auxUsage: "usage",
 	quota: "usage",
+	session: "environment",
+	mode: "environment",
 	environment: "environment",
 	toolActivity: "activity",
 	progress: "activity",
@@ -92,7 +91,6 @@ export const WIDGET_GROUPS: Record<WidgetId, WidgetGroup> = {
 export const WIDGET_PRIORITY: Record<WidgetId, number> = {
 	session: 90,
 	cost: 85,
-	auxUsage: 58,
 	duration: 80,
 	cache: 70,
 	progress: 65,
@@ -160,12 +158,20 @@ export interface ToolActivity {
 	error: number;
 }
 
+/** Auxiliary usage folded into main tokens/cost widgets as dim Ⅰ suffixes. */
 export interface AuxiliaryUsageView {
-	calls: number;
+	input: number;
+	output: number;
+	/** Combined totals with no input/output split (e.g. research token count). */
+	unsplit: number;
+	/** Sum of totalTokens across aux calls. */
 	tokens: number;
-	cost?: number;
-	/** At least one call exposed no public token usage contract. */
+	/** Known aux cost sum (0 when none reported). */
+	cost: number;
+	/** At least one successful call exposed no public token usage contract. */
 	hasUnknownUsage?: boolean;
+	/** At least one successful call omitted cost while others may still report it. */
+	hasUnknownCost?: boolean;
 }
 
 export interface StatusSnapshot {
@@ -180,7 +186,7 @@ export interface StatusSnapshot {
 	fast?: string;
 	tokens: TokenTotals;
 	cost: number;
-	/** Task-scoped model usage, intentionally separate from main tokens and cost. */
+	/** Task-scoped auxiliary usage rendered as dim Ⅰ suffixes on tokens/cost. */
 	auxUsage?: AuxiliaryUsageView;
 	context?: ContextUsageView;
 	branch?: string | null;
@@ -205,6 +211,8 @@ export interface StatuslineConfig {
 	minimal: boolean;
 	separator: StatuslineSeparator;
 	spacing: number;
+	/** detailed = per-tool; compact = core_tools + aux_tools aggregates. */
+	toolActivityMode: ToolActivityMode;
 }
 
 export interface WidgetSegment {

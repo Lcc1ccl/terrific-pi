@@ -7,7 +7,9 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 ## Features
 
 - Configurable widget order, `·` / `│` separator, and numeric spacing
-- `layout: "single" | "stacked"` with canonical project/usage/environment/activity lines
+- `layout: "single" | "stacked"` with canonical project/usage/environment/activity lines (`session`/`mode` share the environment line)
+- **Minimal profile**: one-shot single/plain core widgets + dense labels (task detail stays in process-view)
+- `toolActivityMode: "detailed" | "compact"` for per-tool or core_tools/aux_tools aggregates
 - `iconMode: "emoji" | "plain"` (plugin-owned glyphs only; bars/colors unchanged)
 - Path (home-relative `~`)
 - Session name (when set via `/name`)
@@ -84,6 +86,37 @@ Single-line layout follows the configured order exactly. Stacked layout uses can
 }
 ```
 
+### Minimal profile
+
+`/statusline` → **Minimal profile** → `on` writes this package preset (not just a label toggle):
+
+```json
+{
+  "layout": "single",
+  "iconMode": "plain",
+  "widgets": ["model", "tokens", "context", "cost", "mode", "fast", "state"],
+  "contextMode": "used",
+  "contextBarWidth": 10,
+  "minimal": true,
+  "separator": "dot",
+  "spacing": 1,
+  "toolActivityMode": "compact"
+}
+```
+
+Example:
+
+```text
+model high · 1.5KⅠ 3.7K/800Ⅰ 900 · 40% · 0.42Ⅰ 0.03 · EDIT · fast · Ready
+```
+
+- **on**: overwrites widgets/layout/iconMode/contextMode/separator/spacing/toolActivityMode and sets `minimal: true`
+- **off**: sets `minimal: false` only (widgets stay as configured)
+- `minimal: true` alone (JSON) enables **dense labels** without changing the widget list:
+  - tokens → `1.5K/800` (no in/out icons)
+  - cost/cache/context → bare numbers; contextBar drops the `Context` prefix; duration drops `🕒`/`time`
+- mode/fast still render only while active; progress/toolActivity/quota/environment are intentionally omitted from the profile (process-view owns task HUD)
+
 ### Recommended stacked HUD
 
 ```json
@@ -102,7 +135,6 @@ Single-line layout follows the configured order exactly. Stacked layout uses can
     "tokens",
     "cache",
     "cost",
-    "auxUsage",
     "quota",
     "environment",
     "toolActivity",
@@ -122,7 +154,7 @@ Example stacked output:
 
 ```text
 ~/vendor/terrific-pi │ [Fable 5] │ gpt-5 high │ main │ +12 -3 │ EDIT │ fast
-Context [█░░░░░░░░░] 4% │ in 12.5K · out 3.2K │ cache 76.9% │ $0.42 │ aux 18.2K · $0.03 · 4 calls │ usage 5h [░░░░░░] 7% · 7d [██░░░░] 33%
+Context [█░░░░░░░░░] 4% │ in 12.5KⅠ 3.7K · out 3.2KⅠ 0.9K │ cache 76.9% │ $0.42Ⅰ $0.03 │ usage 5h [░░░░░░] 7% · 7d [██░░░░] 33%
 2 context files · 67 skills · 7 tools
 ok Read x6 · ok Bash x3 │ time 12.3s / 1m45s │ Ready
 ```
@@ -143,26 +175,27 @@ The footer follows the active pi theme rather than maintaining separate RGB pale
 | id | description |
 |----|-------------|
 | `path` | cwd with `~` abbreviation |
-| `session` | session display name |
+| `session` | session display name (stacked: environment line; still independently toggleable/orderable) |
 | `model` | model id + thinking level |
-| `mode` | active `/mode` badge |
+| `mode` | active `/mode` badge with quiet risk-ladder colors (ASK dim · PLAN muted · EDIT text · AUTO soft thinkingLow; stacked: environment line) |
 | `fast` | `` (or `fast` in plain mode) while `/fast` is on |
-| `tokens` | active-branch input/output totals, kept as one responsive unit |
+| `tokens` | active-branch input/output totals; auxiliary usage is a dim `Ⅰ` suffix (e.g. `12.5KⅠ 3.7K`) |
 | `cache` | active-branch cumulative cache hit rate |
-| `cost` | active-branch main-session cost USD |
-| `auxUsage` | branch-local auxiliary tokens, optional known cost, and call count; not auto-added to existing widget lists |
+| `cost` | active-branch main-session cost USD; auxiliary cost is a dim `Ⅰ` suffix |
 | `context` | text context percent |
 | `contextBar` | `Context` label + compact bar + percent |
 | `branch` | git branch (`main`/`master` → `🏠` in emoji mode) |
 | `branchDiff` | committed line diff from merge-base to `HEAD` vs default branch |
 | `quota` | native OAuth Claude/Codex usage windows, including loading/first-load error state |
 | `environment` | context files / skills / tools counts (low-contrast / dim) |
-| `toolActivity` | current agent-run per-tool active/success counts plus one aggregated error total; metadata-only `process_update` is excluded |
-| `progress` | extension status texts (excludes dedicated badges) |
+| `toolActivity` | current agent-run tool counts; `detailed` keeps per-tool rows, `compact` shows error total + `core_tools` (bash/edit/read/write) + `aux_tools` (web_research/aux_summarize/git_finalize); metadata-only `process_update` is excluded |
+| `progress` | extension status texts (excludes dedicated badges and `auxiliary`, which lives in process-view) |
 | `duration` | current-request / current-process active time (`🕒` prefix in emoji mode); includes tools and child pi processes, excludes idle between requests |
 | `state` | Ready / Thinking / Working / Waiting (tools, subagent, or process-view wait/block) |
 
-`toolActivity` resets at each agent run and counts business tools only. Process View's `process_update` publishes session metadata and is ignored at both tool start and tool end, preventing duplicate progress in the footer and editor-above HUD.
+`toolActivity` resets at each agent run and counts business tools only. Process View's `process_update` publishes session metadata and is ignored at both tool start and tool end, preventing duplicate progress in the footer and editor-above HUD. Set `toolActivityMode` via `/statusline` or `statusline.json`.
+
+Auxiliary model usage is **not** a separate widget. Branch-local `terrific-pi:auxiliary-usage-v1` input/output/cost fold into the main `tokens` and `cost` widgets as low-contrast `Ⅰ` suffixes. Unsplit totals (no in/out breakdown) append once after the pair; missing usage/cost shows `Ⅰ ?` / trailing `?`. Known partial cost is still shown. The widgets editor preview legend notes this. Legacy `auxUsage` widget ids in old configs are ignored.
 
 ### Quota eligibility (strict)
 
@@ -205,7 +238,10 @@ These are account-level signals, not a guarantee of the current Pi session budge
 In TUI mode, `/statusline` opens a nested menu:
 
 - **Widgets**: `Space` toggle, configured select keys to navigate, configured cursor keys to move, Enter done
-- set `layout`, `iconMode`, widget separator/spacing, `contextMode`, `contextBarWidth`, and `minimal`
+- appearance: `layout`, `iconMode`, widget separator/spacing
+- **Minimal profile**: apply core single/plain preset + dense labels, or clear dense labels only
+- `contextMode` (context/contextBar percent); `contextBarWidth` only matters when `contextBar` is enabled
+- `toolActivityMode` only matters when `toolActivity` is enabled
 - enum menus put the current value first and mark current/default values
 - numeric inputs are prefilled with the current value
 - show / reload / confirmed reset config
@@ -218,7 +254,7 @@ Each successful change is atomically written to the config file and the footer r
 |------|------------------|
 | path, model, context | live pi context; unavailable context renders as `Context ?` |
 | tokens, cache, cost | main assistant usage entries on the active session branch; refreshed after assistant completion and branch/tree changes |
-| auxUsage | validated `terrific-pi:auxiliary-usage-v1` entries on the active branch; refreshed immediately through the auxiliary usage event |
+| tokens/cost aux suffix | validated `terrific-pi:auxiliary-usage-v1` entries on the active branch; folded into main tokens/cost as dim `Ⅰ` values |
 | branch | pi footer data; branch diff is local Git committed-line data only and excludes the working tree |
 | mode, fast, progress | pi extension status map; dedicated mode/fast/ponytail statuses are excluded from progress, and terminal controls are removed |
 | duration, tools, environment | process-local event data; tool counts reset per agent run and are not restored from session history |

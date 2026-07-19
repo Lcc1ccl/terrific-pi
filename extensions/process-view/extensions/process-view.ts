@@ -390,6 +390,12 @@ export default function processView(pi: ExtensionAPI) {
 		refreshWidget(ctx);
 	});
 
+	pi.on("tool_execution_update", async (event, ctx) => {
+		if (activity.updateTool(event.toolCallId, event.toolName, event.partialResult)) {
+			refreshWidget(ctx);
+		}
+	});
+
 	pi.on("tool_execution_end", async (event, ctx) => {
 		activity.endTool(event.toolCallId, event.toolName, event.isError);
 		refreshWidget(ctx);

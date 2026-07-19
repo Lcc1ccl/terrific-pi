@@ -8,6 +8,7 @@ import type {
 	StatuslineConfig,
 	StatuslineLayout,
 	StatuslineSeparator,
+	ToolActivityMode,
 	WidgetId,
 } from "./types.ts";
 
@@ -20,7 +21,6 @@ export const WIDGET_IDS = [
 	"tokens",
 	"cache",
 	"cost",
-	"auxUsage",
 	"context",
 	"contextBar",
 	"branch",
@@ -71,7 +71,55 @@ export const DEFAULT_CONFIG: StatuslineConfig = {
 	minimal: false,
 	separator: "dot",
 	spacing: DEFAULT_WIDGET_SPACING,
+	toolActivityMode: "detailed",
 };
+
+/**
+ * True minimal footer profile: single-line plain chrome + short core widgets.
+ * mode/fast stay enabled (render only when active). Task detail stays in process-view.
+ */
+export const MINIMAL_WIDGETS: WidgetId[] = [
+	"model",
+	"tokens",
+	"context",
+	"cost",
+	"mode",
+	"fast",
+	"state",
+];
+
+export const MINIMAL_PROFILE: StatuslineConfig = {
+	widgets: [...MINIMAL_WIDGETS],
+	layout: "single",
+	iconMode: "plain",
+	contextMode: "used",
+	contextBarWidth: DEFAULT_CONTEXT_BAR_WIDTH,
+	minimal: true,
+	separator: "dot",
+	spacing: DEFAULT_WIDGET_SPACING,
+	toolActivityMode: "compact",
+};
+
+export function cloneMinimalProfile(): StatuslineConfig {
+	return {
+		...MINIMAL_PROFILE,
+		widgets: [...MINIMAL_PROFILE.widgets],
+	};
+}
+
+export function isMinimalProfile(config: StatuslineConfig): boolean {
+	return (
+		config.minimal
+		&& config.layout === MINIMAL_PROFILE.layout
+		&& config.iconMode === MINIMAL_PROFILE.iconMode
+		&& config.contextMode === MINIMAL_PROFILE.contextMode
+		&& config.separator === MINIMAL_PROFILE.separator
+		&& config.spacing === MINIMAL_PROFILE.spacing
+		&& config.toolActivityMode === MINIMAL_PROFILE.toolActivityMode
+		&& config.widgets.length === MINIMAL_PROFILE.widgets.length
+		&& config.widgets.every((id, index) => id === MINIMAL_PROFILE.widgets[index])
+	);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -109,6 +157,10 @@ function asWidgetSpacing(value: unknown): number | undefined {
 	return value >= MIN_WIDGET_SPACING && value <= MAX_WIDGET_SPACING ? value : undefined;
 }
 
+function asToolActivityMode(value: unknown): ToolActivityMode | undefined {
+	return value === "detailed" || value === "compact" ? value : undefined;
+}
+
 export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 	if (!isRecord(raw)) return { ...DEFAULT_CONFIG, widgets: [...DEFAULT_CONFIG.widgets] };
 
@@ -120,6 +172,7 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 	const minimal = typeof raw.minimal === "boolean" ? raw.minimal : undefined;
 	const separator = asSeparator(raw.separator);
 	const spacing = asWidgetSpacing(raw.spacing);
+	const toolActivityMode = asToolActivityMode(raw.toolActivityMode);
 
 	return {
 		widgets: widgets && widgets.length > 0 ? widgets : [...DEFAULT_CONFIG.widgets],
@@ -130,6 +183,7 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 		minimal: minimal ?? DEFAULT_CONFIG.minimal,
 		separator: separator ?? DEFAULT_CONFIG.separator,
 		spacing: spacing ?? DEFAULT_CONFIG.spacing,
+		toolActivityMode: toolActivityMode ?? DEFAULT_CONFIG.toolActivityMode,
 	};
 }
 
@@ -160,6 +214,7 @@ export function saveStatuslineConfig(path: string, config: StatuslineConfig): vo
 		minimal: config.minimal,
 		separator: config.separator ?? DEFAULT_CONFIG.separator,
 		spacing: config.spacing,
+		toolActivityMode: config.toolActivityMode ?? DEFAULT_CONFIG.toolActivityMode,
 	};
 	const directory = dirname(path);
 	const temporary = join(directory, `.${basename(path)}.${process.pid}.${Date.now()}.tmp`);

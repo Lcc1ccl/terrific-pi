@@ -119,6 +119,7 @@ export class WidgetsSetupComponent {
 		lines.push("");
 		lines.push(th.fg("dim", `enabled: ${enabled.join(" · ") || "(none)"}`));
 		lines.push(th.fg("dim", `preview: ${formatWidgetsPreview(enabled, this.previewConfig)}`));
+		lines.push(th.fg("dim", "Ⅰ after tokens/cost = auxiliary usage (dim, not a separate widget)"));
 		if (this.rejectMessage) {
 			lines.push(th.fg("warning", this.rejectMessage));
 		}

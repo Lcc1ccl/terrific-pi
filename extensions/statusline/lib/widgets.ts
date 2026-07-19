@@ -16,18 +16,18 @@ import {
 	formatSessionName,
 	formatEnvironment,
 	formatFastBadge,
+	formatModeContent,
 	formatModelContent,
 	formatQuota,
+	appendAuxTokenExtras,
 	formatTokenDirection,
 	formatTokenPairMinimal,
-	formatTokensCompact,
 	formatToolActivity,
 	thinkingLevelTone,
 	type SegmentContent,
 } from "./format.ts";
 import { formatWidgetSeparator, stripTerminalControls } from "./render.ts";
 import type {
-	AuxiliaryUsageView,
 	RunState,
 	StatusSnapshot,
 	StatuslineConfig,
@@ -36,8 +36,8 @@ import type {
 } from "./types.ts";
 import { WIDGET_PRIORITY } from "./types.ts";
 
-/** Extension status keys that have dedicated widgets. */
-export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail", "pi-essentials-mode", "fast", "process"]);
+/** Extension status keys that have dedicated widgets or live in process-view. */
+export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail", "pi-essentials-mode", "fast", "process", "auxiliary"]);
 
 /** Metadata-only tools that should not appear in footer activity. */
 export const EXCLUDED_TOOL_ACTIVITY_NAMES = new Set(["process_update"]);
@@ -78,17 +78,6 @@ export function sanitizeStatus(text: string): string {
 	return stripTerminalControls(text).replace(/ +/g, " ").trim();
 }
 
-function formatAuxiliaryUsage(value: AuxiliaryUsageView): SegmentContent {
-	const tokenText = value.hasUnknownUsage
-		? value.tokens > 0 ? `${formatTokensCompact(value.tokens)}+?` : "usage ?"
-		: formatTokensCompact(value.tokens);
-	const pieces = [tokenText];
-	if (value.cost !== undefined) pieces.push(`$${value.cost.toFixed(2)}`);
-	pieces.push(`${value.calls} ${value.calls === 1 ? "call" : "calls"}`);
-	const text = `aux ${pieces.join(" · ")}`;
-	return { text, parts: [{ text: "aux ", tone: "label" }, { text: pieces.join(" · "), tone: "value" }] };
-}
-
 /** Join extension statuses for the progress widget, skipping excluded keys. */
 export function joinExtensionProgress(
 	statuses: Iterable<readonly [string, string]>,
@@ -114,7 +103,7 @@ export const PREVIEW_SNAPSHOT: StatusSnapshot = {
 	fast: "",
 	tokens: { input: 1500, output: 800, cacheRead: 4000, cacheWrite: 500 },
 	cost: 0.42,
-	auxUsage: { calls: 4, tokens: 18_200, cost: 0.03 },
+	auxUsage: { input: 3700, output: 900, unsplit: 0, tokens: 4_600, cost: 0.03 },
 	context: { tokens: 40_000, contextWindow: 100_000, percent: 40 },
 	branch: "main",
 	branchDiff: { additions: 12, deletions: 3 },
@@ -210,13 +199,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				break;
 			case "mode":
 				if (snapshot.mode) {
-					segments.push({
-						id,
-						accent: "state",
-						text: snapshot.mode,
-						parts: [{ text: snapshot.mode, tone: "muted" }],
-						priority,
-					});
+					pushContent(segments, id, "state", formatModeContent(snapshot.mode), priority);
 				}
 				break;
 			case "fast": {
@@ -225,26 +208,42 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				break;
 			}
 			case "tokens": {
+				const auxIn = snapshot.auxUsage?.input ?? 0;
+				const auxOut = snapshot.auxUsage?.output ?? 0;
+				const auxExtras = {
+					unsplit: snapshot.auxUsage?.unsplit ?? 0,
+					unknown: Boolean(snapshot.auxUsage?.hasUnknownUsage),
+				};
 				if (minimal) {
 					pushContent(
 						segments,
 						id,
 						"usage",
-						formatTokenPairMinimal(snapshot.tokens.input, snapshot.tokens.output, iconMode),
+						formatTokenPairMinimal(
+							snapshot.tokens.input,
+							snapshot.tokens.output,
+							iconMode,
+							auxIn,
+							auxOut,
+							auxExtras,
+						),
 						priority,
 					);
 				} else {
-					const input = formatTokenDirection("in", snapshot.tokens.input, iconMode);
-					const output = formatTokenDirection("out", snapshot.tokens.output, iconMode);
+					const input = formatTokenDirection("in", snapshot.tokens.input, iconMode, auxIn);
+					const output = formatTokenDirection("out", snapshot.tokens.output, iconMode, auxOut);
 					const separator = formatWidgetSeparator(config.spacing);
+					const parts = [...input.parts, { text: separator, tone: "dim" as const }, ...output.parts];
+					appendAuxTokenExtras(parts, {
+						input: auxIn,
+						output: auxOut,
+						...auxExtras,
+					});
 					pushContent(
 						segments,
 						id,
 						"usage",
-						{
-							text: `${input.text}${separator}${output.text}`,
-							parts: [...input.parts, { text: separator, tone: "dim" }, ...output.parts],
-						},
+						{ text: parts.map((part) => part.text).join(""), parts },
 						priority,
 					);
 				}
@@ -255,30 +254,38 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				if (body) pushContent(segments, id, "usage", body, priority);
 				break;
 			}
-			case "cost":
-				if (snapshot.cost > 0) {
-					pushContent(segments, id, "usage", formatCost(snapshot.cost, minimal), priority);
+			case "cost": {
+				const auxCost = snapshot.auxUsage?.cost ?? 0;
+				const auxUnknownCost = Boolean(snapshot.auxUsage?.hasUnknownCost);
+				if (snapshot.cost > 0 || auxCost > 0 || auxUnknownCost) {
+					pushContent(
+						segments,
+						id,
+						"usage",
+						formatCost(snapshot.cost, minimal, auxCost, auxUnknownCost),
+						priority,
+					);
 				}
 				break;
-			case "auxUsage":
-				if (snapshot.auxUsage && snapshot.auxUsage.calls > 0) {
-					pushContent(segments, id, "usage", formatAuxiliaryUsage(snapshot.auxUsage), priority);
-				}
-				break;
+			}
 			case "context": {
 				const body = formatContextText(snapshot.context?.percent, config.contextMode, minimal)
-					?? { text: "Context ?", parts: [{ text: "Context ", tone: "label" }, { text: "?", tone: "dim" }] };
+					?? (minimal
+						? { text: "?", parts: [{ text: "?", tone: "dim" }] }
+						: { text: "Context ?", parts: [{ text: "Context ", tone: "label" }, { text: "?", tone: "dim" }] });
 				pushContent(segments, id, "usage", body, priority);
 				break;
 			}
 			case "contextBar": {
 				const percent = snapshot.context?.percent;
-				const body = formatContextBar(percent, config.contextBarWidth, config.contextMode);
+				const body = formatContextBar(percent, config.contextBarWidth, config.contextMode, minimal);
 				if (!body || percent === null || percent === undefined || Number.isNaN(percent)) {
-					pushContent(segments, id, "neutral", {
-						text: "Context ?",
-						parts: [{ text: "Context ", tone: "label" }, { text: "?", tone: "dim" }],
-					}, priority);
+					pushContent(segments, id, "neutral", minimal
+						? { text: "?", parts: [{ text: "?", tone: "dim" }] }
+						: {
+							text: "Context ?",
+							parts: [{ text: "Context ", tone: "label" }, { text: "?", tone: "dim" }],
+						}, priority);
 					break;
 				}
 				pushContent(segments, id, "neutral", body, priority, {
@@ -288,7 +295,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 							Math.min(MAX_CONTEXT_BAR_WIDTH, Math.floor(config.contextBarWidth || DEFAULT_CONFIG.contextBarWidth)),
 						),
 						minWidth: MIN_CONTEXT_BAR_WIDTH,
-						rebuild: (width) => formatContextBar(percent, width, config.contextMode) ?? body,
+						rebuild: (width) => formatContextBar(percent, width, config.contextMode, minimal) ?? body,
 					},
 				});
 				break;
@@ -322,7 +329,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 						snapshot.duration.sessionMs,
 						minimal,
 					);
-					pushContent(segments, id, "usage", formatDurationContent(pair, iconMode), priority);
+					pushContent(segments, id, "usage", formatDurationContent(pair, iconMode, minimal), priority);
 				}
 				break;
 			case "state": {
@@ -375,7 +382,11 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				break;
 			case "toolActivity": {
 				if (!snapshot.toolActivity) break;
-				const body = formatToolActivity(snapshot.toolActivity, iconMode);
+				const body = formatToolActivity(
+					snapshot.toolActivity,
+					iconMode,
+					config.toolActivityMode ?? "detailed",
+				);
 				if (body) {
 					const hasActiveOrError = Object.values(snapshot.toolActivity).some(
 						(entry) => entry.active > 0 || entry.error > 0,

@@ -5,9 +5,13 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 
 import {
+	cloneMinimalProfile,
 	DEFAULT_CONFIG,
+	isMinimalProfile,
 	loadStatuslineConfigResult,
 	mergeStatuslineConfig,
+	MINIMAL_PROFILE,
+	MINIMAL_WIDGETS,
 	resolveConfigPath,
 	resolveRuntimeConfigPath,
 	saveStatuslineConfig,
@@ -36,8 +40,23 @@ describe("mergeStatuslineConfig", () => {
 		assert.equal(DEFAULT_CONFIG.widgets.includes("quota"), false);
 		assert.equal(DEFAULT_CONFIG.widgets.includes("environment"), false);
 		assert.equal(DEFAULT_CONFIG.widgets.includes("toolActivity"), false);
-		assert.equal(DEFAULT_CONFIG.widgets.includes("auxUsage"), false);
-		assert.equal(WIDGET_IDS.includes("auxUsage"), true);
+		assert.equal(DEFAULT_CONFIG.toolActivityMode, "detailed");
+		assert.equal(WIDGET_IDS.includes("auxUsage" as never), false);
+	});
+
+	it("defines a true minimal profile with core widgets only", () => {
+		assert.deepEqual(MINIMAL_WIDGETS, ["model", "tokens", "context", "cost", "mode", "fast", "state"]);
+		assert.equal(MINIMAL_PROFILE.layout, "single");
+		assert.equal(MINIMAL_PROFILE.iconMode, "plain");
+		assert.equal(MINIMAL_PROFILE.minimal, true);
+		assert.equal(MINIMAL_PROFILE.contextMode, "used");
+		assert.equal(MINIMAL_PROFILE.toolActivityMode, "compact");
+		assert.equal(isMinimalProfile(cloneMinimalProfile()), true);
+		assert.equal(isMinimalProfile(DEFAULT_CONFIG), false);
+		assert.equal(
+			isMinimalProfile({ ...cloneMinimalProfile(), widgets: ["model", "state"] }),
+			false,
+		);
 	});
 
 	it("registers fast as a dedicated widget and enables it by default", () => {
@@ -55,6 +74,7 @@ describe("mergeStatuslineConfig", () => {
 			minimal: true,
 			separator: "bar",
 			spacing: 2,
+			toolActivityMode: "compact",
 		});
 		assert.deepEqual(merged.widgets, ["path", "cost", "contextBar", "quota"]);
 		assert.equal(merged.layout, "stacked");
@@ -64,6 +84,7 @@ describe("mergeStatuslineConfig", () => {
 		assert.equal(merged.minimal, true);
 		assert.equal(merged.separator, "bar");
 		assert.equal(merged.spacing, 2);
+		assert.equal(merged.toolActivityMode, "compact");
 	});
 
 	it("rejects arbitrary separator strings", () => {
@@ -194,6 +215,7 @@ describe("saveStatuslineConfig", () => {
 			minimal: true,
 			separator: "bar",
 			spacing: 2,
+			toolActivityMode: "detailed",
 		});
 		assert.deepEqual(loadConfig(nested), {
 			widgets: ["path", "cost"],
@@ -204,6 +226,7 @@ describe("saveStatuslineConfig", () => {
 			minimal: true,
 			separator: "bar",
 			spacing: 2,
+			toolActivityMode: "detailed",
 		});
 	});
 });

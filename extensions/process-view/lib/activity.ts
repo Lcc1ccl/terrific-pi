@@ -44,6 +44,16 @@ export function safeActivityLabel(
 	return typeof path === "string" ? safePath(path, cwd) || name : name;
 }
 
+const AUX_TOOL_NAMES = new Set(["web_research", "aux_summarize", "git_finalize"]);
+
+function modelFromPartialResult(partialResult: unknown): string | undefined {
+	if (!partialResult || typeof partialResult !== "object" || Array.isArray(partialResult)) return undefined;
+	const details = (partialResult as { details?: unknown }).details;
+	if (!details || typeof details !== "object" || Array.isArray(details)) return undefined;
+	const model = (details as { model?: unknown }).model;
+	return typeof model === "string" && model.trim() ? sanitizeProcessText(model.trim()) : undefined;
+}
+
 export class ActivityTracker {
 	private stage: RuntimeStage = "settled";
 	private readonly activeTools = new Map<string, ToolActivity>();
@@ -81,6 +91,20 @@ export class ActivityTracker {
 			startedAt: now,
 		});
 		this.stage = "running_tools";
+	}
+
+	/** Prefer model/profile from aux tool streaming details for process HUD. */
+	updateTool(callId: string, toolName: string, partialResult: unknown): boolean {
+		if (toolName === PROCESS_TOOL_NAME) return false;
+		const activity = this.activeTools.get(callId);
+		if (!activity) return false;
+		const model = modelFromPartialResult(partialResult);
+		if (!model) return false;
+		const base = AUX_TOOL_NAMES.has(toolName) ? safeToolName(toolName) : activity.toolName;
+		const next = truncatePlain(`${base} · ${model}`);
+		if (next === activity.label) return false;
+		activity.label = next;
+		return true;
 	}
 
 	endTool(

@@ -221,7 +221,11 @@ export default function auxiliary(pi: ExtensionAPI) {
 		for (const [fallbackIndex, model] of candidates.entries()) {
 			const startedAt = Date.now();
 			const thinking = model.reasoning ? route.thinking : "off";
-			const record = (status: AuxiliaryUsageEntryV1["status"], errorCode?: AuxiliaryUsageEntryV1["errorCode"]) => appendUsage({
+			const record = (
+				status: AuxiliaryUsageEntryV1["status"],
+				errorCode?: AuxiliaryUsageEntryV1["errorCode"],
+				tokens?: number,
+			) => appendUsage({
 				version: 1,
 				id: randomUUID(),
 				task: "web_research",
@@ -234,6 +238,17 @@ export default function auxiliary(pi: ExtensionAPI) {
 				startedAt,
 				durationMs: Math.max(0, Date.now() - startedAt),
 				...(errorCode ? { errorCode } : {}),
+				...(typeof tokens === "number" && Number.isFinite(tokens) && tokens >= 0
+					? {
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: tokens,
+						},
+					}
+					: {}),
 			});
 			latestContext = ctx;
 			ctx.ui.setStatus("auxiliary", `aux web_research · ${model.id}`);
@@ -258,7 +273,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 				if (response.status === "completed") {
 					try {
 						const output = validateResearchOutput(response.output ?? "");
-						record("ok");
+						record("ok", undefined, response.tokens);
 						return { output, model: `${model.provider}/${model.id}`, tokens: response.tokens };
 					} catch (error) {
 						record("error", "invalid_output");

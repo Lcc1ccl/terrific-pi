@@ -229,9 +229,11 @@ describe("renderStatusLine stacked", () => {
 		assert.ok(Array.isArray(lines));
 		assert.equal((lines as string[]).length, 4);
 		const plain = (lines as string[]).map((line) => line.replace(ANSI_PATTERN, ""));
-		assert.match(plain[0]!, /demo/);
+		// session/mode now share the environment line; project keeps model/path/branch
 		assert.match(plain[0]!, /gpt-5/);
+		assert.doesNotMatch(plain[0]!, /demo/);
 		assert.match(plain[1]!, /12\.5K/);
+		assert.match(plain[2]!, /demo/);
 		assert.match(plain[2]!, /context files/);
 		assert.match(plain[3]!, /Ready/);
 	});

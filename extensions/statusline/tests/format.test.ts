@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+	appendAuxTokenExtras,
 	formatBranch,
 	formatBranchDiff,
 	formatCache,
@@ -14,11 +15,13 @@ import {
 	SESSION_NAME_MAX_CHARS,
 	formatEnvironment,
 	formatFastBadge,
+	formatModeContent,
 	formatModelContent,
 	formatQuota,
 	formatTokenDirection,
 	formatTokensCompact,
 	formatToolActivity,
+	modeTone,
 	usageValueTone,
 } from "../lib/format.ts";
 
@@ -38,6 +41,14 @@ describe("formatCost", () => {
 		assert.equal(formatCost(0.421).text, "$0.42");
 		assert.equal(formatCost(12.5, true).text, "12.50");
 		assert.deepEqual(formatCost(0.42).parts.map((part) => part.tone), ["label", "value"]);
+	});
+
+	it("appends dim auxiliary cost with Ⅰ", () => {
+		assert.equal(formatCost(0.42, false, 0.03).text, "$0.42Ⅰ $0.03");
+		const tones = formatCost(0.42, false, 0.03).parts.map((part) => part.tone);
+		assert.ok(tones.includes("dim"));
+		assert.equal(formatCost(0.42, false, 0.03, true).text, "$0.42Ⅰ $0.03?");
+		assert.equal(formatCost(0.42, false, 0, true).text, "$0.42Ⅰ ?");
 	});
 });
 
@@ -85,6 +96,7 @@ describe("formatContextBar", () => {
 	it("prefixes Context and keeps the bar", () => {
 		assert.equal(formatContextBar(40, 10, "remaining")?.text, "Context [██████░░░░] 60%");
 		assert.equal(formatContextBar(40, 10, "used")?.text, "Context [████░░░░░░] 40%");
+		assert.equal(formatContextBar(40, 10, "used", true)?.text, "[████░░░░░░] 40%");
 		assert.equal(formatContextBar(null, 10, "remaining"), undefined);
 		const tones = formatContextBar(40, 10, "used")?.parts.map((part) => part.tone);
 		assert.ok(tones?.includes("label"));
@@ -145,6 +157,20 @@ describe("formatTokenDirection", () => {
 		assert.equal(formatTokenDirection("in", 12_500, "plain").text, "in 12.5K");
 		assert.equal(formatTokenDirection("out", 3_200, "plain").text, "out 3.2K");
 	});
+
+	it("appends dim auxiliary tokens with Ⅰ", () => {
+		assert.equal(formatTokenDirection("in", 167_000, "plain", 3_700).text, "in 167KⅠ 3.7K");
+		const parts = formatTokenDirection("in", 167_000, "plain", 3_700).parts;
+		assert.ok(parts.some((part) => part.tone === "dim" && part.text.includes("3.7K")));
+	});
+});
+
+describe("appendAuxTokenExtras", () => {
+	it("surfaces unknown even when some aux in/out is already known", () => {
+		const parts = [{ text: "in 1.5KⅠ 3.7K", tone: "value" as const }];
+		appendAuxTokenExtras(parts, { input: 3700, output: 0, unsplit: 0, unknown: true });
+		assert.equal(parts.map((part) => part.text).join(""), "in 1.5KⅠ 3.7KⅠ ?");
+	});
 });
 
 describe("formatQuota", () => {
@@ -193,6 +219,21 @@ describe("formatToolActivity", () => {
 		const parts = formatToolActivity({ Bash: { active: 1, success: 0, error: 0 } }, "emoji")?.parts ?? [];
 		assert.ok(parts.some((part) => part.tone === "active" && part.text.includes("…")));
 	});
+
+	it("compacts core and aux tool buckets", () => {
+		const activity = {
+			bash: { active: 0, success: 54, error: 5 },
+			edit: { active: 0, success: 20, error: 2 },
+			read: { active: 1, success: 29, error: 3 },
+			write: { active: 0, success: 2, error: 0 },
+			web_research: { active: 0, success: 3, error: 1 },
+			subagent: { active: 0, success: 5, error: 4 },
+		};
+		assert.equal(
+			formatToolActivity(activity, "emoji", "compact")?.text,
+			"✗ total x15 · … core_tools x1 · ✓ core_tools x105 · ✓ aux_tools x3",
+		);
+	});
 });
 
 describe("formatFastBadge", () => {
@@ -202,10 +243,22 @@ describe("formatFastBadge", () => {
 	});
 });
 
+describe("modeTone", () => {
+	it("maps permission modes to quiet theme tones", () => {
+		assert.equal(modeTone("ASK"), "dim");
+		assert.equal(modeTone("plan"), "muted");
+		assert.equal(modeTone("Edit"), "value");
+		assert.equal(modeTone("AUTO"), "thinkingLow");
+		assert.equal(modeTone("other"), "muted");
+		assert.equal(formatModeContent("EDIT").parts[0]?.tone, "value");
+	});
+});
+
 describe("formatDurationContent", () => {
 	it("prefixes a clock emoji in emoji mode", () => {
 		assert.equal(formatDurationContent("12.3s / 1m45s", "emoji").text, "🕒 12.3s / 1m45s");
 		assert.equal(formatDurationContent("12.3s / 1m45s", "plain").text, "time 12.3s / 1m45s");
+		assert.equal(formatDurationContent("12.3s/1m45s", "emoji", true).text, "12.3s/1m45s");
 	});
 });
 

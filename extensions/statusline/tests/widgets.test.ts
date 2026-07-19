@@ -114,24 +114,80 @@ describe("buildWidgetSegments", () => {
 		);
 	});
 
-	it("renders auxiliary usage separately and omits unknown cost", () => {
-		const known = buildWidgetSegments(
-			{ ...baseSnapshot, auxUsage: { calls: 4, tokens: 18_200, cost: 0.03 } },
-			{ ...DEFAULT_CONFIG, widgets: ["cost", "auxUsage"] },
+	it("folds auxiliary usage into tokens and cost as dim Ⅰ suffixes", () => {
+		const segments = buildWidgetSegments(
+			{
+				...baseSnapshot,
+				auxUsage: { input: 3_700, output: 900, unsplit: 0, tokens: 4_600, cost: 0.03 },
+			},
+			{ ...DEFAULT_CONFIG, widgets: ["tokens", "cost"], iconMode: "plain" },
 		);
-		assert.deepEqual(known.map((segment) => segment.text), ["$0.42", "aux 18.2K · $0.03 · 4 calls"]);
+		assert.deepEqual(segments.map((segment) => segment.text), [
+			"in 1.5KⅠ 3.7K · out 800Ⅰ 900",
+			"$0.42Ⅰ $0.03",
+		]);
+		assert.ok(segments[0]?.parts?.some((part) => part.tone === "dim" && part.text.includes("3.7K")));
+		assert.ok(segments[1]?.parts?.some((part) => part.tone === "dim" && part.text.includes("$0.03")));
+
+		const unsplit = buildWidgetSegments(
+			{
+				...baseSnapshot,
+				auxUsage: {
+					input: 0,
+					output: 0,
+					unsplit: 3_700,
+					tokens: 3_700,
+					cost: 0.01,
+					hasUnknownCost: true,
+				},
+			},
+			{ ...DEFAULT_CONFIG, widgets: ["tokens", "cost"], iconMode: "plain" },
+		);
+		assert.deepEqual(unsplit.map((segment) => segment.text), [
+			"in 1.5K · out 800Ⅰ 3.7K",
+			"$0.42Ⅰ $0.01?",
+		]);
 
 		const unknown = buildWidgetSegments(
-			{ ...baseSnapshot, auxUsage: { calls: 1, tokens: 800 } },
-			{ ...DEFAULT_CONFIG, widgets: ["auxUsage"] },
+			{
+				...baseSnapshot,
+				auxUsage: {
+					input: 0,
+					output: 0,
+					unsplit: 0,
+					tokens: 0,
+					cost: 0,
+					hasUnknownUsage: true,
+					hasUnknownCost: true,
+				},
+			},
+			{ ...DEFAULT_CONFIG, widgets: ["tokens", "cost"], iconMode: "plain" },
 		);
-		assert.deepEqual(unknown.map((segment) => segment.text), ["aux 800 · 1 call"]);
+		assert.deepEqual(unknown.map((segment) => segment.text), [
+			"in 1.5K · out 800Ⅰ ?",
+			"$0.42Ⅰ ?",
+		]);
 
-		const unavailable = buildWidgetSegments(
-			{ ...baseSnapshot, auxUsage: { calls: 1, tokens: 0, hasUnknownUsage: true } },
-			{ ...DEFAULT_CONFIG, widgets: ["auxUsage"] },
+		// Known aux in/out must still surface unknown siblings as a trailing Ⅰ ?
+		const partialUnknown = buildWidgetSegments(
+			{
+				...baseSnapshot,
+				auxUsage: {
+					input: 3_700,
+					output: 0,
+					unsplit: 0,
+					tokens: 3_700,
+					cost: 0.01,
+					hasUnknownUsage: true,
+					hasUnknownCost: true,
+				},
+			},
+			{ ...DEFAULT_CONFIG, widgets: ["tokens", "cost"], iconMode: "plain" },
 		);
-		assert.deepEqual(unavailable.map((segment) => segment.text), ["aux usage ? · 1 call"]);
+		assert.deepEqual(partialUnknown.map((segment) => segment.text), [
+			"in 1.5KⅠ 3.7K · out 800Ⅰ ?",
+			"$0.42Ⅰ $0.01?",
+		]);
 	});
 
 	it("renders fast independently and hides it when inactive", () => {
@@ -174,8 +230,8 @@ describe("buildWidgetSegments", () => {
 
 	it("uses muted supporting metadata and state-aware runtime tones", () => {
 		const metadata = buildWidgetSegments(
-			{ ...baseSnapshot, mode: "EDIT", branch: "feature" },
-			{ ...DEFAULT_CONFIG, widgets: ["path", "mode", "branch"] },
+			{ ...baseSnapshot, branch: "feature" },
+			{ ...DEFAULT_CONFIG, widgets: ["path", "branch"] },
 		);
 		assert.ok(metadata.every((segment) => segment.parts?.every((part) => part.tone === "muted")));
 
@@ -190,6 +246,22 @@ describe("buildWidgetSegments", () => {
 				{ ...DEFAULT_CONFIG, widgets: ["state"] },
 			);
 			assert.equal(state?.parts?.[0]?.tone, expectedTone);
+		}
+	});
+
+	it("colors mode badges by permission risk", () => {
+		for (const [mode, tone] of [
+			["ASK", "dim"],
+			["PLAN", "muted"],
+			["EDIT", "value"],
+			["AUTO", "thinkingLow"],
+		] as const) {
+			const [segment] = buildWidgetSegments(
+				{ ...baseSnapshot, mode },
+				{ ...DEFAULT_CONFIG, widgets: ["mode"] },
+			);
+			assert.equal(segment?.text, mode);
+			assert.equal(segment?.parts?.[0]?.tone, tone);
 		}
 	});
 
@@ -288,17 +360,21 @@ describe("buildWidgetSegments", () => {
 		assert.ok(segments[2]?.parts?.some((part) => part.tone === "label"));
 	});
 
-	it("uses minimal labels when enabled", () => {
+	it("uses dense bare labels when minimal is enabled", () => {
 		const segments = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,
-			widgets: ["tokens", "cache", "cost", "context"],
+			widgets: ["tokens", "cache", "cost", "context", "duration", "contextBar"],
 			minimal: true,
 			contextMode: "remaining",
 		});
 		const texts = segments.map((segment) => segment.text);
-		assert.ok(texts.some((text) => text.includes("in") === false || /1\.5K.*0\.8K|↑|↓/.test(text) || text.includes("1.5K")));
-		assert.ok(texts.includes("$0.42") || texts.includes("0.42"));
-		assert.ok(texts.some((text) => text === "60%" || text.endsWith("%")));
+		assert.equal(texts[0], "1.5K/800");
+		assert.equal(texts[1], "66.7%");
+		assert.equal(texts[2], "0.42");
+		assert.equal(texts[3], "60%");
+		assert.equal(texts[4], "12.3s/1m45s");
+		assert.equal(texts[5], "[██████░░░░] 60%");
+		assert.ok(texts.every((text) => !text.includes("Context ") && !text.includes("🕒") && !text.includes("$")));
 	});
 });
 
@@ -343,6 +419,8 @@ describe("joinExtensionProgress", () => {
 		assert.equal(joinExtensionProgress(new Map([["ponytail", "ponytail: LITE"]])), undefined);
 		assert.equal(joinExtensionProgress(new Map([["pi-essentials-mode", "PLAN"]])), undefined);
 		assert.equal(joinExtensionProgress(new Map([["fast", ""]])), undefined);
+		assert.equal(joinExtensionProgress(new Map([["auxiliary", "aux web_research · grok-4.5"]])), undefined);
 		assert.equal(joinExtensionProgress(new Map([["task", "   "]])), undefined);
+		assert.ok(EXCLUDED_PROGRESS_KEYS.has("auxiliary"));
 	});
 });

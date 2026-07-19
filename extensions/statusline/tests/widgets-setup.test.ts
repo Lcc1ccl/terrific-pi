@@ -22,8 +22,8 @@ describe("formatWidgetsPreview", () => {
 			separator: "bar",
 			spacing: 0,
 		});
-		assert.doesNotMatch(preview, /🔼|🔽|🎯/);
-		assert.match(preview, /1\.5K.*800/);
+		assert.doesNotMatch(preview, /🔼|🔽|🎯|\bin\b|\bout\b/);
+		assert.match(preview, /1\.5KⅠ 3\.7K\/800Ⅰ 900/);
 		assert.match(preview, /│/);
 	});
 

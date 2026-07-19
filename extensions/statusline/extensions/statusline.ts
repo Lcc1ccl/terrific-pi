@@ -25,7 +25,7 @@ import type {
 	StatusSnapshot,
 	ToolActivity,
 } from "../lib/types.ts";
-import { aggregateAuxiliaryUsage, aggregateSessionUsage } from "../lib/usage.ts";
+import { aggregateAuxiliaryUsage, aggregateSessionUsage, hasAuxUsage } from "../lib/usage.ts";
 import {
 	buildWidgetSegments,
 	FAST_STATUS_KEY,
@@ -447,7 +447,7 @@ export default function statusline(pi: ExtensionAPI) {
 						fast: fastStatus ? sanitizeStatus(fastStatus) || undefined : undefined,
 						tokens: usage.tokens,
 						cost: usage.cost,
-						auxUsage: auxiliaryUsage.calls > 0 ? auxiliaryUsage : undefined,
+						auxUsage: hasAuxUsage(auxiliaryUsage) ? auxiliaryUsage : undefined,
 						context: context
 							? {
 								tokens: context.tokens,

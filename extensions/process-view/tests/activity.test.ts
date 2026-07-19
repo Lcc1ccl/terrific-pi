@@ -81,6 +81,21 @@ describe("ActivityTracker", () => {
 		assert.equal(tracker.getSnapshot().stage, "running_tools");
 	});
 
+	it("promotes aux tool labels with model from streaming details", () => {
+		const tracker = new ActivityTracker();
+		tracker.startTool("research-1", "web_research", { question: "q" }, CWD, NOW);
+		assert.equal(tracker.updateTool("research-1", "web_research", {
+			details: { status: "running", model: "grok/grok-4.5" },
+		}), true);
+		assert.equal(tracker.getSnapshot().activeTools[0]?.label, "web_research · grok/grok-4.5");
+		assert.equal(tracker.updateTool("research-1", "web_research", {
+			details: { status: "running", model: "grok/grok-4.5" },
+		}), false);
+		assert.equal(tracker.updateTool("research-1", "web_research", {
+			details: { status: "running" },
+		}), false);
+	});
+
 	it("clears runtime activity at request/tree boundaries and can preserve a settled outcome", () => {
 		const tracker = new ActivityTracker();
 		tracker.startTool("read-1", "read", { path: "a.ts" }, CWD, NOW);

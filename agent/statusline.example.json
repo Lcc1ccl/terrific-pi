@@ -7,7 +7,6 @@
     "tokens",
     "cache",
     "cost",
-    "auxUsage",
     "contextBar",
     "branch",
     "branchDiff",
@@ -19,5 +18,6 @@
   "contextBarWidth": 10,
   "minimal": false,
   "separator": "dot",
-  "spacing": 1
+  "spacing": 1,
+  "toolActivityMode": "compact"
 }

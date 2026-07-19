@@ -62,7 +62,10 @@ function stepSymbol(step: ProcessStep): string {
 }
 
 function formatTool(tool: Pick<ToolActivity, "toolName" | "label">): string {
-	return tool.label && tool.label !== tool.toolName ? `${tool.toolName} ${tool.label}` : tool.toolName;
+	if (!tool.label || tool.label === tool.toolName) return tool.toolName;
+	// Aux updates already include the tool name ("web_research · model").
+	if (tool.label.startsWith(`${tool.toolName} `) || tool.label.startsWith(`${tool.toolName} ·`)) return tool.label;
+	return `${tool.toolName} ${tool.label}`;
 }
 
 function formatOutcome(outcome: RecentToolOutcome): string {

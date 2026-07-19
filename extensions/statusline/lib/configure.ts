@@ -1,11 +1,14 @@
 import {
+	cloneMinimalProfile,
 	DEFAULT_CONFIG,
 	DEFAULT_CONTEXT_BAR_WIDTH,
 	DEFAULT_WIDGET_SPACING,
+	isMinimalProfile,
 	MAX_CONTEXT_BAR_WIDTH,
 	MAX_WIDGET_SPACING,
 	MIN_CONTEXT_BAR_WIDTH,
 	MIN_WIDGET_SPACING,
+	MINIMAL_PROFILE,
 	WIDGET_SEPARATOR_GLYPHS,
 } from "./config.ts";
 import type {
@@ -14,6 +17,7 @@ import type {
 	StatuslineConfig,
 	StatuslineLayout,
 	StatuslineSeparator,
+	ToolActivityMode,
 	WidgetId,
 } from "./types.ts";
 
@@ -240,7 +244,8 @@ export function formatConfigSummary(config: StatuslineConfig, configPath: string
 		`iconMode: ${config.iconMode}`,
 		`contextMode: ${config.contextMode}`,
 		`contextBarWidth: ${config.contextBarWidth} (default ${DEFAULT_CONTEXT_BAR_WIDTH}, min ${MIN_CONTEXT_BAR_WIDTH}, max ${MAX_CONTEXT_BAR_WIDTH})`,
-		`minimal: ${config.minimal}`,
+		`minimal: ${config.minimal}${isMinimalProfile(config) ? " (profile)" : config.minimal ? " (dense labels)" : ""}`,
+		`toolActivityMode: ${config.toolActivityMode}`,
 		`separator: ${separatorLabel(config.separator)}`,
 		`spacing: ${config.spacing} (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
 		`config: ${configPath}`,
@@ -248,12 +253,17 @@ export function formatConfigSummary(config: StatuslineConfig, configPath: string
 }
 
 function mainMenuTitle(config: StatuslineConfig, configPath: string): string {
+	const minimalLabel = isMinimalProfile(config)
+		? "profile"
+		: config.minimal
+			? "dense labels"
+			: "off";
 	return [
 		"Statusline Config",
 		`widgets: ${config.widgets.join(", ")}`,
-		`layout: ${config.layout} · iconMode: ${config.iconMode}`,
-		`contextMode: ${config.contextMode} · bar: ${config.contextBarWidth} (default ${DEFAULT_CONTEXT_BAR_WIDTH}) · minimal: ${config.minimal}`,
-		`separator: ${separatorLabel(config.separator)} · spacing: ${config.spacing} (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
+		`layout: ${config.layout} · iconMode: ${config.iconMode} · separator: ${separatorLabel(config.separator)} · spacing: ${config.spacing}`,
+		`contextMode: ${config.contextMode} · bar: ${config.contextBarWidth} · toolActivityMode: ${config.toolActivityMode}`,
+		`minimal: ${minimalLabel}`,
 		`config: ${configPath}`,
 	].join("\n");
 }
@@ -342,7 +352,7 @@ async function setContextMode(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
 	const contextMode = await selectSetting(
 		deps,
-		"Context mode",
+		"Context mode (context / contextBar percent)",
 		["remaining", "used"] satisfies readonly ContextMode[],
 		config.contextMode,
 		DEFAULT_CONFIG.contextMode,
@@ -359,7 +369,7 @@ async function setContextMode(deps: ConfigureDeps): Promise<void> {
 async function setContextBarWidth(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
 	const raw = await deps.ui.input(
-		`Context bar width (default ${DEFAULT_CONTEXT_BAR_WIDTH}, min ${MIN_CONTEXT_BAR_WIDTH}, max ${MAX_CONTEXT_BAR_WIDTH})`,
+		`Context bar width — only when contextBar enabled (default ${DEFAULT_CONTEXT_BAR_WIDTH}, min ${MIN_CONTEXT_BAR_WIDTH}, max ${MAX_CONTEXT_BAR_WIDTH})`,
 		String(config.contextBarWidth),
 	);
 	if (raw === undefined) return;
@@ -375,18 +385,59 @@ async function setContextBarWidth(deps: ConfigureDeps): Promise<void> {
 
 async function setMinimalMode(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
-	const current = config.minimal ? "on" : "off";
+	const current = isMinimalProfile(config) ? "on" : "off";
 	const defaultValue = DEFAULT_CONFIG.minimal ? "on" : "off";
-	const choice = await selectSetting(deps, "Minimal mode", ["on", "off"], current, defaultValue);
+	const choice = await selectSetting(
+		deps,
+		[
+			"Minimal profile",
+			`on  = write ${MINIMAL_PROFILE.widgets.join(", ")}`,
+			"     + single/plain/used + dense labels",
+			"off = clear dense labels only (widgets unchanged)",
+		].join("\n"),
+		["on", "off"],
+		current,
+		defaultValue,
+	);
 	if (!choice) return;
 
-	const minimal = choice === "on";
-	if (minimal === config.minimal) {
-		deps.ui.notify(`minimal already ${minimal}`, "info");
+	if (choice === "on") {
+		if (isMinimalProfile(config)) {
+			deps.ui.notify("minimal profile already applied", "info");
+			return;
+		}
+		const profile = cloneMinimalProfile();
+		applyOrNotify(
+			deps,
+			profile,
+			`minimal profile: ${profile.widgets.join(", ")} · single/plain · dense labels`,
+		);
 		return;
 	}
 
-	applyOrNotify(deps, { ...config, minimal }, `minimal: ${minimal}`);
+	if (!config.minimal) {
+		deps.ui.notify("minimal already off", "info");
+		return;
+	}
+	applyOrNotify(deps, { ...config, minimal: false }, "minimal: false (widgets unchanged)");
+}
+
+async function setToolActivityMode(deps: ConfigureDeps): Promise<void> {
+	const config = deps.getConfig();
+	const choice = await selectSetting(
+		deps,
+		"Tool activity mode — only when toolActivity enabled",
+		["detailed", "compact"],
+		config.toolActivityMode,
+		DEFAULT_CONFIG.toolActivityMode,
+	);
+	if (!choice) return;
+	const toolActivityMode = choice as ToolActivityMode;
+	if (toolActivityMode === config.toolActivityMode) {
+		deps.ui.notify(`toolActivityMode already ${toolActivityMode}`, "info");
+		return;
+	}
+	applyOrNotify(deps, { ...config, toolActivityMode }, `toolActivityMode: ${toolActivityMode}`);
 }
 
 async function setWidgetSpacing(deps: ConfigureDeps): Promise<void> {
@@ -419,9 +470,10 @@ export async function runStatuslineConfigurator(
 			"Icon mode",
 			"Widget separator",
 			"Widget spacing",
+			"Minimal profile",
 			"Context mode",
 			"Context bar width",
-			"Minimal mode",
+			"Tool activity mode",
 			"Show config",
 			"Reload from file",
 			"Reset to defaults",
@@ -446,14 +498,17 @@ export async function runStatuslineConfigurator(
 			case "Widget spacing":
 				await setWidgetSpacing(deps);
 				break;
+			case "Minimal profile":
+				await setMinimalMode(deps);
+				break;
 			case "Context mode":
 				await setContextMode(deps);
 				break;
 			case "Context bar width":
 				await setContextBarWidth(deps);
 				break;
-			case "Minimal mode":
-				await setMinimalMode(deps);
+			case "Tool activity mode":
+				await setToolActivityMode(deps);
 				break;
 			case "Show config":
 				deps.ui.notify(formatConfigSummary(config, configPath), "info");
