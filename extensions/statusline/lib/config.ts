@@ -20,6 +20,7 @@ export const WIDGET_IDS = [
 	"tokens",
 	"cache",
 	"cost",
+	"auxUsage",
 	"context",
 	"contextBar",
 	"branch",

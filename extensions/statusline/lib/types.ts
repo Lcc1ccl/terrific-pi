@@ -13,6 +13,7 @@ export type WidgetId =
 	| "tokens"
 	| "cache"
 	| "cost"
+	| "auxUsage"
 	| "context"
 	| "contextBar"
 	| "branch"
@@ -78,6 +79,7 @@ export const WIDGET_GROUPS: Record<WidgetId, WidgetGroup> = {
 	tokens: "usage",
 	cache: "usage",
 	cost: "usage",
+	auxUsage: "usage",
 	quota: "usage",
 	environment: "environment",
 	toolActivity: "activity",
@@ -90,6 +92,7 @@ export const WIDGET_GROUPS: Record<WidgetId, WidgetGroup> = {
 export const WIDGET_PRIORITY: Record<WidgetId, number> = {
 	session: 90,
 	cost: 85,
+	auxUsage: 58,
 	duration: 80,
 	cache: 70,
 	progress: 65,
@@ -157,6 +160,14 @@ export interface ToolActivity {
 	error: number;
 }
 
+export interface AuxiliaryUsageView {
+	calls: number;
+	tokens: number;
+	cost?: number;
+	/** At least one call exposed no public token usage contract. */
+	hasUnknownUsage?: boolean;
+}
+
 export interface StatusSnapshot {
 	cwd: string;
 	sessionName?: string;
@@ -169,6 +180,8 @@ export interface StatusSnapshot {
 	fast?: string;
 	tokens: TokenTotals;
 	cost: number;
+	/** Task-scoped model usage, intentionally separate from main tokens and cost. */
+	auxUsage?: AuxiliaryUsageView;
 	context?: ContextUsageView;
 	branch?: string | null;
 	branchDiff?: BranchChangeStats;

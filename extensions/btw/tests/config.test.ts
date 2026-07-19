@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 
-import { mergeConfig, resolveConfigPaths } from "../lib/config.ts";
+import { loadConfig, mergeConfig, resolveConfigPaths } from "../lib/config.ts";
 
 describe("resolveConfigPaths", () => {
 	it("ignores project config when the project is not trusted", () => {
@@ -19,6 +22,39 @@ describe("resolveConfigPaths", () => {
 });
 
 describe("mergeConfig", () => {
+	it("resolves the auxiliary BTW route with bounded fallbacks", () => {
+		const config = mergeConfig({
+			auxiliary: {
+				default: { model: "openai/gpt-mini", thinking: "off", timeoutMs: 70_000, maxOutputTokens: 3000 },
+				tasks: { btw: { model: "openai/gpt-btw", thinking: "low", timeoutMs: 999_999, fallbackModels: ["openai/gpt-mini", "bad", "openai/gpt-mini"] } },
+			},
+		});
+		assert.deepEqual(config.auxiliaryBtw, {
+			model: "openai/gpt-btw",
+			thinking: "low",
+			timeoutMs: 600_000,
+			maxOutputTokens: 3000,
+			fallbackModels: ["openai/gpt-mini"],
+		});
+	});
+
+	it("uses only the global auxiliary route while retaining trusted project legacy settings", () => {
+		const root = mkdtempSync(join(tmpdir(), "btw-config-"));
+		const agent = join(root, "agent");
+		const project = join(root, "project");
+		mkdirSync(agent);
+		mkdirSync(join(project, ".pi"), { recursive: true });
+		writeFileSync(join(agent, "pi-essentials.json"), JSON.stringify({ auxiliary: { tasks: { btw: { model: "openai/global" } } } }));
+		writeFileSync(join(project, ".pi", "pi-essentials.json"), JSON.stringify({ btw: { maxContextTokens: 1234 }, auxiliary: { tasks: { btw: { model: "openai/project" } } } }));
+		const { config } = loadConfig(project, agent, true, ".pi");
+		assert.equal(config.auxiliaryBtw?.model, "openai/global");
+		assert.equal(config.btw.maxContextTokens, 1234);
+	});
+
+	it("keeps current-model behavior when no auxiliary config exists", () => {
+		assert.equal(mergeConfig({ btw: { thinking: "high" } }).auxiliaryBtw, undefined);
+	});
+
 	it("bounds numeric settings", () => {
 		const config = mergeConfig({
 			context: { topEntries: Number.MAX_SAFE_INTEGER },

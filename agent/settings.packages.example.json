@@ -1,9 +1,26 @@
 {
   "packages": [
+    "npm:pi-subagents@0.35.1",
+    "npm:pi-web-access@0.13.0",
+    "npm:pi-vision-handoff@0.8.1",
     "../vendor/terrific-pi/extensions/statusline",
     "../vendor/terrific-pi/extensions/fast",
     "../vendor/terrific-pi/extensions/context",
+    "../vendor/terrific-pi/extensions/auxiliary",
     "../vendor/terrific-pi/extensions/mode",
-    "../vendor/terrific-pi/extensions/btw"
-  ]
+    "../vendor/terrific-pi/extensions/btw",
+    "../vendor/terrific-pi/extensions/process-view"
+  ],
+  "subagents": {
+    "agentOverrides": {
+      "researcher": {
+        "model": "openai/gpt-5.6-luna",
+        "thinking": "low",
+        "defaultContext": "fresh",
+        "inheritProjectContext": false,
+        "inheritSkills": false,
+        "tools": ["web_search", "fetch_content", "get_search_content", "read"]
+      }
+    }
+  }
 }

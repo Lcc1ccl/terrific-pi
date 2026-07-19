@@ -10,6 +10,7 @@ terrific-pi/
 │   ├── statusline/      # 可配置底栏
 │   ├── fast/            # OpenAI Priority processing (/fast)
 │   ├── context/         # /context 上下文占用
+│   ├── auxiliary/       # task-scoped 辅助模型 runtime
 │   ├── mode/            # /mode 工具权限模式
 │   ├── btw/             # /btw 旁路问答
 │   └── process-view/    # 结构化任务进度与实时工具 HUD
@@ -33,11 +34,12 @@ terrific-pi/
 | statusline | `extensions/statusline` | 可配置底栏：single/stacked HUD、emoji/plain、原生 OAuth quota、token/cache/cost、git、运行状态；`/statusline` 交互配置 |
 | fast | `extensions/fast` | `/fast` 开关 OpenAI Priority processing（`service_tier=priority`）；开启后 footer 显示单列图标 `` |
 | context | `extensions/context` | `/context` 上下文占用拆解（不调模型、不写 session） |
+| auxiliary | `extensions/auxiliary` | task-key 辅助模型 runtime：compression/title/summary/web research/Git finalize、独立 usage 与 HUD |
 | mode | `extensions/mode` | `/mode ask\|plan\|edit\|auto` 工具权限模式；status key `pi-essentials-mode` |
 | btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话） |
 | process-view | `extensions/process-view` | `process_update` 结构化里程碑、步骤计时与任务级 usage；原生 `Ctrl+O` 展开实时详情面板 |
 
-> 原 monorepo 包 `vendor/pi-essentials` 已按插件拆入上表三项。配置文件仍兼容 `~/.pi/agent/pi-essentials.json`。
+> 配置文件仍兼容 `~/.pi/agent/pi-essentials.json`。Auxiliary 模型路由只读取 global config，不接受 project override。
 
 ## 已收录技能
 
@@ -102,9 +104,13 @@ FORCE=1 RESTORE=1 ./install.sh
 
 ```bash
 # settings.json packages（相对 ~/.pi/agent）
+"npm:pi-subagents@0.35.1"          # 可选：固定 web researcher
+"npm:pi-web-access@0.13.0"        # 可选：固定 web tools
+"npm:pi-vision-handoff@0.8.1"     # 可选：固定 vision handoff
 "../vendor/terrific-pi/extensions/statusline"
 "../vendor/terrific-pi/extensions/fast"
 "../vendor/terrific-pi/extensions/context"
+"../vendor/terrific-pi/extensions/auxiliary"
 "../vendor/terrific-pi/extensions/mode"
 "../vendor/terrific-pi/extensions/btw"
 "../vendor/terrific-pi/extensions/process-view"

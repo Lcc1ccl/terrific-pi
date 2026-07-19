@@ -36,6 +36,8 @@ describe("mergeStatuslineConfig", () => {
 		assert.equal(DEFAULT_CONFIG.widgets.includes("quota"), false);
 		assert.equal(DEFAULT_CONFIG.widgets.includes("environment"), false);
 		assert.equal(DEFAULT_CONFIG.widgets.includes("toolActivity"), false);
+		assert.equal(DEFAULT_CONFIG.widgets.includes("auxUsage"), false);
+		assert.equal(WIDGET_IDS.includes("auxUsage"), true);
 	});
 
 	it("registers fast as a dedicated widget and enables it by default", () => {

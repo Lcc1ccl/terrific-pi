@@ -10,5 +10,52 @@
     "thinking": "minimal",
     "maxContextTokens": 80000,
     "maxOutputTokens": 2000
+  },
+  "auxiliary": {
+    "enabled": true,
+    "default": {
+      "model": "openai/gpt-5.4-mini",
+      "thinking": "off",
+      "timeoutMs": 60000,
+      "maxOutputTokens": 2048,
+      "maxRetries": 1,
+      "fallbackModels": []
+    },
+    "tasks": {
+      "compression": {
+        "thinking": "low",
+        "timeoutMs": 120000,
+        "maxOutputTokens": 12000,
+        "maxRetries": 0
+      },
+      "title_generation": {
+        "maxOutputTokens": 96,
+        "timeoutMs": 30000
+      },
+      "text_summary": {
+        "maxOutputTokens": 3000,
+        "fallbackModels": ["openai/gpt-5.6-luna"]
+      },
+      "commit_message": {
+        "maxOutputTokens": 256,
+        "timeoutMs": 30000
+      },
+      "btw": {
+        "model": "openai/gpt-5.4-mini",
+        "thinking": "low",
+        "maxOutputTokens": 2000
+      },
+      "web_research": {
+        "model": "openai/gpt-5.6-luna",
+        "thinking": "low",
+        "timeoutMs": 300000,
+        "fallbackModels": ["openai/gpt-5.4-mini"]
+      }
+    },
+    "git": {
+      "confirm": true,
+      "allowHeadless": false,
+      "allowPush": true
+    }
   }
 }

@@ -19,12 +19,14 @@ import {
 	formatQuota,
 	formatTokenDirection,
 	formatTokenPairMinimal,
+	formatTokensCompact,
 	formatToolActivity,
 	thinkingLevelTone,
 	type SegmentContent,
 } from "./format.ts";
 import { formatWidgetSeparator, stripTerminalControls } from "./render.ts";
 import type {
+	AuxiliaryUsageView,
 	RunState,
 	StatusSnapshot,
 	StatuslineConfig,
@@ -75,6 +77,17 @@ export function sanitizeStatus(text: string): string {
 	return stripTerminalControls(text).replace(/ +/g, " ").trim();
 }
 
+function formatAuxiliaryUsage(value: AuxiliaryUsageView): SegmentContent {
+	const tokenText = value.hasUnknownUsage
+		? value.tokens > 0 ? `${formatTokensCompact(value.tokens)}+?` : "usage ?"
+		: formatTokensCompact(value.tokens);
+	const pieces = [tokenText];
+	if (value.cost !== undefined) pieces.push(`$${value.cost.toFixed(2)}`);
+	pieces.push(`${value.calls} ${value.calls === 1 ? "call" : "calls"}`);
+	const text = `aux ${pieces.join(" · ")}`;
+	return { text, parts: [{ text: "aux ", tone: "label" }, { text: pieces.join(" · "), tone: "value" }] };
+}
+
 /** Join extension statuses for the progress widget, skipping excluded keys. */
 export function joinExtensionProgress(
 	statuses: Iterable<readonly [string, string]>,
@@ -100,6 +113,7 @@ export const PREVIEW_SNAPSHOT: StatusSnapshot = {
 	fast: "",
 	tokens: { input: 1500, output: 800, cacheRead: 4000, cacheWrite: 500 },
 	cost: 0.42,
+	auxUsage: { calls: 4, tokens: 18_200, cost: 0.03 },
 	context: { tokens: 40_000, contextWindow: 100_000, percent: 40 },
 	branch: "main",
 	branchDiff: { additions: 12, deletions: 3 },
@@ -242,6 +256,11 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 			case "cost":
 				if (snapshot.cost > 0) {
 					pushContent(segments, id, "usage", formatCost(snapshot.cost, minimal), priority);
+				}
+				break;
+			case "auxUsage":
+				if (snapshot.auxUsage && snapshot.auxUsage.calls > 0) {
+					pushContent(segments, id, "usage", formatAuxiliaryUsage(snapshot.auxUsage), priority);
 				}
 				break;
 			case "context": {
