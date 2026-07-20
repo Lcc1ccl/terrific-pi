@@ -6,6 +6,8 @@ import { describe, it } from "node:test";
 
 import {
 	nextProfileId,
+	renumberProfilesAfterDelete,
+	renumberProjectOverridesAfterDelete,
 	runProfileConfigurator,
 	type ProfileConfiguratorUi,
 } from "../lib/configure.ts";
@@ -65,7 +67,6 @@ function profile(overrides: Partial<ModelProfile> = {}): ModelProfile {
 	return {
 		id: "1",
 		alias: "default",
-		label: "Default",
 		provider: "openai",
 		model: "gpt-test",
 		thinking: "medium",
@@ -80,11 +81,37 @@ describe("model profile configurator", () => {
 		assert.equal(nextProfileId([profile(), profile({ id: "3", alias: "three" })]), "4");
 	});
 
+	it("renumbers remaining profile ids and default hotkeys after delete", () => {
+		const remaining = renumberProfilesAfterDelete([
+			profile({ id: "1", alias: "one", hotkey: "alt+1" }),
+			profile({ id: "2", alias: "two", hotkey: "alt+2" }),
+			profile({ id: "3", alias: "three", hotkey: "ctrl+alt+9" }),
+		], "1");
+		assert.deepEqual(remaining, [
+			profile({ id: "1", alias: "two", hotkey: "alt+1" }),
+			profile({ id: "2", alias: "three", hotkey: "ctrl+alt+9" }),
+		]);
+	});
+
+	it("shifts project override ids after a global profile delete", () => {
+		assert.deepEqual(
+			renumberProjectOverridesAfterDelete([
+				{ id: "1", thinking: "low" },
+				{ id: "2", provider: "openai", model: "gpt-x" },
+				{ id: "3", thinking: "max" },
+			], "2"),
+			[
+				{ id: "1", thinking: "low" },
+				{ id: "2", thinking: "max" },
+			],
+		);
+	});
+
 	it("adds the current session as a persisted profile", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "mp-configure-add-"));
 		const ui = new ScriptedUi({
 			choices: ["Add current session", "Done"],
-			inputs: ["daily", "Daily", ""],
+			inputs: ["daily", ""],
 		});
 
 		await runProfileConfigurator({
@@ -99,7 +126,6 @@ describe("model profile configurator", () => {
 		assert.deepEqual(config(agentDir).modelProfile.profiles, [{
 			id: "1",
 			alias: "daily",
-			label: "Daily",
 			provider: "openai",
 			model: "gpt-current",
 			thinking: "high",
@@ -115,7 +141,7 @@ describe("model profile configurator", () => {
 		};
 		const ui = new ScriptedUi({
 			choices: ["Quick apply", "Add current session", "Done"],
-			inputs: ["live", "Live", ""],
+			inputs: ["live", ""],
 		});
 
 		await runProfileConfigurator({
@@ -134,7 +160,7 @@ describe("model profile configurator", () => {
 		assert.equal(saved.thinking, "high");
 	});
 
-	it("edits label, alias, model, and hotkey", async () => {
+	it("edits alias, model, and hotkey", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "mp-configure-fields-"));
 		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
 			modelProfile: { profiles: [profile()] },
@@ -143,7 +169,6 @@ describe("model profile configurator", () => {
 			choices: [
 				"Manage profiles",
 				"1 · default",
-				"Label",
 				"Alias",
 				"Model",
 				"Hotkey",
@@ -151,7 +176,7 @@ describe("model profile configurator", () => {
 				"Back",
 				"Done",
 			],
-			inputs: ["Work", "work", "ctrl+alt+9"],
+			inputs: ["work", "ctrl+alt+9"],
 			models: ["anthropic/claude-test"],
 		});
 
@@ -166,7 +191,6 @@ describe("model profile configurator", () => {
 		assert.deepEqual(config(agentDir).modelProfile.profiles[0], {
 			id: "1",
 			alias: "work",
-			label: "Work",
 			provider: "anthropic",
 			model: "claude-test",
 			thinking: "medium",
@@ -217,6 +241,37 @@ describe("model profile configurator", () => {
 			ui: deleteUi,
 		});
 		assert.deepEqual(config(agentDir).modelProfile.profiles, []);
+	});
+
+	it("deletes a middle profile and renumbers remaining ids", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "mp-configure-renumber-"));
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
+			modelProfile: {
+				profiles: [
+					profile({ id: "1", alias: "one", hotkey: "alt+1" }),
+					profile({ id: "2", alias: "two", hotkey: "alt+2" }),
+					profile({ id: "3", alias: "three", hotkey: "alt+3" }),
+				],
+			},
+		}), "utf8");
+		const ui = new ScriptedUi({
+			choices: ["Manage profiles", "2 · two", "Delete profile", "Done"],
+			confirmations: [true],
+		});
+
+		await runProfileConfigurator({
+			agentDir,
+			currentThinking: "medium",
+			modelRefs: [],
+			quickApply: async () => {},
+			ui,
+		});
+
+		assert.deepEqual(config(agentDir).modelProfile.profiles, [
+			profile({ id: "1", alias: "one", hotkey: "alt+1" }),
+			profile({ id: "2", alias: "three", hotkey: "alt+2" }),
+		]);
+		assert.ok(ui.notifications.some(({ message }) => /renumbered/i.test(message)));
 	});
 
 	it("edits startup defaults and the picker hotkey", async () => {

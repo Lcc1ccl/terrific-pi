@@ -85,7 +85,6 @@ function stripHotkey(profile: ModelProfile): ModelProfile {
 	return {
 		id: profile.id,
 		alias: profile.alias,
-		label: profile.label,
 		provider: profile.provider,
 		model: profile.model,
 		thinking: profile.thinking,
@@ -128,14 +127,12 @@ export function parseProfile(raw: unknown, index: number): { profile?: ModelProf
 	// id 1 defaults alias to "default" when omitted
 	const alias = aliasRaw ?? (id === "1" ? "default" : `p${id}`);
 
-	const label = asNonEmptyString(raw.label) ?? alias;
 	const explicitHotkey = asHotkey(raw.hotkey);
 	const hotkey = explicitHotkey ?? defaultHotkeyForId(id);
 
 	const profile: ModelProfile = {
 		id,
 		alias,
-		label,
 		provider,
 		model,
 		thinking: raw.thinking,

@@ -13,7 +13,6 @@ import type { ModelProfile } from "../lib/types.ts";
 const profile: ModelProfile = {
 	id: "1",
 	alias: "default",
-	label: "default",
 	provider: "grok",
 	model: "grok-4.5",
 	thinking: "high",

@@ -33,7 +33,6 @@ describe("parseProfile", () => {
 		assert.deepEqual(profile, {
 			id: "1",
 			alias: "default",
-			label: "default",
 			provider: "openai",
 			model: "gpt-5.6-sol",
 			thinking: "medium",
@@ -111,7 +110,7 @@ describe("resolveConfigPaths / loadConfig", () => {
 			JSON.stringify({
 				modelProfile: {
 					startup: true,
-					profiles: [{ id: 1, alias: "stale-project-label", label: "Stale project label", hotkey: "alt+9", provider: "grok", model: "new", thinking: "medium" }],
+					profiles: [{ id: 1, alias: "stale-project-alias", hotkey: "alt+9", provider: "grok", model: "new", thinking: "medium" }],
 				},
 			}),
 		);
@@ -122,7 +121,6 @@ describe("resolveConfigPaths / loadConfig", () => {
 		assert.equal(config.profiles.length, 2);
 		const daily = findProfileById(config.profiles, "1");
 		assert.equal(daily?.alias, "default");
-		assert.equal(daily?.label, "default");
 		assert.equal(daily?.hotkey, "alt+1");
 		assert.equal(daily?.model, "new");
 		assert.equal(daily?.thinking, "medium");
@@ -177,7 +175,6 @@ describe("find helpers", () => {
 		{
 			id: "1",
 			alias: "default",
-			label: "default",
 			provider: "openai",
 			model: "sol",
 			thinking: "medium" as const,
@@ -186,7 +183,6 @@ describe("find helpers", () => {
 		{
 			id: "2",
 			alias: "lunamax",
-			label: "lunamax",
 			provider: "openai",
 			model: "luna",
 			thinking: "max" as const,

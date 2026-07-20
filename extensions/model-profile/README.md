@@ -21,7 +21,7 @@ in `~/.pi/agent/settings.json` `packages`, then `/reload` or restart pi.
 ## Configure
 
 **Config file:** `~/.pi/agent/terrific.json`（本仓插件统一配置）。  
-Trusted project `.pi/terrific.json` can override a global profile by id. In a trusted project, `/profile` → **Project overrides** persists only that profile id plus the edited model pair and/or thinking field, so alias, label, hotkey, profile CRUD, and startup settings continue to inherit globally. **Reset project override** removes those project fields.
+Trusted project `.pi/terrific.json` can override a global profile by id. In a trusted project, `/profile` → **Project overrides** persists only that profile id plus the edited model pair and/or thinking field, so alias, hotkey, profile CRUD, and startup settings continue to inherit globally. **Reset project override** removes those project fields.
 
 ```json
 {
@@ -49,9 +49,11 @@ See `examples/config.json`.
 | `startup` | Show short-list picker on cold start and `/new` |
 | `startupScope` | Preferred scope order on startup (`session` safer) |
 | `openHotkey` | Open interactive picker (default `ctrl+alt+l`) |
-| `profiles[]` | Numeric `id` (1…), `alias`, `provider`, `model`, `thinking`; optional `label`/`hotkey` |
+| `profiles[]` | Numeric `id` (1…), `alias`, `provider`, `model`, `thinking`; optional `hotkey` |
+| `alias` | Command key for `/profile <alias>` and the name shown in list/status |
 | default hotkey | id `N` (1–9) → `alt+N` unless `hotkey` is set |
 | omitted `alias` | id `1` falls back to `default`; aliases do not affect startup order |
+| delete renumber | TUI delete compacts remaining ids to `1…n` and shifts project overrides accordingly |
 
 ## Commands
 

@@ -5,8 +5,8 @@ import { findMatchingProfile, profileMatches } from "../lib/match.ts";
 import type { ModelProfile } from "../lib/types.ts";
 
 const profiles: ModelProfile[] = [
-	{ id: "1", alias: "default", label: "default", provider: "grok", model: "grok-4.5", thinking: "high" },
-	{ id: "2", alias: "fast", label: "fast", provider: "openai", model: "mini", thinking: "low" },
+	{ id: "1", alias: "default", provider: "grok", model: "grok-4.5", thinking: "high" },
+	{ id: "2", alias: "fast", provider: "openai", model: "mini", thinking: "low" },
 ];
 
 describe("profileMatches", () => {

@@ -7,10 +7,8 @@ export type ProfileScope = "session" | "global";
 export interface ModelProfile {
 	/** Numeric id as string, e.g. "1". Used for /profile 1 and alt+1. */
 	id: string;
-	/** Short alias for /profile <alias> and TUI labels, e.g. "default". */
+	/** Short alias for /profile <alias> and list rows, e.g. "default". */
 	alias: string;
-	/** Optional display label; falls back to alias. */
-	label: string;
 	provider: string;
 	model: string;
 	thinking: ThinkingLevel;

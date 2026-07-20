@@ -53,7 +53,6 @@ describe("patchModelProfileSection", () => {
 		const profiles = [{
 			id: "1",
 			alias: "daily",
-			label: "Daily",
 			provider: "openai",
 			model: "gpt-test",
 			thinking: "high" as const,

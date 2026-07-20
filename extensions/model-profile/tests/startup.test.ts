@@ -27,7 +27,6 @@ const config: ModelProfileConfig = {
 		{
 			id: "1",
 			alias: "default",
-			label: "default",
 			provider: "openai",
 			model: "gpt-5.6-sol",
 			thinking: "medium",
@@ -36,7 +35,6 @@ const config: ModelProfileConfig = {
 		{
 			id: "2",
 			alias: "lunamax",
-			label: "lunamax",
 			provider: "openai",
 			model: "gpt-5.6-luna",
 			thinking: "max",

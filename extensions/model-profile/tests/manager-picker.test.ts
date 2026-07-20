@@ -13,7 +13,6 @@ it("routes the profile manager through its wrapping TUI selector", async () => {
 			profiles: [{
 				id: "1",
 				alias: "daily",
-				label: "Daily",
 				provider: "openai",
 				model: "gpt-test",
 				thinking: "medium",

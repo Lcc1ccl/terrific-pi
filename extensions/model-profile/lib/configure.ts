@@ -39,6 +39,51 @@ export function nextProfileId(profiles: readonly ModelProfile[]): string {
 	return String(profiles.reduce((max, profile) => Math.max(max, Number(profile.id) || 0), 0) + 1);
 }
 
+/**
+ * After deleting one profile, compact remaining ids to 1..n in order.
+ * Default alt+N hotkeys follow the new id; custom hotkeys stay put.
+ */
+export function renumberProfilesAfterDelete(
+	profiles: readonly ModelProfile[],
+	deletedId: string,
+): ModelProfile[] {
+	const remaining = profiles
+		.filter((profile) => profile.id !== deletedId)
+		.sort((a, b) => Number(a.id) - Number(b.id));
+	return remaining.map((profile, index) => {
+		const id = String(index + 1);
+		if (profile.id === id) return profile;
+		const usedDefaultHotkey = profile.hotkey === defaultHotkeyForId(profile.id);
+		const hotkey = usedDefaultHotkey ? defaultHotkeyForId(id) : profile.hotkey;
+		return {
+			id,
+			alias: profile.alias,
+			provider: profile.provider,
+			model: profile.model,
+			thinking: profile.thinking,
+			...(hotkey ? { hotkey } : {}),
+		};
+	});
+}
+
+/** Drop deleted id; shift higher override ids down by one. */
+export function renumberProjectOverridesAfterDelete(
+	overrides: readonly ProjectProfileOverride[],
+	deletedId: string,
+): ProjectProfileOverride[] {
+	const deleted = Number(deletedId);
+	if (!Number.isInteger(deleted) || deleted < 1) {
+		return overrides.filter((override) => override.id !== deletedId);
+	}
+	return overrides.flatMap((override) => {
+		const n = Number(override.id);
+		if (!Number.isInteger(n) || n < 1) return override.id === deletedId ? [] : [override];
+		if (n === deleted) return [];
+		if (n > deleted) return [{ ...override, id: String(n - 1) }];
+		return [override];
+	});
+}
+
 function normalizeHotkey(value: string): string {
 	return value.toLowerCase().replace(/\s+/g, "");
 }
@@ -91,9 +136,6 @@ async function addCurrentProfile(deps: ProfileConfiguratorDeps): Promise<void> {
 		return;
 	}
 
-	const labelInput = await deps.ui.input("Profile label", alias);
-	if (labelInput === undefined) return;
-	const label = labelInput.trim() || alias;
 	const defaultHotkey = defaultHotkeyForId(id) ?? "";
 	const hotkeyInput = await deps.ui.input("Profile hotkey (blank uses default)", defaultHotkey);
 	if (hotkeyInput === undefined) return;
@@ -106,7 +148,6 @@ async function addCurrentProfile(deps: ProfileConfiguratorDeps): Promise<void> {
 	const profile: ModelProfile = {
 		id,
 		alias,
-		label,
 		provider: current.model.provider,
 		model: current.model.id,
 		thinking: current.thinking,
@@ -123,7 +164,6 @@ async function editProfile(deps: ProfileConfiguratorDeps, id: string): Promise<"
 		const profile = config.profiles.find((candidate) => candidate.id === id);
 		if (!profile) return "deleted";
 		const choice = await deps.ui.select(profileLabel(profile), [
-			`Label: ${profile.label}`,
 			`Alias: ${profile.alias}`,
 			`Model: ${profile.provider}/${profile.model}`,
 			`Thinking: ${profile.thinking}`,
@@ -134,15 +174,7 @@ async function editProfile(deps: ProfileConfiguratorDeps, id: string): Promise<"
 		if (!choice || choice === "Back") return "back";
 
 		let replacement: ModelProfile | undefined;
-		if (choice.startsWith("Label:")) {
-			const value = await deps.ui.input("Profile label", profile.label);
-			if (value === undefined) continue;
-			if (!value.trim()) {
-				deps.ui.notify("Label cannot be empty", "warning");
-				continue;
-			}
-			replacement = { ...profile, label: value.trim() };
-		} else if (choice.startsWith("Alias:")) {
+		if (choice.startsWith("Alias:")) {
 			const value = await deps.ui.input("Profile alias", profile.alias);
 			if (value === undefined) continue;
 			const alias = asAlias(value);
@@ -171,11 +203,19 @@ async function editProfile(deps: ProfileConfiguratorDeps, id: string): Promise<"
 			replacement = { ...profile, hotkey };
 		} else if (choice === "Delete profile") {
 			if (!await deps.ui.confirm("Delete profile", `Delete ${profileLabel(profile)}? This cannot be undone.`)) continue;
-			if (persistProfiles(deps, config.profiles.filter((candidate) => candidate.id !== id))) {
-				deps.ui.notify("Profile deleted. Run /reload to remove its registered hotkey.", "info");
-				return "deleted";
+			const renumbered = renumberProfilesAfterDelete(config.profiles, id);
+			if (!persistProfiles(deps, renumbered)) continue;
+			const project = projectContext(deps);
+			if (project) {
+				const local = loadProjectProfileOverrides(project.dir);
+				for (const warning of local.warnings) deps.ui.notify(warning, "warning");
+				const nextOverrides = renumberProjectOverridesAfterDelete(local.overrides, id);
+				if (JSON.stringify(nextOverrides) !== JSON.stringify(local.overrides)) {
+					persistProjectProfiles(deps, nextOverrides);
+				}
 			}
-			continue;
+			deps.ui.notify("Profile deleted and ids renumbered. Run /reload to refresh hotkeys.", "info");
+			return "deleted";
 		}
 
 		if (replacement) {
