@@ -418,7 +418,7 @@ describe("joinExtensionProgress", () => {
 
 	it("returns undefined when only dedicated or empty statuses remain", () => {
 		assert.equal(joinExtensionProgress(new Map([["ponytail", "ponytail: LITE"]])), undefined);
-		assert.equal(joinExtensionProgress(new Map([["pi-essentials-mode", "PLAN"]])), undefined);
+		assert.equal(joinExtensionProgress(new Map([["mode", "PLAN"]])), undefined);
 		assert.equal(joinExtensionProgress(new Map([["fast", ""]])), undefined);
 		assert.equal(joinExtensionProgress(new Map([["auxiliary", "aux web_research · grok-4.5"]])), undefined);
 		assert.equal(joinExtensionProgress(new Map([["task", "   "]])), undefined);

@@ -188,7 +188,7 @@ export interface StatusSnapshot {
 	modelId: string;
 	thinkingLevel: string;
 	hasReasoning: boolean;
-	/** Optional execution mode badge from pi-essentials (/mode). */
+	/** Optional execution mode badge from /mode. */
 	mode?: string;
 	/** Optional priority-processing badge from /fast. */
 	fast?: string;

@@ -176,7 +176,7 @@ install_templates() {
 
 	# Only seed missing non-secret templates; never overwrite live config.
 	local f
-	for f in statusline.example.json pi-essentials.example.json settings.packages.example.json; do
+	for f in statusline.example.json terrific.example.json settings.packages.example.json; do
 		if [[ -f "$agent_src/$f" && ! -f "$AGENT_DIR/$f" ]]; then
 			cp "$agent_src/$f" "$AGENT_DIR/$f"
 			echo "seeded $AGENT_DIR/$f"

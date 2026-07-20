@@ -14,7 +14,7 @@ export interface AuxiliaryBtwRoute {
 	fallbackModels: string[];
 }
 
-export interface EssentialsConfig {
+export interface TerrificConfig {
 	context: { topEntries: number };
 	mode: { default: ModeName; persistPerSession: boolean };
 	btw: {
@@ -25,7 +25,7 @@ export interface EssentialsConfig {
 	auxiliaryBtw?: AuxiliaryBtwRoute;
 }
 
-export const DEFAULT_CONFIG: EssentialsConfig = {
+export const DEFAULT_CONFIG: TerrificConfig = {
 	context: { topEntries: 10 },
 	mode: { default: "edit", persistPerSession: true },
 	btw: {
@@ -109,13 +109,13 @@ function asMode(value: unknown, fallback: ModeName): ModeName {
 
 function asThinking(
 	value: unknown,
-	fallback: EssentialsConfig["btw"]["thinking"],
-): EssentialsConfig["btw"]["thinking"] {
+	fallback: TerrificConfig["btw"]["thinking"],
+): TerrificConfig["btw"]["thinking"] {
 	if (value === "minimal" || value === "low" || value === "medium" || value === "high") return value;
 	return fallback;
 }
 
-export function mergeConfig(raw: unknown, base: EssentialsConfig = DEFAULT_CONFIG): EssentialsConfig {
+export function mergeConfig(raw: unknown, base: TerrificConfig = DEFAULT_CONFIG): TerrificConfig {
 	if (!isRecord(raw)) {
 		return {
 			context: { ...base.context },
@@ -158,19 +158,25 @@ function readJsonFile(path: string): { ok: true; value: unknown } | { ok: false;
 	}
 }
 
+export const TERRIFIC_CONFIG_BASENAME = "terrific.json";
+
+export function resolveConfigPath(dir: string): string {
+	return join(dir, TERRIFIC_CONFIG_BASENAME);
+}
+
 export function resolveConfigPaths(
 	cwd = process.cwd(),
 	agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
 	projectTrusted = false,
 	configDirName = ".pi",
 ): string[] {
-	const paths = [join(agentDir, "pi-essentials.json")];
-	if (projectTrusted) paths.push(join(cwd, configDirName, "pi-essentials.json"));
+	const paths = [resolveConfigPath(agentDir)];
+	if (projectTrusted) paths.push(resolveConfigPath(join(cwd, configDirName)));
 	return paths;
 }
 
 export interface LoadConfigResult {
-	config: EssentialsConfig;
+	config: TerrificConfig;
 	warnings: string[];
 }
 
@@ -187,7 +193,7 @@ export function loadConfig(
 	for (const [index, path] of resolveConfigPaths(cwd, agentDir, projectTrusted, configDirName).entries()) {
 		const result = readJsonFile(path);
 		if (!result.ok) {
-			warnings.push(`pi-essentials: failed to read ${path}: ${result.error}`);
+			warnings.push(`terrific-config: failed to read ${path}: ${result.error}`);
 			continue;
 		}
 		if (result.value !== undefined) {

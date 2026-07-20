@@ -63,13 +63,13 @@ class ScriptedUi implements AuxiliaryConfiguratorUi {
 }
 
 function readConfig(agentDir: string): Record<string, any> {
-	return JSON.parse(readFileSync(join(agentDir, "pi-essentials.json"), "utf8")) as Record<string, any>;
+	return JSON.parse(readFileSync(join(agentDir, "terrific.json"), "utf8")) as Record<string, any>;
 }
 
 describe("auxiliary configurator", () => {
 	test("disables the runtime and routes one task through the saved main model", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-toggle-"));
-		writeFileSync(join(agentDir, "pi-essentials.json"), JSON.stringify({
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
 			docsflow: { vaultEnabled: false },
 			auxiliary: {
 				enabled: true,
@@ -108,7 +108,7 @@ describe("auxiliary configurator", () => {
 
 	test("edits a task model, thinking, timeout, and fallback", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-route-"));
-		writeFileSync(join(agentDir, "pi-essentials.json"), JSON.stringify({
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
 			auxiliary: { tasks: { text_summary: { fallbackModels: [] } } },
 		}), "utf8");
 		const ui = new ScriptedUi(
@@ -147,7 +147,7 @@ describe("auxiliary configurator", () => {
 
 	test("resets only known route fields and preserves future fields", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-reset-"));
-		writeFileSync(join(agentDir, "pi-essentials.json"), JSON.stringify({
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
 			auxiliary: {
 				default: { model: "openai/default", timeoutMs: 45_000, futureDefault: "keep" },
 				tasks: {
@@ -179,7 +179,7 @@ describe("auxiliary configurator", () => {
 
 	test("resets one numeric override without changing the rest of the task route", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-number-reset-"));
-		writeFileSync(join(agentDir, "pi-essentials.json"), JSON.stringify({
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
 			auxiliary: { tasks: { text_summary: { model: "openai/summary", timeoutMs: 45_000 } } },
 		}), "utf8");
 		const ui = new ScriptedUi([
@@ -197,7 +197,7 @@ describe("auxiliary configurator", () => {
 
 	test("hides reset actions when model and thinking inherit defaults", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-inherited-"));
-		writeFileSync(join(agentDir, "pi-essentials.json"), JSON.stringify({
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
 			auxiliary: { tasks: { text_summary: { fallbackModels: [] } } },
 		}), "utf8");
 		const ui = new ScriptedUi([
@@ -240,7 +240,7 @@ describe("auxiliary configurator", () => {
 
 	test("rejects an explicit fallback that resolves to the current primary model", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-duplicate-current-"));
-		writeFileSync(join(agentDir, "pi-essentials.json"), JSON.stringify({
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
 			auxiliary: { tasks: { text_summary: { model: "current", fallbackModels: [] } } },
 		}), "utf8");
 		const ui = new ScriptedUi([

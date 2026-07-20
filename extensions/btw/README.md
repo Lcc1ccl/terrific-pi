@@ -10,7 +10,7 @@ Pi `/btw` one-shot side-channel Q&A over an isolated in-memory session. It does 
 
 ## Configure
 
-File: `~/.pi/agent/pi-essentials.json`.
+File: `~/.pi/agent/terrific.json`.
 
 When `auxiliary.tasks.btw` exists in the global config, `/btw` uses that route's model, thinking, timeout, output cap, and fallback models. Set `useAuxiliary` to `false` to use the current main model without deleting the saved BTW model or fallbacks. Snapshot budgeting uses each selected model's actual context window.
 

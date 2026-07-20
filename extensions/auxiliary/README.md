@@ -65,14 +65,14 @@ npm:pi-vision-handoff@0.8.1
 Only the global file is read for auxiliary routing:
 
 ```text
-~/.pi/agent/pi-essentials.json
+~/.pi/agent/terrific.json
 ```
 
 Project-local `auxiliary` config is intentionally ignored because a model route decides which provider receives project data. The config must not contain API keys, headers, or base URLs; authentication and endpoints stay in Pi's model registry.
 
-Run `/aux config` in TUI mode to edit the global runtime, default route, and task routes. Each confirmed change is written atomically while preserving other `pi-essentials.json` sections; malformed JSON is never overwritten.
+Run `/aux config` in TUI mode to edit the global runtime, default route, and task routes. Each confirmed change is written atomically while preserving other `terrific.json` sections; malformed JSON is never overwritten.
 
-See [`../../agent/pi-essentials.example.json`](../../agent/pi-essentials.example.json) for the complete template. Each task can set:
+See [`../../agent/terrific.example.json`](../../agent/terrific.example.json) for the complete template. Each task can set:
 
 - `useAuxiliary`: set `false` to run the task with the current main model while preserving its saved auxiliary route
 - `model`: explicit `provider/model`, or `current` only when intentionally configured

@@ -6,14 +6,14 @@ import { mergeConfig, resolveConfigPaths } from "../lib/config.ts";
 describe("resolveConfigPaths", () => {
 	it("ignores project config when the project is not trusted", () => {
 		assert.deepEqual(resolveConfigPaths("/workspace", "/agent", false, ".pi"), [
-			"/agent/pi-essentials.json",
+			"/agent/terrific.json",
 		]);
 	});
 
 	it("uses the configured project directory name for trusted projects", () => {
 		assert.deepEqual(resolveConfigPaths("/workspace", "/agent", true, ".custom-pi"), [
-			"/agent/pi-essentials.json",
-			"/workspace/.custom-pi/pi-essentials.json",
+			"/agent/terrific.json",
+			"/workspace/.custom-pi/terrific.json",
 		]);
 	});
 });

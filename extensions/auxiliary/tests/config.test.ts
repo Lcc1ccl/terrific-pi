@@ -24,12 +24,12 @@ describe("auxiliary config", () => {
 	});
 
 	test("uses only the global agent config path", () => {
-		assert.equal(resolveAuxiliaryConfigPath("/agent"), "/agent/pi-essentials.json");
+		assert.equal(resolveAuxiliaryConfigPath("/agent"), "/agent/terrific.json");
 	});
 
 	test("falls back safely on malformed JSON", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-config-bad-"));
-		writeFileSync(join(agentDir, "pi-essentials.json"), "{ bad", "utf8");
+		writeFileSync(join(agentDir, "terrific.json"), "{ bad", "utf8");
 		const loaded = loadAuxiliaryConfig(agentDir);
 		assert.deepEqual(loaded.config, DEFAULT_AUXILIARY_CONFIG);
 		assert.equal(loaded.warnings.length, 1);
@@ -38,7 +38,7 @@ describe("auxiliary config", () => {
 
 	test("updates only auxiliary while preserving unknown root and task fields", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-config-write-"));
-		const path = join(agentDir, "pi-essentials.json");
+		const path = join(agentDir, "terrific.json");
 		writeFileSync(path, JSON.stringify({
 			docsflow: { vaultEnabled: false },
 			auxiliary: {
@@ -65,7 +65,7 @@ describe("auxiliary config", () => {
 
 	test("preserves existing file permissions and creates private config paths", () => {
 		const root = mkdtempSync(join(tmpdir(), "aux-config-mode-"));
-		const path = join(root, "pi-essentials.json");
+		const path = join(root, "terrific.json");
 		writeFileSync(path, "{}\n", "utf8");
 		chmodSync(path, 0o600);
 		assert.deepEqual(updateAuxiliaryConfig(root, (auxiliary) => {
@@ -78,12 +78,12 @@ describe("auxiliary config", () => {
 			auxiliary.enabled = true;
 		}), { ok: true });
 		assert.equal(statSync(newAgentDir).mode & 0o777, 0o700);
-		assert.equal(statSync(join(newAgentDir, "pi-essentials.json")).mode & 0o777, 0o600);
+		assert.equal(statSync(join(newAgentDir, "terrific.json")).mode & 0o777, 0o600);
 	});
 
 	test("refuses to overwrite while another process owns the config lock", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-config-locked-"));
-		const path = join(agentDir, "pi-essentials.json");
+		const path = join(agentDir, "terrific.json");
 		writeFileSync(path, JSON.stringify({ docsflow: { keep: true } }), "utf8");
 		writeFileSync(`${path}.lock`, JSON.stringify({ pid: process.pid, createdAt: Date.now(), token: "active" }), "utf8");
 		const updated = updateAuxiliaryConfig(agentDir, (auxiliary) => {
@@ -96,7 +96,7 @@ describe("auxiliary config", () => {
 
 	test("refuses to reclaim a stale-looking lock without an atomic recovery protocol", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-config-stale-lock-"));
-		const path = join(agentDir, "pi-essentials.json");
+		const path = join(agentDir, "terrific.json");
 		writeFileSync(path, "{}\n", "utf8");
 		writeFileSync(`${path}.lock`, JSON.stringify({ pid: process.pid + 1_000_000_000, createdAt: Date.now() - 60_000, token: "stale" }), "utf8");
 		const updated = updateAuxiliaryConfig(agentDir, (auxiliary) => {
@@ -109,7 +109,7 @@ describe("auxiliary config", () => {
 
 	test("refuses to overwrite malformed JSON", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-config-refuse-"));
-		const path = join(agentDir, "pi-essentials.json");
+		const path = join(agentDir, "terrific.json");
 		writeFileSync(path, "{ bad", "utf8");
 		const updated = updateAuxiliaryConfig(agentDir, (auxiliary) => {
 			auxiliary.enabled = false;

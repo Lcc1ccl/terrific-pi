@@ -38,7 +38,7 @@ describe("vault config", () => {
 		const vault = mkdtempSync(path.join(tmpdir(), "vault-"));
 		mkdirSync(path.join(vault, "2_Career/01-INDIE/开发"), { recursive: true });
 		writeFileSync(
-			path.join(agentDir, "pi-essentials.json"),
+			path.join(agentDir, "terrific.json"),
 			JSON.stringify({
 				docsflow: {
 					vaultEnabled: true,
@@ -63,14 +63,14 @@ describe("vault config", () => {
 	test("updateDocsflowConfig persists configReminder off", () => {
 		const agentDir = mkdtempSync(path.join(tmpdir(), "docsflow-cfg-remind-"));
 		writeFileSync(
-			path.join(agentDir, "pi-essentials.json"),
+			path.join(agentDir, "terrific.json"),
 			JSON.stringify({ keep: true, docsflow: { vaultEnabled: false } }),
 		);
 		const updated = updateDocsflowConfig(agentDir, { configReminder: false });
 		assert.equal(updated.configReminder, false);
 		const reloaded = loadDocsflowConfig(agentDir);
 		assert.equal(reloaded.configReminder, false);
-		const raw = JSON.parse(readFileSync(path.join(agentDir, "pi-essentials.json"), "utf8")) as {
+		const raw = JSON.parse(readFileSync(path.join(agentDir, "terrific.json"), "utf8")) as {
 			keep: boolean;
 			docsflow: { configReminder: boolean; vaultEnabled: boolean };
 		};

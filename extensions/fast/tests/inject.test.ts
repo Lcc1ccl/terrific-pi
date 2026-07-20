@@ -82,9 +82,9 @@ describe("supportsFastApi / isFastActive / shouldInjectPriority", () => {
 });
 
 describe("fast global preference", () => {
-	it("loads and saves fast.enabled in pi-essentials.json", () => {
+	it("loads and saves fast.enabled in terrific.json", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "fast-config-"));
-		const path = join(agentDir, "pi-essentials.json");
+		const path = join(agentDir, "terrific.json");
 		writeFileSync(path, JSON.stringify({ mode: { default: "edit" } }), "utf8");
 		chmodSync(path, 0o640);
 
@@ -100,9 +100,9 @@ describe("fast global preference", () => {
 		assert.equal(statSync(path).mode & 0o777, 0o640);
 	});
 
-	it("refuses to overwrite corrupt pi-essentials.json", () => {
+	it("refuses to overwrite corrupt terrific.json", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "fast-corrupt-"));
-		const path = join(agentDir, "pi-essentials.json");
+		const path = join(agentDir, "terrific.json");
 		writeFileSync(path, "{ bad", "utf8");
 
 		assert.equal(loadFastEnabled(agentDir), false);
@@ -113,7 +113,7 @@ describe("fast global preference", () => {
 
 	it("fails save when lock is held", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "fast-lock-"));
-		const path = join(agentDir, "pi-essentials.json");
+		const path = join(agentDir, "terrific.json");
 		writeFileSync(path, "{}\n", "utf8");
 		writeFileSync(`${path}.lock`, JSON.stringify({ token: "other" }), "utf8");
 
@@ -180,7 +180,7 @@ describe("fast global preference", () => {
 		}
 	});
 
-	it("persists toggle to pi-essentials and keeps preference when inactive", async () => {
+	it("persists toggle to terrific.json and keeps preference when inactive", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "fast-toggle-"));
 		const { commands, ctx, restoreEnv, statuses } = createExtensionHarness({
 			agentDir,

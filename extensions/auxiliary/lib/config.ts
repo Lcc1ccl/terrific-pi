@@ -180,8 +180,15 @@ export function resolveTaskRoute(config: AuxiliaryConfig, task: AuxiliaryTaskKey
 	return merged;
 }
 
+export const TERRIFIC_CONFIG_BASENAME = "terrific.json";
+
+export function resolveConfigPath(agentDir: string): string {
+	return join(agentDir, TERRIFIC_CONFIG_BASENAME);
+}
+
+/** @deprecated use resolveConfigPath */
 export function resolveAuxiliaryConfigPath(agentDir: string): string {
-	return join(agentDir, "pi-essentials.json");
+	return resolveConfigPath(agentDir);
 }
 
 type AuxiliaryConfigDocumentResult =
@@ -206,7 +213,7 @@ export type AuxiliaryConfigSourceResult =
 	| { ok: false; error: string };
 
 export function readAuxiliaryConfigSource(agentDir: string): AuxiliaryConfigSourceResult {
-	const path = resolveAuxiliaryConfigPath(agentDir);
+	const path = resolveConfigPath(agentDir);
 	const document = readAuxiliaryConfigDocument(path);
 	return document.ok
 		? { ok: true, value: document.auxiliary }
@@ -291,11 +298,14 @@ export function updateAuxiliaryConfig(
 	agentDir: string,
 	mutate: (auxiliary: Record<string, unknown>) => void,
 ): UpdateAuxiliaryConfigResult {
-	const path = resolveAuxiliaryConfigPath(agentDir);
+	const path = resolveConfigPath(agentDir);
 	try {
 		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 	} catch (error) {
-		return { ok: false, error: `auxiliary: failed to update ${path}: ${error instanceof Error ? error.message : String(error)}` };
+		return {
+			ok: false,
+			error: `auxiliary: failed to update ${path}: ${error instanceof Error ? error.message : String(error)}`,
+		};
 	}
 	const lock = acquireConfigLock(path);
 	if (!lock.ok) return { ok: false, error: `auxiliary: failed to update ${path}: ${lock.error}` };
@@ -323,7 +333,7 @@ export function updateAuxiliaryConfig(
 }
 
 export function loadAuxiliaryConfig(agentDir: string): MergeAuxiliaryConfigResult {
-	const path = resolveAuxiliaryConfigPath(agentDir);
+	const path = resolveConfigPath(agentDir);
 	if (!existsSync(path)) return { config: cloneConfig(DEFAULT_AUXILIARY_CONFIG), warnings: [] };
 	try {
 		return mergeAuxiliaryConfig(JSON.parse(readFileSync(path, "utf8")) as unknown);

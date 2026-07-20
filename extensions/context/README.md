@@ -16,8 +16,8 @@ Or: `pi install /path/to/terrific-pi/extensions/context`
 Optional (trusted project overrides global), shared with sibling packages:
 
 ```text
-~/.pi/agent/pi-essentials.json
-<project>/.pi/pi-essentials.json
+~/.pi/agent/terrific.json
+<project>/.pi/terrific.json
 ```
 
 ```json

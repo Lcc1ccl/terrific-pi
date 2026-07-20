@@ -1,7 +1,7 @@
 /**
  * /fast — toggle OpenAI Priority processing (service_tier: priority).
  *
- * Preference is global (pi-essentials.json) and persists across sessions.
+ * Preference is global (terrific.json) and persists across sessions.
  * Effective only for openai-family Responses APIs; non-openai models auto-yield.
  *
  * Usage:
@@ -66,8 +66,15 @@ export function defaultAgentDir(): string {
 	return process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 }
 
+export const TERRIFIC_CONFIG_BASENAME = "terrific.json";
+
+export function resolveConfigPath(agentDir = defaultAgentDir()): string {
+	return join(agentDir, TERRIFIC_CONFIG_BASENAME);
+}
+
+/** @deprecated use resolveConfigPath */
 export function resolveFastConfigPath(agentDir = defaultAgentDir()): string {
-	return join(agentDir, "pi-essentials.json");
+	return resolveConfigPath(agentDir);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -80,9 +87,9 @@ function errorCode(error: unknown): string | undefined {
 		: undefined;
 }
 
-/** Whether pi-essentials.json already has a `fast` object (even if enabled:false). */
+/** Whether shared config already has a `fast` object (even if enabled:false). */
 export function hasFastPreference(agentDir = defaultAgentDir()): boolean {
-	const path = resolveFastConfigPath(agentDir);
+	const path = resolveConfigPath(agentDir);
 	if (!existsSync(path)) return false;
 	try {
 		const root: unknown = JSON.parse(readFileSync(path, "utf8"));
@@ -94,7 +101,7 @@ export function hasFastPreference(agentDir = defaultAgentDir()): boolean {
 }
 
 export function loadFastEnabled(agentDir = defaultAgentDir()): boolean {
-	const path = resolveFastConfigPath(agentDir);
+	const path = resolveConfigPath(agentDir);
 	if (!existsSync(path)) return false;
 	try {
 		const root: unknown = JSON.parse(readFileSync(path, "utf8"));
@@ -176,9 +183,9 @@ function writeConfigAtomically(path: string, temporary: string, content: string,
 	syncDirectory(dirname(path));
 }
 
-/** Merge `fast.enabled` into pi-essentials.json under the shared lock protocol. */
+/** Merge `fast.enabled` into terrific.json under the shared lock protocol. */
 export function saveFastEnabled(enabled: boolean, agentDir = defaultAgentDir()): boolean {
-	const path = resolveFastConfigPath(agentDir);
+	const path = resolveConfigPath(agentDir);
 	try {
 		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 	} catch {
@@ -260,7 +267,7 @@ export default function (pi: ExtensionAPI) {
 	const setPreferred = (ctx: ExtensionContext, next: boolean) => {
 		preferred = next;
 		if (!saveFastEnabled(preferred)) {
-			ctx.ui.notify("Fast preference set in-memory only (failed to write pi-essentials.json)", "warning");
+			ctx.ui.notify("Fast preference set in-memory only (failed to write terrific.json)", "warning");
 		}
 
 		const api = modelApi(ctx);

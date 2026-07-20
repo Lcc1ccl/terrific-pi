@@ -74,7 +74,7 @@ extensions/<name>/
 
 - 最小可用：一个命令/一个关注点一个包；不要做 monorepo 大包再“内部过滤”
 - 复用本仓已有模式（参考 `statusline`、`fast`、`mode`）
-- 配置文件：可选、失败不抛、不阻断 pi 启动；优先兼容既有路径（如 `pi-essentials.json`）
+- 配置文件：可选、失败不抛、不阻断 pi 启动；主文件 `terrific.json`
 - 文本 **LF** 换行；不引入与任务无关的格式化大扫除
 - 非平凡逻辑留最小可运行校验（`npm test` / `node --test`），不强制测试框架
 
@@ -90,7 +90,7 @@ extensions/<name>/
 | **fast** | 发模型请求且可能走 OpenAI Priority | 复用既有 tier/开关语义，不另起冲突 header |
 | **context** | 显著改变上下文构成或压缩策略 | 保证 `/context` 仍可解释占用；必要时暴露可汇总字段 |
 | **btw** | 旁路会话 / 独立 memory | 不污染主 session；HUD 若展示须标明旁路 |
-| **配置文件** | 新配置项 | 优先并入既有路径（如 `pi-essentials.json` / `statusline.json`），避免再增并列配置 |
+| **配置文件** | 新配置项 | 优先并入既有路径（如 `terrific.json` / `statusline.json`），避免再增并列配置 |
 
 **示例**：做 subagent / 工作流插件时，默认就要设计 HUD——活跃子代理数、当前阶段、完成/失败态应出现在 statusline（或明确说明为何不展示），而不是事后补丁。
 
@@ -124,7 +124,7 @@ extensions/<name>/
 ## Snapshot 规范
 
 - 源：`./scripts/snapshot.sh` 从本机白名单采集到 `snapshot/agent/`
-- 白名单（当前）：`models.json`、`settings.json`、`statusline.json`、`AGENTS.md`、`pi-essentials.json`
+- 白名单（当前）：`models.json`、`settings.json`、`statusline.json`、`AGENTS.md`、`terrific.json`
 - 另生成：`auth.template.json`（从本机 auth 导出 provider 结构，**密钥字段清空**）
 - 采集时跑 secret 消毒检查；命中 `apiKey` 值 / bearer / 私钥 / `sk-...` token 则失败
 - 还原：`RESTORE=1 ./install.sh` 覆盖写入 agent 快照；`auth.json` 由模板 seed/merge，**不覆盖已有非空 key**

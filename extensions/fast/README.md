@@ -16,12 +16,12 @@ Injects `service_tier: "priority"` into Responses / Codex Responses requests. Fo
 
 | Concern | Rule |
 |---------|------|
-| Preference | Global, persisted in `~/.pi/agent/pi-essentials.json` as `fast.enabled` |
+| Preference | Global, persisted in `~/.pi/agent/terrific.json` as `fast.enabled` |
 | Active (badge) | Preference ON **and** current model API is openai-family Responses |
 | Non-openai model | Auto-yield: no injection, badge hidden; preference kept |
 | Back to openai | Preference re-applies automatically |
 | Legacy session `fast-state` | Migrated once into global config when `fast` key is absent |
-| Config writes | Locked merge into `pi-essentials.json` (same lock file as other writers) |
+| Config writes | Locked merge into `terrific.json` (same lock file as other writers) |
 
 ### Supported APIs
 
@@ -49,7 +49,7 @@ Notes:
 }
 ```
 
-File: `~/.pi/agent/pi-essentials.json` (shared with other terrific-pi plugins).
+File: `~/.pi/agent/terrific.json` (shared with other terrific-pi plugins).
 
 ## Install
 

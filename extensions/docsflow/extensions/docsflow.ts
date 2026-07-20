@@ -94,7 +94,7 @@ export default function docsflow(pi: ExtensionAPI) {
 					const config = updateDocsflowConfig(getAgentDir(), { configReminder: arg === "on" });
 					report(
 						ctx,
-						`docsflow config reminder ${config.configReminder ? "ON" : "OFF"} (saved to pi-essentials.json)`,
+						`docsflow config reminder ${config.configReminder ? "ON" : "OFF"} (saved to terrific.json)`,
 					);
 					return;
 				}

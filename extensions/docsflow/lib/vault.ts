@@ -16,6 +16,12 @@ export interface DocsflowConfig {
 	projectBase: string;
 }
 
+export const TERRIFIC_CONFIG_BASENAME = "terrific.json";
+
+export function resolveConfigPath(agentDir: string): string {
+	return path.join(agentDir, TERRIFIC_CONFIG_BASENAME);
+}
+
 function parseBool(value: unknown): boolean | undefined {
 	if (typeof value === "boolean") return value;
 	if (typeof value !== "string") return undefined;
@@ -40,10 +46,10 @@ export function loadDocsflowConfig(agentDir = path.join(homedir(), ".pi/agent"))
 	const fromEnvRoot = process.env.DOCSFLOW_VAULT?.trim();
 	if (fromEnvRoot) vaultRoot = fromEnvRoot;
 
-	const essentials = path.join(agentDir, "pi-essentials.json");
-	if (existsSync(essentials)) {
+	const configPath = resolveConfigPath(agentDir);
+	if (existsSync(configPath)) {
 		try {
-			const raw = JSON.parse(readFileSync(essentials, "utf8")) as {
+			const raw = JSON.parse(readFileSync(configPath, "utf8")) as {
 				docsflow?: {
 					vaultEnabled?: unknown;
 					configReminder?: unknown;
@@ -71,16 +77,16 @@ export function loadDocsflowConfig(agentDir = path.join(homedir(), ".pi/agent"))
 	};
 }
 
-/** Patch docsflow keys in pi-essentials.json (preserves other top-level keys). */
+/** Patch docsflow keys in terrific.json (preserves other top-level keys). */
 export function updateDocsflowConfig(
 	agentDir: string,
 	patch: Partial<Pick<DocsflowConfig, "vaultEnabled" | "configReminder" | "vaultRoot" | "projectBase">>,
 ): DocsflowConfig {
-	const essentials = path.join(agentDir, "pi-essentials.json");
+	const configPath = resolveConfigPath(agentDir);
 	let raw: Record<string, unknown> = {};
-	if (existsSync(essentials)) {
+	if (existsSync(configPath)) {
 		try {
-			const parsed = JSON.parse(readFileSync(essentials, "utf8")) as unknown;
+			const parsed = JSON.parse(readFileSync(configPath, "utf8")) as unknown;
 			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
 				raw = parsed as Record<string, unknown>;
 			}
@@ -93,7 +99,7 @@ export function updateDocsflowConfig(
 			? (raw.docsflow as Record<string, unknown>)
 			: {};
 	raw.docsflow = { ...prev, ...patch };
-	writeFileSync(essentials, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
+	writeFileSync(configPath, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
 	return loadDocsflowConfig(agentDir);
 }
 
@@ -176,14 +182,14 @@ export function vaultConfigReminder(config: DocsflowConfig): string {
 			`vaultRoot=${config.vaultRoot}`,
 			`projectBase=${config.projectBase}`,
 			"Artifacts: <vault>/<projectBase>/<project>/docsflow/",
-			"Disable: set docsflow.vaultEnabled=false in ~/.pi/agent/pi-essentials.json",
+			"Disable: set docsflow.vaultEnabled=false in ~/.pi/agent/terrific.json",
 			"Mute this reminder: /docsflow remind off",
 		].join(" ");
 	}
 	return [
 		"docsflow: Obsidian vault output is OFF (default).",
 		"Artifacts write under the session cwd: ./docsflow/",
-		"Enable vault: set docsflow.vaultEnabled=true (and vaultRoot) in ~/.pi/agent/pi-essentials.json",
+		"Enable vault: set docsflow.vaultEnabled=true (and vaultRoot) in ~/.pi/agent/terrific.json",
 		"or DOCSFLOW_VAULT_ENABLED=true.",
 		"Mute this reminder: /docsflow remind off",
 	].join(" ");

@@ -13,7 +13,7 @@
 
 ### 配置
 
-`~/.pi/agent/pi-essentials.json`：
+`~/.pi/agent/terrific.json`：
 
 ```json
 {
@@ -59,7 +59,7 @@ docsflow/
 /docsflow remind on|off
 ```
 
-`/docsflow remind off` 关闭 session 启动与 `/docsflow start` 的配置提醒，写入 `pi-essentials.json` 的 `docsflow.configReminder`。
+`/docsflow remind off` 关闭 session 启动与 `/docsflow start` 的配置提醒，写入 `terrific.json` 的 `docsflow.configReminder`。
 
 ## 流水线
 

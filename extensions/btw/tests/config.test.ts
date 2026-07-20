@@ -9,14 +9,14 @@ import { loadConfig, mergeConfig, resolveConfigPaths } from "../lib/config.ts";
 describe("resolveConfigPaths", () => {
 	it("ignores project config when the project is not trusted", () => {
 		assert.deepEqual(resolveConfigPaths("/workspace", "/agent", false, ".pi"), [
-			"/agent/pi-essentials.json",
+			"/agent/terrific.json",
 		]);
 	});
 
 	it("uses the configured project directory name for trusted projects", () => {
 		assert.deepEqual(resolveConfigPaths("/workspace", "/agent", true, ".custom-pi"), [
-			"/agent/pi-essentials.json",
-			"/workspace/.custom-pi/pi-essentials.json",
+			"/agent/terrific.json",
+			"/workspace/.custom-pi/terrific.json",
 		]);
 	});
 });
@@ -61,8 +61,8 @@ describe("mergeConfig", () => {
 		const project = join(root, "project");
 		mkdirSync(agent);
 		mkdirSync(join(project, ".pi"), { recursive: true });
-		writeFileSync(join(agent, "pi-essentials.json"), JSON.stringify({ auxiliary: { tasks: { btw: { model: "openai/global" } } } }));
-		writeFileSync(join(project, ".pi", "pi-essentials.json"), JSON.stringify({ btw: { maxContextTokens: 1234 }, auxiliary: { tasks: { btw: { model: "openai/project" } } } }));
+		writeFileSync(join(agent, "terrific.json"), JSON.stringify({ auxiliary: { tasks: { btw: { model: "openai/global" } } } }));
+		writeFileSync(join(project, ".pi", "terrific.json"), JSON.stringify({ btw: { maxContextTokens: 1234 }, auxiliary: { tasks: { btw: { model: "openai/project" } } } }));
 		const { config } = loadConfig(project, agent, true, ".pi");
 		assert.equal(config.auxiliaryBtw?.model, "openai/global");
 		assert.equal(config.btw.maxContextTokens, 1234);

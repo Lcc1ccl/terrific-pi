@@ -37,7 +37,7 @@ import type {
 import { WIDGET_PRIORITY } from "./types.ts";
 
 /** Extension status keys that have dedicated widgets or live in process-view. */
-export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail", "pi-essentials-mode", "fast", "process", "auxiliary"]);
+export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail", "mode", "fast", "process", "auxiliary"]);
 
 /** Metadata-only tools that should not appear in footer activity. */
 export const EXCLUDED_TOOL_ACTIVITY_NAMES = new Set(["process_update"]);
@@ -46,8 +46,8 @@ export function shouldTrackToolActivity(toolName: string): boolean {
 	return !EXCLUDED_TOOL_ACTIVITY_NAMES.has(toolName);
 }
 
-/** Status key written by pi-essentials /mode. */
-export const MODE_STATUS_KEY = "pi-essentials-mode";
+/** Status key written by /mode. */
+export const MODE_STATUS_KEY = "mode";
 
 /** Status key written by /fast. */
 export const FAST_STATUS_KEY = "fast";

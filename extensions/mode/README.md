@@ -9,7 +9,7 @@ Pi `/mode` tool-permission modes. Does **not** change model or thinking level.
 | `edit` | baseline tools from session start |
 | `auto` | same tools as `edit` (label only) |
 
-Status key for statusline: `pi-essentials-mode` (unchanged for compatibility).
+Status key for statusline: `mode`.
 
 ## Install
 
@@ -27,7 +27,7 @@ Enable badge: add `"mode"` to `~/.pi/agent/statusline.json` widgets.
 }
 ```
 
-File: `~/.pi/agent/pi-essentials.json` (or trusted project `.pi/pi-essentials.json`).
+File: `~/.pi/agent/terrific.json` (or trusted project `.pi/terrific.json`).
 
 ## Command
 

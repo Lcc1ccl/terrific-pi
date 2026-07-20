@@ -23,7 +23,7 @@ AGENT_WHITELIST=(
 	settings.json
 	statusline.json
 	AGENTS.md
-	pi-essentials.json
+	terrific.json
 )
 GENERATED_AGENT_FILES=(
 	auth.template.json
