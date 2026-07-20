@@ -99,10 +99,20 @@ describe("auxiliary command interaction", () => {
 					getAvailable: () => [],
 				},
 				ui: {
-					select: async (title: string) => {
-						titles.push(title);
-						return undefined;
-					},
+					select: async () => undefined,
+					custom: async (factory: any) => new Promise<string | undefined>((resolve) => {
+						const component = factory(
+							{ requestRender() {} },
+							{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+							{
+								matches: (data: string, binding: string) => binding === "tui.select.cancel" && data === "\x1b",
+								getKeys: () => [],
+							},
+							resolve,
+						);
+						titles.push(component.render(200).join("\n"));
+						component.handleInput("\x1b");
+					}),
 					notify() {},
 				},
 			});

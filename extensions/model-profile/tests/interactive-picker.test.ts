@@ -41,8 +41,7 @@ describe("Quick apply picker", () => {
 
 			const renders: string[] = [];
 			let customCalls = 0;
-			const selectAnswers: Array<string | undefined> = ["Quick apply", undefined];
-			const inputs = ["\r", "\x1b", "\x1b"];
+			const inputs = ["\r", "\r", "\x1b", "\x1b"];
 			const ctx: any = {
 				cwd: agentDir,
 				hasUI: true,
@@ -55,10 +54,7 @@ describe("Quick apply picker", () => {
 					find: (provider: string, id: string) => ({ provider, id }),
 				},
 				ui: {
-					select: async (_title: string, options: string[]) => {
-						const answer = selectAnswers.shift();
-						return answer === undefined ? undefined : options.find((option) => option === answer);
-					},
+					select: async () => undefined,
 					custom: async (factory: any) => new Promise((resolve) => {
 						customCalls += 1;
 						const component = factory(
@@ -84,17 +80,21 @@ describe("Quick apply picker", () => {
 
 			await commandHandler?.("", ctx);
 
-			assert.equal(customCalls, 3);
-			assert.match(renders[0] ?? "", /Model profile/);
-			assert.match(renders[0] ?? "", /Up\/Down navigate/);
-			assert.match(renders[0] ?? "", /Enter select/);
+			assert.equal(customCalls, 5);
+			assert.match(renders[0] ?? "", /Model profiles/);
 			assert.match(renders[0] ?? "", /Esc cancel/);
-			assert.match(renders[1] ?? "", /Apply scope/);
+			assert.match(renders[1] ?? "", /Model profile/);
 			assert.match(renders[1] ?? "", /Up\/Down navigate/);
 			assert.match(renders[1] ?? "", /Enter select/);
-			assert.match(renders[1] ?? "", /Esc back/);
-			assert.match(renders[2] ?? "", /Model profile/);
-			assert.match(renders[2] ?? "", /Esc cancel/);
+			assert.match(renders[1] ?? "", /Esc cancel/);
+			assert.match(renders[2] ?? "", /Apply scope/);
+			assert.match(renders[2] ?? "", /Up\/Down navigate/);
+			assert.match(renders[2] ?? "", /Enter select/);
+			assert.match(renders[2] ?? "", /Esc back/);
+			assert.match(renders[3] ?? "", /Model profile/);
+			assert.match(renders[3] ?? "", /Esc cancel/);
+			assert.match(renders[4] ?? "", /Model profiles/);
+			assert.match(renders[4] ?? "", /Esc cancel/);
 		} finally {
 			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;

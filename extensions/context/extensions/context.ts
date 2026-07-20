@@ -11,6 +11,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_CONFIG, loadConfig, resolveConfigPaths, updateContextConfig } from "../lib/config.ts";
 import { TextOverlay, type OverlayAction } from "../lib/overlay.ts";
+import { selectMenu } from "../lib/select-menu.ts";
 import { report } from "../lib/output.ts";
 import { redactPreview } from "../lib/redact.ts";
 import {
@@ -168,7 +169,7 @@ async function runContextConfig(ctx: ExtensionCommandContext): Promise<void> {
 			"Show effective config",
 			"Done",
 		];
-		const choice = await ctx.ui.select([
+		const choice = await selectMenu(ctx, [
 			"Context configuration",
 			`write: ${scope} (${targetPath})`,
 			`effective: ${effective.config.context.topEntries}`,
@@ -176,7 +177,7 @@ async function runContextConfig(ctx: ExtensionCommandContext): Promise<void> {
 		].join("\n"), options);
 		if (!choice || choice === "Done") return;
 		if (choice.startsWith("Scope:")) {
-			const selected = await ctx.ui.select("Context config scope", ["global", "project"]);
+			const selected = await selectMenu(ctx, "Context config scope", ["global", "project"], { cancelAction: "back" });
 			if (selected === "global" || selected === "project") scope = selected;
 			continue;
 		}

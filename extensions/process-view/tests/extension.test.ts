@@ -94,6 +94,39 @@ function createHarness(options: HarnessOptions = {}) {
 			if (prefix === undefined) return undefined;
 			return items.find((item) => item === prefix || item.startsWith(prefix));
 		},
+		async custom(factory: any) {
+			return new Promise<string | undefined>((resolve, reject) => {
+				const component = factory(
+					{ requestRender() {} },
+					theme,
+					{
+						matches: (data: string, binding: string) =>
+							(data === "\x1b[A" && binding === "tui.select.up")
+							|| (data === "\x1b[B" && binding === "tui.select.down")
+							|| (data === "\r" && binding === "tui.select.confirm")
+							|| (data === "\x1b" && binding === "tui.select.cancel"),
+						getKeys: () => [],
+					},
+					resolve,
+				);
+				const render = () => component.render(200).join("\n");
+				selectCalls.push({ title: render(), options: [] });
+				const prefix = choices.shift();
+				if (prefix === undefined) {
+					component.handleInput("\x1b");
+					return;
+				}
+				for (let index = 0; index < 32; index++) {
+					const selected = render().split("\n").find((line: string) => line.trimStart().startsWith("→"));
+					if (selected?.includes(prefix)) {
+						component.handleInput("\r");
+						return;
+					}
+					component.handleInput("\x1b[B");
+				}
+				reject(new Error(`Menu option not found: ${prefix}`));
+			});
+		},
 		async confirm(title: string, message: string) {
 			confirmCalls.push({ title, message });
 			return confirmations.shift() ?? false;

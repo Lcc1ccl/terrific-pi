@@ -1,5 +1,5 @@
 import { DynamicBorder, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Container, Input, SelectList, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Container, Input, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import {
 	DEFAULT_CONFIG,
@@ -13,6 +13,7 @@ import {
 	runStatuslineConfigurator,
 	type MutationResult,
 } from "../lib/configure.ts";
+import { selectMenu } from "../lib/select-menu.ts";
 import { AgentDurationTracker } from "../lib/duration.ts";
 import { QuotaMonitor } from "../lib/quota.ts";
 import { renderStatusLine } from "../lib/render.ts";
@@ -51,6 +52,10 @@ function parseNumstat(output: string): BranchChangeStats {
 }
 
 const AUXILIARY_USAGE_CHANGED_EVENT = "terrific-pi:auxiliary-usage:changed-v1";
+
+function displayKey(key: string): string {
+	return ({ up: "Up", down: "Down", enter: "Enter", escape: "Esc" }[key] ?? key.replace(/\b[a-z]/g, (char) => char.toUpperCase()));
+}
 
 function emptyToolActivity(): ToolActivity {
 	return { active: 0, success: 0, error: 0 };
@@ -316,55 +321,28 @@ export default function statusline(pi: ExtensionAPI) {
 					reloadConfig,
 					resetConfig,
 					ui: {
-						selectMain: (title, items) =>
-							ctx.ui.custom<string | undefined>((tui, theme, _keybindings, done) => {
-								const container = new Container();
-								container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
-								container.addChild(new Text(theme.fg("accent", theme.bold(title))));
-
-								const selectList = new SelectList(
-									items.map((value) => ({ value, label: value })),
-									items.length,
-									{
-										selectedPrefix: (text) => theme.fg("accent", text),
-										selectedText: (text) => theme.fg("accent", text),
-										description: (text) => theme.fg("muted", text),
-										scrollInfo: (text) => theme.fg("dim", text),
-										noMatch: (text) => theme.fg("warning", text),
-									},
-								);
-								selectList.onSelect = (item) => done(item.value);
-								selectList.onCancel = () => done(undefined);
-								container.addChild(selectList);
-								container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
-
-								return {
-									render: (width) => container.render(width),
-									invalidate: () => container.invalidate(),
-									handleInput: (data) => {
-										selectList.handleInput(data);
-										tui.requestRender();
-									},
-								};
-							}),
-						select: (title, items) => ctx.ui.select(title, items),
+						selectMain: (title, items) => selectMenu(ctx, title, items, { cancelAction: "cancel" }),
+						select: (title, items) => selectMenu(ctx, title, items, { cancelAction: "back" }),
 						input: (title, initialValue) =>
-							ctx.ui.custom<string | undefined>((tui, theme, _keybindings, done) => {
+							ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
+								const key = (binding: "tui.input.submit" | "tui.select.cancel", fallback: string) =>
+									displayKey(keybindings.getKeys?.(binding)[0] ?? fallback);
 								const container = new Container();
 								container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
 								container.addChild(new Text(theme.fg("accent", theme.bold(title))));
 								const input = new Input();
 								input.setValue(initialValue);
 								input.focused = true;
-								input.onSubmit = done;
-								input.onEscape = () => done(undefined);
 								container.addChild(input);
+								container.addChild(new Text(theme.fg("dim", `${key("tui.input.submit", "enter")} submit · ${key("tui.select.cancel", "escape")} cancel`), 1, 0));
 								container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
 								return {
 									render: (width) => container.render(width),
 									invalidate: () => container.invalidate(),
 									handleInput: (data) => {
-										input.handleInput(data);
+										if (keybindings.matches(data, "tui.input.submit") || data === "\n" || data === "\r") done(input.getValue());
+										else if (keybindings.matches(data, "tui.select.cancel")) done(undefined);
+										else input.handleInput(data);
 										tui.requestRender();
 									},
 								};

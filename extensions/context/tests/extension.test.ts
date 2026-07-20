@@ -61,27 +61,35 @@ it("labels the global context target separately from the effective project value
 	try {
 		let command: any;
 		contextExtension({ registerCommand(_name: string, value: unknown) { command = value; } } as never);
-		let title = "";
-		let options: string[] = [];
+		let rendered = "";
 		await command.handler("config", {
 			cwd: projectDir,
 			hasUI: true,
 			mode: "tui",
 			isProjectTrusted: () => true,
 			ui: {
-				select: async (nextTitle: string, nextOptions: string[]) => {
-					title = nextTitle;
-					options = nextOptions;
-					return undefined;
-				},
+				select: async () => undefined,
+				custom: async (factory: any) => new Promise<string | undefined>((resolve) => {
+					const component = factory(
+						{ requestRender() {} },
+						{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+						{
+							matches: (data: string, binding: string) => binding === "tui.select.cancel" && data === "\x1b",
+							getKeys: () => [],
+						},
+						resolve,
+					);
+					rendered = component.render(200).join("\n");
+					component.handleInput("\x1b");
+				}),
 				notify() {},
 				confirm: async () => false,
 			},
 		});
 
-		assert.match(title, /write: global/);
-		assert.match(title, /effective: 3/);
-		assert.ok(options.includes("Write target top entries: 9"));
+		assert.match(rendered, /write: global/);
+		assert.match(rendered, /effective: 3/);
+		assert.match(rendered, /Write target top entries: 9/);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;

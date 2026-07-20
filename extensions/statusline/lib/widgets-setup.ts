@@ -30,7 +30,10 @@ export type WidgetsSetupOptions = {
 	widgetGroups?: StatuslineConfig["widgetGroups"];
 	theme: WidgetsSetupTheme;
 	previewConfig: StatuslineConfig;
-	keybindings: { matches(data: string, binding: WidgetEditorBinding): boolean };
+	keybindings: {
+		matches(data: string, binding: WidgetEditorBinding): boolean;
+		getKeys?(binding: WidgetEditorBinding): string[];
+	};
 	onChange: (
 		enabled: string[],
 		widgetGroups: StatuslineConfig["widgetGroups"],
@@ -119,6 +122,11 @@ export class WidgetsSetupComponent {
 		}
 	}
 
+	private key(binding: WidgetEditorBinding, fallback: string): string {
+		const value = this.keybindings.getKeys?.(binding)[0] ?? fallback;
+		return (({ up: "Up", down: "Down", left: "Left", right: "Right", enter: "Enter", escape: "Esc" } as Record<string, string>)[value] ?? value.replace(/\b[a-z]/g, (char) => char.toUpperCase()));
+	}
+
 	render(width: number): string[] {
 		if (this.cachedLines && this.cachedWidth === width) {
 			return this.cachedLines;
@@ -127,7 +135,14 @@ export class WidgetsSetupComponent {
 		const th = this.theme;
 		const lines: string[] = [
 			th.fg("accent", this.title),
-			th.fg("dim", "Space toggle · g cycle group · ↑/↓ select · ←/→ move any · Enter done · Esc back"),
+			th.fg("dim", [
+				"Space toggle",
+				"g group",
+				`${this.key("tui.select.up", "up")}/${this.key("tui.select.down", "down")} select`,
+				`${this.key("tui.editor.cursorLeft", "left")}/${this.key("tui.editor.cursorRight", "right")} move`,
+				`${this.key("tui.select.confirm", "enter")} done`,
+				`${this.key("tui.select.cancel", "escape")} back`,
+			].join(" · ")),
 			th.fg("dim", "Section = stacked line; mock preview uses sample data"),
 			"",
 		];

@@ -54,8 +54,7 @@ it("shows the global write target separately from a trusted project's effective 
 			appendEntry() {},
 		} as never);
 
-		let title = "";
-		let options: string[] = [];
+		let rendered = "";
 		await command!.handler("config", {
 			cwd: projectDir,
 			hasUI: true,
@@ -64,19 +63,28 @@ it("shows the global write target separately from a trusted project's effective 
 			ui: {
 				setStatus() {},
 				notify() {},
-				select: async (nextTitle: string, nextOptions: string[]) => {
-					title = nextTitle;
-					options = nextOptions;
-					return undefined;
-				},
+				select: async () => undefined,
+				custom: async (factory: any) => new Promise<string | undefined>((resolve) => {
+					const component = factory(
+						{ requestRender() {} },
+						{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+						{
+							matches: (data: string, binding: string) => binding === "tui.select.cancel" && data === "\x1b",
+							getKeys: () => [],
+						},
+						resolve,
+					);
+					rendered = component.render(200).join("\n");
+					component.handleInput("\x1b");
+				}),
 				confirm: async () => false,
 			},
 		});
 
-		assert.match(title, /write: global/);
-		assert.match(title, /effective: ask/);
-		assert.ok(options.includes("Global default mode: edit"));
-		assert.ok(options.includes("Global persist per session: on"));
+		assert.match(rendered, /write: global/);
+		assert.match(rendered, /effective: ask/);
+		assert.match(rendered, /Global default mode: edit/);
+		assert.match(rendered, /Global persist per session: on/);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;

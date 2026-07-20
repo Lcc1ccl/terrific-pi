@@ -18,6 +18,7 @@ import { createIsolatedBtwSession } from "../lib/btw-session.ts";
 import { loadConfig, resolveConfigPaths, updateBtwConfig } from "../lib/config.ts";
 import { formatBtwStatus, parseBtwCommandArgs, type BtwContextMode } from "../lib/command.ts";
 import { TextOverlay, type OverlayAction } from "../lib/overlay.ts";
+import { selectMenu } from "../lib/select-menu.ts";
 import { report } from "../lib/output.ts";
 import { charsToTokens, type ClassifiableMessage } from "../lib/tokens.ts";
 import { BTW_SYSTEM_PROMPT } from "../lib/btw-context.ts";
@@ -279,7 +280,7 @@ export default function (pi: ExtensionAPI) {
 			for (const warning of effective.warnings) report(ctx, warning, "warning");
 			const targetPath = scope === "project" ? paths[1]! : paths[0]!;
 			const target = scope === "global" ? global.config : effective.config;
-			const choice = await ctx.ui.select([
+			const choice = await selectMenu(ctx, [
 				"BTW configuration",
 				`write: ${scope} (${targetPath})`,
 				`effective: ${effective.config.btw.maxContextTokens}`,
@@ -294,7 +295,7 @@ export default function (pi: ExtensionAPI) {
 			]);
 			if (!choice || choice === "Done") return;
 			if (choice.startsWith("Scope:")) {
-				const selected = await ctx.ui.select("BTW config scope", ["global", "project"]);
+				const selected = await selectMenu(ctx, "BTW config scope", ["global", "project"], { cancelAction: "back" });
 				if (selected === "global" || selected === "project") scope = selected;
 				continue;
 			}

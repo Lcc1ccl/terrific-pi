@@ -10,6 +10,7 @@ import {
 	resolveTaskRoute,
 	updateAuxiliaryConfig,
 } from "./config.ts";
+import { selectMenu } from "./select-menu.ts";
 import type { AuxiliaryConfig, AuxiliaryRouteConfig, AuxiliaryTaskKey } from "./types.ts";
 
 export const CONFIGURABLE_AUXILIARY_TASKS = [
@@ -642,7 +643,7 @@ export async function pickAvailableModel(
 		const marker = currentProvider !== "current" && currentProvider?.provider === provider ? " [current]" : "";
 		return `${provider} (${count})${marker}`;
 	});
-	const providerChoice = await ctx.ui.select(`${title}: provider`, [...providerItems, "Back"]);
+	const providerChoice = await selectMenu(ctx, `${title}: provider`, [...providerItems, "Back"]);
 	if (!providerChoice || providerChoice === "Back") return undefined;
 	const provider = providers.find((value) => providerChoice.startsWith(`${value} (`));
 	if (!provider) return undefined;
@@ -657,6 +658,10 @@ export async function pickAvailableModel(
 		input.focused = true;
 		container.addChild(input);
 		container.addChild(new Spacer(1));
+		const key = (binding: "tui.select.up" | "tui.select.down" | "tui.select.confirm" | "tui.select.cancel", fallback: string) => {
+			const value = keybindings.getKeys?.(binding)[0] ?? fallback;
+			return (({ up: "Up", down: "Down", enter: "Enter", escape: "Esc" } as Record<string, string>)[value] ?? value.replace(/\b[a-z]/g, (char) => char.toUpperCase()));
+		};
 		const list = new SelectList(
 			models.map(({ ref, modelId }) => {
 				const model = ctx.modelRegistry.find(provider, modelId);
@@ -676,26 +681,39 @@ export async function pickAvailableModel(
 			},
 		);
 		const currentIndex = models.findIndex((item) => item.ref === currentRef);
+		let filteredModels = models;
+		let selectedIndex = Math.max(0, currentIndex);
 		if (currentIndex >= 0) list.setSelectedIndex(currentIndex);
-		list.onSelect = (item) => done(`${provider}/${item.value}`);
-		list.onCancel = () => done(undefined);
+		const move = (direction: -1 | 1) => {
+			if (filteredModels.length === 0) return;
+			selectedIndex = (selectedIndex + direction + filteredModels.length) % filteredModels.length;
+			list.setSelectedIndex(selectedIndex);
+		};
 		container.addChild(list);
+		container.addChild(new Text(theme.fg("dim", [
+			"type to filter",
+			`${key("tui.select.up", "up")}/${key("tui.select.down", "down")} navigate`,
+			`${key("tui.select.confirm", "enter")} select`,
+			`${key("tui.select.cancel", "escape")} back`,
+		].join(" · ")), 1, 0));
 		container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
 
 		return {
 			render: (width) => container.render(width),
 			invalidate: () => container.invalidate(),
 			handleInput: (data) => {
-				if (
-					keybindings.matches(data, "tui.select.up")
-					|| keybindings.matches(data, "tui.select.down")
-					|| keybindings.matches(data, "tui.select.confirm")
-					|| keybindings.matches(data, "tui.select.cancel")
-				) {
-					list.handleInput(data);
-				} else {
+				if (keybindings.matches(data, "tui.select.up")) move(-1);
+				else if (keybindings.matches(data, "tui.select.down")) move(1);
+				else if (keybindings.matches(data, "tui.select.confirm") || data === "\n" || data === "\r") {
+					const model = filteredModels[selectedIndex];
+					if (model) done(`${provider}/${model.modelId}`);
+				} else if (keybindings.matches(data, "tui.select.cancel")) done(undefined);
+				else {
 					input.handleInput(data);
-					list.setFilter(input.getValue());
+					const filter = input.getValue();
+					list.setFilter(filter);
+					filteredModels = models.filter((model) => model.modelId.toLowerCase().startsWith(filter.toLowerCase()));
+					selectedIndex = 0;
 				}
 				tui.requestRender();
 			},
@@ -715,7 +733,7 @@ export async function runAuxiliaryConfigTui(ctx: ExtensionContext, agentDir: str
 		currentModel: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
 		modelRefs,
 		ui: {
-			select: (title, options) => ctx.ui.select(title, options),
+			select: (title, options) => selectMenu(ctx, title, options),
 			input: (title, placeholder) => ctx.ui.input(title, placeholder),
 			confirm: (title, message) => ctx.ui.confirm(title, message),
 			pickModel: (title, current, refs) => pickAvailableModel(ctx, title, current, refs),

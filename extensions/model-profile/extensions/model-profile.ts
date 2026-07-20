@@ -121,12 +121,13 @@ function displayKey(key: string): string {
 	return ({ up: "Up", down: "Down", enter: "Enter", escape: "Esc" }[key] ?? key.replace(/\b[a-z]/g, (char) => char.toUpperCase()));
 }
 
-function selectTuiOption(
+export function selectTuiOption(
 	ctx: ExtensionContext,
 	title: string,
 	options: string[],
 	settings: { cancelAction: "back" | "cancel"; directChoice?: (data: string, options: readonly string[]) => string | undefined },
 ): Promise<string | undefined> {
+	if (options.length === 0) return Promise.resolve(undefined);
 	return ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
 		const keys = (id: "tui.select.up" | "tui.select.down" | "tui.select.confirm" | "tui.select.cancel", fallback: string) =>
 			displayKey(keybindings.getKeys?.(id)[0] ?? fallback);
@@ -147,8 +148,11 @@ function selectTuiOption(
 				noMatch: (text) => theme.fg("warning", text),
 			},
 		);
-		list.onSelect = (item) => done(item.value);
-		list.onCancel = () => done(undefined);
+		let selectedIndex = 0;
+		const move = (direction: -1 | 1) => {
+			selectedIndex = (selectedIndex + direction + options.length) % options.length;
+			list.setSelectedIndex(selectedIndex);
+		};
 
 		return {
 			render: (width) => {
@@ -162,12 +166,13 @@ function selectTuiOption(
 			},
 			invalidate: () => list.invalidate(),
 			handleInput: (data) => {
-				if (keybindings.matches?.(data, "tui.select.cancel")) {
-					list.onCancel?.();
-				} else {
+				if (keybindings.matches?.(data, "tui.select.up")) move(-1);
+				else if (keybindings.matches?.(data, "tui.select.down")) move(1);
+				else if (keybindings.matches?.(data, "tui.select.confirm") || data === "\n" || data === "\r") done(options[selectedIndex]);
+				else if (keybindings.matches?.(data, "tui.select.cancel")) done(undefined);
+				else {
 					const directChoice = settings.directChoice?.(data, options);
 					if (directChoice !== undefined) done(directChoice);
-					else list.handleInput(data);
 				}
 				tui.requestRender();
 			},
@@ -352,7 +357,7 @@ export default function (pi: ExtensionAPI) {
 				};
 			},
 			ui: {
-				select: (title, options) => ctx.ui.select(title, options),
+				select: (title, options) => selectTuiOption(ctx, title, options, { cancelAction: options.includes("Done") ? "cancel" : "back" }),
 				input: (title, placeholder) => ctx.ui.input(title, placeholder),
 				confirm: (title, message) => ctx.ui.confirm(title, message),
 				pickModel: async (title, current, refs) => {
@@ -366,14 +371,14 @@ export default function (pi: ExtensionAPI) {
 						const count = refs.filter((ref) => ref.startsWith(`${provider}/`)).length;
 						return `${provider} (${count})${provider === currentProvider ? " [current]" : ""}`;
 					});
-					const providerChoice = await ctx.ui.select(`${title}: provider`, providerOptions);
+					const providerChoice = await selectTuiOption(ctx, `${title}: provider`, providerOptions, { cancelAction: "back" });
 					const providerIndex = providerChoice ? providerOptions.indexOf(providerChoice) : -1;
 					if (providerIndex < 0) return undefined;
 					const provider = providers[providerIndex]!;
 					const options = refs
 						.filter((ref) => ref.startsWith(`${provider}/`))
 						.map((ref) => `${ref}${ref === current ? " [current]" : ""}`);
-					const choice = await ctx.ui.select(`${title}: ${provider}`, options);
+					const choice = await selectTuiOption(ctx, `${title}: ${provider}`, options, { cancelAction: "back" });
 					return choice?.replace(/ \[current\]$/, "");
 				},
 				notify: (message, level) => ctx.ui.notify(message, level),
@@ -558,7 +563,7 @@ export default function (pi: ExtensionAPI) {
 						name: typeof m.name === "string" ? m.name : undefined,
 					})),
 				ui: {
-					select: (title, options) => ctx.ui.select(title, options),
+					select: (title, options) => selectTuiOption(ctx, title, options, { cancelAction: "back" }),
 					selectStartup: (title, options) => selectStartupOption(ctx, title, options),
 					selectScope: (title, options) => selectScopeOption(ctx, title, options),
 				},

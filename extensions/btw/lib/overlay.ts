@@ -122,6 +122,7 @@ export class TextOverlay implements Focusable {
 		const w = Math.min(width, 100);
 		const inner = w - 2;
 		const maxBody = Math.max(8, Math.min(24, this.body.length));
+		const overflows = this.body.length > maxBody;
 		const maxScroll = Math.max(0, this.body.length - maxBody);
 		if (this.scroll > maxScroll) this.scroll = maxScroll;
 
@@ -137,12 +138,13 @@ export class TextOverlay implements Focusable {
 		for (const line of slice) lines.push(row(` ${line}`));
 		for (let i = slice.length; i < maxBody; i++) lines.push(row(""));
 
-		if (this.body.length > maxBody) {
+		if (overflows) {
 			lines.push(row(` ${th.fg("dim", `… ${this.scroll + 1}-${this.scroll + slice.length}/${this.body.length}`)}`));
 		}
 
 		lines.push(row(""));
-		lines.push(row(` ${th.fg("dim", this.footer)}`));
+		const footer = overflows ? `Up/Down scroll · ${this.footer}` : this.footer;
+		lines.push(row(` ${th.fg("dim", footer)}`));
 		lines.push(th.fg("border", `╰${"─".repeat(inner)}╯`));
 		return lines;
 	}

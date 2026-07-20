@@ -9,6 +9,7 @@ import { Container } from "@earendil-works/pi-tui";
 import { ActivityTracker } from "../lib/activity.ts";
 import { loadProcessViewDefault, updateProcessViewConfig } from "../lib/config.ts";
 import { ProcessWidget, renderToolResult } from "../lib/render.ts";
+import { selectMenu } from "../lib/select-menu.ts";
 import {
 	buildContextReminder,
 	createPersistedState,
@@ -332,7 +333,7 @@ export default function processView(pi: ExtensionAPI) {
 		while (true) {
 			const expanded = ctx.ui.getToolsExpanded();
 			const defaultMode = loadProcessViewDefault(getAgentDir());
-			const choice = await ctx.ui.select(processSummary(state), [
+			const choice = await selectMenu(ctx, processSummary(state), [
 				`View mode: ${state.viewMode}`,
 				`Default for new sessions: ${defaultMode}`,
 				`${expanded ? "Collapse" : "Expand"} live panel`,
@@ -341,12 +342,12 @@ export default function processView(pi: ExtensionAPI) {
 			]);
 			if (!choice || choice === "Done") return;
 			if (choice.startsWith("View mode:")) {
-				const mode = await ctx.ui.select("Process view mode", ["compact", "full", "off"]);
+				const mode = await selectMenu(ctx, "Process view mode", ["compact", "full", "off"], { cancelAction: "back" });
 				if (mode === "compact" || mode === "full" || mode === "off") saveViewMode(mode, ctx);
 				continue;
 			}
 			if (choice.startsWith("Default for new sessions:")) {
-				const mode = await ctx.ui.select("Default Process View mode", ["compact", "full", "off"]);
+				const mode = await selectMenu(ctx, "Default Process View mode", ["compact", "full", "off"], { cancelAction: "back" });
 				if (mode === "compact" || mode === "full" || mode === "off") setGlobalDefaultViewMode(ctx, mode);
 				continue;
 			}

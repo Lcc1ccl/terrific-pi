@@ -6,6 +6,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_CONFIG, loadConfig, resolveConfigPath, resolveConfigPaths, updateModeConfig, type ModeName } from "../lib/config.ts";
+import { selectMenu } from "../lib/select-menu.ts";
 import {
 	isModeName,
 	MODE_ENTRY_TYPE,
@@ -123,7 +124,7 @@ export default function (pi: ExtensionAPI) {
 		while (true) {
 			const { global, effective } = loadScopes();
 			for (const warning of effective.warnings) report(ctx, warning, "warning");
-			const choice = await ctx.ui.select([
+			const choice = await selectMenu(ctx, [
 				"Mode configuration",
 				`write: global (${resolveConfigPath(getAgentDir())})`,
 				`effective: ${effective.config.mode.default} · persist ${effective.config.mode.persistPerSession ? "on" : "off"}`,
@@ -138,10 +139,10 @@ export default function (pi: ExtensionAPI) {
 			]);
 			if (!choice || choice === "Done") return;
 			if (choice.startsWith("Global default mode:")) {
-				const next = await ctx.ui.select("Default mode", ["ask", "plan", "edit", "auto"]);
+				const next = await selectMenu(ctx, "Default mode", ["ask", "plan", "edit", "auto"], { cancelAction: "back" });
 				if (next && isModeName(next)) mutateGlobalMode(ctx, (mode) => { mode.default = next; }, `Default mode: ${next}`);
 			} else if (choice.startsWith("Global persist per session:")) {
-				const next = await ctx.ui.select("Persist mode per session", ["On", "Off"]);
+				const next = await selectMenu(ctx, "Persist mode per session", ["On", "Off"], { cancelAction: "back" });
 				if (next) mutateGlobalMode(ctx, (mode) => { mode.persistPerSession = next === "On"; }, `Persist per session: ${next.toLowerCase()}`);
 			} else if (choice === "Save current as default") {
 				mutateGlobalMode(ctx, (mode) => { mode.default = currentMode; }, `Saved ${currentMode} as the global default`);
@@ -192,7 +193,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			const choice = await ctx.ui.select("Execution mode", [
+			const choice = await selectMenu(ctx, "Execution mode", [
 				`ask — read/grep/find/ls only${currentMode === "ask" ? " (current)" : ""}`,
 				`plan — read-only tools${currentMode === "plan" ? " (current)" : ""}`,
 				`edit — default toolset${currentMode === "edit" ? " (current)" : ""}`,

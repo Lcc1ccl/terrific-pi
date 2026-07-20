@@ -12,6 +12,7 @@ import { STAGE_AGENT, backupRootFor, describeLocation, resumeFlow, startFlow } f
 import { loadDocsAgentProfiles } from "../lib/profiles.ts";
 import { runDocsflowManager } from "../lib/interaction.ts";
 import { report } from "../lib/output.ts";
+import { selectMenu } from "../lib/select-menu.ts";
 import {
 	DOCSFLOW_STATUS_KEY,
 	loadState,
@@ -179,7 +180,7 @@ export default function docsflow(pi: ExtensionAPI) {
 			report(ctx, "No draft artifacts in docsflow output folder");
 			return;
 		}
-		const choice = await ctx.ui.select("Docsflow drafts", ["Apply drafts", "Show drafts", "Back"]);
+		const choice = await selectMenu(ctx, "Docsflow drafts", ["Apply drafts", "Show drafts", "Back"]);
 		if (!choice || choice === "Back") return;
 		if (choice === "Apply drafts") await applyDrafts(ctx);
 		else report(ctx, pairs.map((pair) => `${pair.formal} <= ${pair.draft}`).join("\n"));
@@ -236,7 +237,7 @@ export default function docsflow(pi: ExtensionAPI) {
 			modelCapabilities,
 			stageDefaults,
 			ui: {
-				select: (title, options) => ctx.ui.select(title, options),
+				select: (title, options) => selectMenu(ctx, title, options),
 				input: (title, placeholder) => ctx.ui.input(title, placeholder),
 				confirm: (title, message) => ctx.ui.confirm(title, message),
 				notify: (message, level) => ctx.ui.notify(message, level),
@@ -275,7 +276,7 @@ export default function docsflow(pi: ExtensionAPI) {
 		const state = loadState(ctx.cwd);
 		await runDocsflowManager({
 			title: `Docsflow\n${state.status} · ${state.projectSlug || "no project"} · ${state.currentStage ?? "no active stage"}`,
-			ui: { select: (title, options) => ctx.ui.select(title, options) },
+			ui: { select: (title, options) => selectMenu(ctx, title, options) },
 			status: async () => showStatus(ctx),
 			start: async () => runStartWizard(ctx),
 			resume: async () => runFlow(ctx, "resume"),

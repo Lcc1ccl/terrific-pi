@@ -2,7 +2,7 @@
 
 > 日期：2026-07-20
 >
-> 状态：Phase 0–5 代码与自动化验证已完成；Phase 6 待实施；真机 TUI 手动验收待执行
+> 状态：Phase 0–6 代码与自动化验证已完成；真机 TUI 手动验收待执行
 > 范围：terrific-pi 仓库内 9 个 extension 的 slash 交互与共享配置写入语义
 
 ## 1. 目标
@@ -164,7 +164,7 @@
 - 统一 README、CAPABILITIES 和示例
 - 真机 TUI 手动验收（待执行）
 
-## 9. Phase 6：菜单循环与低噪音提示（待实施）
+## 9. Phase 6：菜单循环与低噪音提示（已完成；真机 TUI 待验）
 
 ### 9.1 适用范围与交互契约
 
@@ -203,4 +203,4 @@
 5. 独立 spec review
 6. 独立 code-quality review
 
-已交付 Phase 0–5 的实现与包级自动化验证。Phase 3–5 的审查发现已回归修复：Docsflow 继承 profile thinking、拒绝不兼容的阶段 thinking，`/process clear` 的所有入口统一要求确认；配置菜单区分 global 写目标与 project 生效值，Model Profile 项目覆盖保持全局元数据继承，Docsflow 限制 vault 输出与最终 stage model/thinking 组合。Phase 6 尚未实施；完成后再执行统一真机 TUI 手动验收。
+已交付 Phase 0–6 的实现与包级自动化验证。Phase 3–5 的审查发现已回归修复：Docsflow 继承 profile thinking、拒绝不兼容的阶段 thinking，`/process clear` 的所有入口统一要求确认；配置菜单区分 global 写目标与 project 生效值，Model Profile 项目覆盖保持全局元数据继承，Docsflow 限制 vault 输出与最终 stage model/thinking 组合。Phase 6 以 package-local `SelectList` adapters 取代离散菜单中的 core selector，覆盖循环导航、层级 Esc、动态 keybinding footer，以及 Auxiliary/Model Profile/Statusline 的专用交互；8 个受影响包共 450 项测试、6 个 typecheck 和 2 个入口加载检查通过。仍需在真实 Pi TUI 的 `80x24`、`120x40` 及自定义 keybindings 下统一手动验收。
