@@ -10,6 +10,7 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { CONFIG_DIR_NAME, DynamicBorder, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Container, SelectList, Text } from "@earendil-works/pi-tui";
+import { selectSearchableOption } from "../lib/searchable-select.ts";
 
 import {
 	applyProfile,
@@ -375,11 +376,23 @@ export default function (pi: ExtensionAPI) {
 					const providerIndex = providerChoice ? providerOptions.indexOf(providerChoice) : -1;
 					if (providerIndex < 0) return undefined;
 					const provider = providers[providerIndex]!;
-					const options = refs
-						.filter((ref) => ref.startsWith(`${provider}/`))
-						.map((ref) => `${ref}${ref === current ? " [current]" : ""}`);
-					const choice = await selectTuiOption(ctx, `${title}: ${provider}`, options, { cancelAction: "back" });
-					return choice?.replace(/ \[current\]$/, "");
+					const providerRefs = refs.filter((ref) => ref.startsWith(`${provider}/`));
+					const items = providerRefs.map((ref) => {
+						const modelId = ref.slice(provider.length + 1);
+						const model = ctx.modelRegistry.find(provider, modelId);
+						const currentMark = ref === current ? " [current]" : "";
+						const name =
+							model && typeof model.name === "string" && model.name !== modelId ? model.name : undefined;
+						return {
+							value: ref,
+							label: `${ref}${currentMark}`,
+							searchText: `${modelId} ${provider} ${ref}${name ? ` ${name}` : ""}`,
+						};
+					});
+					return selectSearchableOption(ctx, `${title}: ${provider}`, items, {
+						cancelAction: "back",
+						initialSelectedValue: current && current.startsWith(`${provider}/`) ? current : undefined,
+					});
 				},
 				notify: (message, level) => ctx.ui.notify(message, level),
 			},
@@ -566,6 +579,8 @@ export default function (pi: ExtensionAPI) {
 					select: (title, options) => selectTuiOption(ctx, title, options, { cancelAction: "back" }),
 					selectStartup: (title, options) => selectStartupOption(ctx, title, options),
 					selectScope: (title, options) => selectScopeOption(ctx, title, options),
+					selectSearchable: (title, items, settings) =>
+						selectSearchableOption(ctx, title, items, settings),
 				},
 			}),
 		);

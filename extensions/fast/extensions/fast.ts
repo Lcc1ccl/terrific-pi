@@ -2,7 +2,7 @@
  * /fast — toggle OpenAI Priority processing (service_tier: priority).
  *
  * Preference is global (terrific.json) and persists across sessions.
- * Effective only for openai-family Responses APIs; non-openai models auto-yield.
+ * Effective only for GPT models on openai-family Responses APIs; others auto-yield.
  *
  * Usage:
  *   /fast          toggle
@@ -46,14 +46,35 @@ export function supportsFastApi(api: string | undefined): boolean {
 	return typeof api === "string" && FAST_APIS.has(api);
 }
 
-/** UI / status: only when preference is on and API is known openai-family. */
-export function isFastActive(preferred: boolean, api: string | undefined): boolean {
-	return preferred && supportsFastApi(api);
+/** Strict GPT model ids only: `gpt`, `gpt-*`, `gpt.*` (case-insensitive). */
+export function isGptModelId(modelId: string | undefined): boolean {
+	if (typeof modelId !== "string") return false;
+	const id = modelId.trim().toLowerCase();
+	if (!id) return false;
+	return id === "gpt" || id.startsWith("gpt-") || id.startsWith("gpt.");
+}
+
+/** API family + GPT model id both required. */
+export function supportsFastModel(api: string | undefined, modelId: string | undefined): boolean {
+	return supportsFastApi(api) && isGptModelId(modelId);
+}
+
+/** UI / status: preference on and current model is a GPT Responses model. */
+export function isFastActive(
+	preferred: boolean,
+	api: string | undefined,
+	modelId?: string,
+): boolean {
+	return preferred && supportsFastModel(api, modelId);
 }
 
 /** Keep billing behavior aligned with the visible active-state badge. */
-export function shouldInjectPriority(preferred: boolean, api: string | undefined): boolean {
-	return isFastActive(preferred, api);
+export function shouldInjectPriority(
+	preferred: boolean,
+	api: string | undefined,
+	modelId?: string,
+): boolean {
+	return isFastActive(preferred, api, modelId);
 }
 
 export function defaultAgentDir(): string {
@@ -236,12 +257,33 @@ export function readSessionFastState(ctx: ExtensionContext): boolean | undefined
 	return undefined;
 }
 
-function modelApi(ctx: ExtensionContext, model?: { api?: unknown }): string | undefined {
+type ModelLike = { api?: unknown; id?: unknown };
+
+function readModelApi(model?: ModelLike): string | undefined {
+	return typeof model?.api === "string" ? model.api : undefined;
+}
+
+function readModelId(model?: ModelLike): string | undefined {
+	return typeof model?.id === "string" ? model.id : undefined;
+}
+
+function modelApi(ctx: ExtensionContext, model?: ModelLike): string | undefined {
+	const fromModel = readModelApi(model);
+	if (fromModel !== undefined) return fromModel;
 	try {
-		const api = model?.api ?? ctx.model?.api;
-		return typeof api === "string" ? api : undefined;
+		return readModelApi(ctx.model);
 	} catch {
 		// Stale extension ctx must not block toggle/request paths.
+		return undefined;
+	}
+}
+
+function modelIdOf(ctx: ExtensionContext, model?: ModelLike): string | undefined {
+	const fromModel = readModelId(model);
+	if (fromModel !== undefined) return fromModel;
+	try {
+		return readModelId(ctx.model);
+	} catch {
 		return undefined;
 	}
 }
@@ -250,18 +292,68 @@ function applyStatus(ctx: ExtensionContext, active: boolean): void {
 	ctx.ui.setStatus("fast", active ? FAST_STATUS : undefined);
 }
 
-function reportFastStatus(ctx: ExtensionContext, preferred: boolean): void {
-	const text = formatFastStatus(preferred, modelApi(ctx), resolveConfigPath());
+function reportFastStatus(
+	ctx: ExtensionContext,
+	preferred: boolean,
+	api: string | undefined,
+	modelId: string | undefined,
+): void {
+	const text = formatFastStatus(preferred, api, resolveConfigPath(), modelId);
 	if (ctx.mode === "print") process.stdout.write(`${text}\n`);
 	else ctx.ui.notify(text, "info");
 }
 
 export default function (pi: ExtensionAPI) {
-	// User preference (global). Active only when model API is openai-family.
+	// User preference (global). Active only for GPT + openai-family Responses.
 	let preferred = false;
+	/** Last model snapshot from model_select. Authoritative once observed. */
+	let lastApi: string | undefined;
+	let lastModelId: string | undefined;
+	let hasObservedModel = false;
 
-	const refresh = (ctx: ExtensionContext, model?: { api?: unknown }) => {
-		applyStatus(ctx, isFastActive(preferred, modelApi(ctx, model)));
+	const rememberModel = (api: string | undefined, modelId: string | undefined) => {
+		lastApi = api;
+		lastModelId = modelId;
+		hasObservedModel = true;
+	};
+
+	/**
+	 * Resolve effective model for badge/injection.
+	 * Order: explicit model arg → live ctx.model (even if fields missing) → last model_select.
+	 * A present model with no api/id is treated as unknown (no inject), not as last snapshot.
+	 */
+	const currentModel = (
+		ctx: ExtensionContext,
+		model?: ModelLike,
+	): { api: string | undefined; modelId: string | undefined } => {
+		if (model !== undefined) {
+			return { api: readModelApi(model), modelId: readModelId(model) };
+		}
+		try {
+			if (ctx.model) {
+				return { api: readModelApi(ctx.model), modelId: readModelId(ctx.model) };
+			}
+		} catch {
+			// fall through to last snapshot
+		}
+		if (hasObservedModel) return { api: lastApi, modelId: lastModelId };
+		return { api: undefined, modelId: undefined };
+	};
+
+	const refresh = (ctx: ExtensionContext, model?: ModelLike) => {
+		if (model !== undefined) {
+			// model_select: record event model (incl. missing fields → yield).
+			rememberModel(readModelApi(model), readModelId(model));
+			applyStatus(ctx, isFastActive(preferred, lastApi, lastModelId));
+			return;
+		}
+		const liveApi = modelApi(ctx);
+		const liveId = modelIdOf(ctx);
+		if (liveApi !== undefined || liveId !== undefined || !hasObservedModel) {
+			rememberModel(liveApi, liveId);
+		}
+		const current = currentModel(ctx);
+		applyStatus(ctx, isFastActive(preferred, current.api, current.modelId));
 	};
 
 	const setPreferred = (ctx: ExtensionContext, next: boolean) => {
@@ -270,13 +362,13 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify("Fast preference set in-memory only (failed to write terrific.json)", "warning");
 		}
 
-		const api = modelApi(ctx);
-		const active = isFastActive(preferred, api);
+		const current = currentModel(ctx);
+		const active = isFastActive(preferred, current.api, current.modelId);
 		applyStatus(ctx, active);
 
 		if (preferred && !active) {
 			ctx.ui.notify(
-				"Fast preference ON (inactive until openai-family Responses model)",
+				"Fast preference ON (inactive until a GPT model on openai-family Responses)",
 				"warning",
 			);
 			return;
@@ -293,8 +385,10 @@ export default function (pi: ExtensionAPI) {
 		},
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
-			if (arg === "status") reportFastStatus(ctx, preferred);
-			else if (arg === "on") setPreferred(ctx, true);
+			if (arg === "status") {
+				const current = currentModel(ctx);
+				reportFastStatus(ctx, preferred, current.api, current.modelId);
+			} else if (arg === "on") setPreferred(ctx, true);
 			else if (arg === "off") setPreferred(ctx, false);
 			else if (arg === "" || arg === "toggle") setPreferred(ctx, !preferred);
 			else ctx.ui.notify("Usage: /fast [on|off|toggle|status]", "error");
@@ -327,12 +421,26 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("model_select", async (event, ctx) => {
-		// Auto-yield UI when leaving openai-family; restore when returning.
+		// model-profile / /model / cycle all emit this after setModel.
+		// Non-GPT or non-openai-family → yield immediately.
 		refresh(ctx, event.model);
 	});
 
+	// Safety net: re-sync badge from live model before each run.
+	pi.on("before_agent_start", async (_event, ctx) => {
+		refresh(ctx);
+	});
+
 	pi.on("before_provider_request", (event, ctx) => {
-		if (!shouldInjectPriority(preferred, modelApi(ctx))) return;
+		const current = currentModel(ctx);
+		// Payload model id is a secondary check when session model id is missing.
+		const payloadModel =
+			event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+				? (event.payload as { model?: unknown }).model
+				: undefined;
+		const modelId =
+			current.modelId ?? (typeof payloadModel === "string" ? payloadModel : undefined);
+		if (!shouldInjectPriority(preferred, current.api, modelId)) return;
 		return injectPriority(event.payload);
 	});
 }

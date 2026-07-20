@@ -42,6 +42,12 @@ export interface StartupUi {
 	select: (title: string, options: string[]) => Promise<string | undefined>;
 	selectStartup?: (title: string, options: string[]) => Promise<string | undefined>;
 	selectScope?: (title: string, options: string[]) => Promise<string | undefined>;
+	/** Type-to-filter model list (pi /model style). Falls back to select when omitted. */
+	selectSearchable?: (
+		title: string,
+		items: ReadonlyArray<{ value: string; label: string; searchText?: string }>,
+		settings?: { cancelAction?: "back" | "cancel"; initialSelectedValue?: string },
+	) => Promise<string | undefined>;
 }
 
 export interface AvailableModel {
@@ -242,10 +248,27 @@ async function browseAllModels(
 	const models = [...(byProvider.get(providerChoice) ?? [])].sort((a, b) =>
 		modelOptionLabel(a).localeCompare(modelOptionLabel(b)),
 	);
-	const labels = models.map(modelOptionLabel);
-	const modelChoice = await ui.select(`Browse models — ${providerChoice}`, labels);
+	const items = models.map((model) => {
+		const label = modelOptionLabel(model);
+		const ref = `${model.provider}/${model.id}`;
+		return {
+			value: ref,
+			label,
+			searchText: `${model.id} ${model.provider} ${ref}${model.name ? ` ${model.name}` : ""}`,
+		};
+	});
+	const modelChoice = ui.selectSearchable
+		? await ui.selectSearchable(`Browse models — ${providerChoice}`, items, { cancelAction: "back" })
+		: await ui.select(
+				`Browse models — ${providerChoice}`,
+				items.map((item) => item.label),
+			);
 	if (modelChoice === undefined) return undefined;
 
+	// selectSearchable returns value (provider/id); plain select returns label.
+	const byValue = models.find((model) => `${model.provider}/${model.id}` === modelChoice);
+	if (byValue) return byValue;
+	const labels = items.map((item) => item.label);
 	const index = labels.indexOf(modelChoice);
 	return index >= 0 ? models[index] : undefined;
 }
@@ -327,20 +350,9 @@ async function applyManual(
 	};
 }
 
-/** Keep the named default independent from Keep current and place it second. */
-export function profilesForStartupList(
-	profiles: readonly ModelProfile[],
-	_currentModel: ModelRef | null | undefined,
-	_currentThinking: ThinkingLevel | undefined,
-): ModelProfile[] {
-	const defaultIndex = profiles.findIndex((profile) => profile.alias === "default");
-	if (defaultIndex <= 0) return [...profiles];
-	return [profiles[defaultIndex]!, ...profiles.slice(0, defaultIndex), ...profiles.slice(defaultIndex + 1)];
-}
-
 /**
  * Startup /new short-list picker.
- * Order: keep current (first) → default profile → other profiles → numbered Browse (last).
+ * Order: keep current (first) → configured profiles → numbered Browse (last).
  */
 export async function runStartupPicker(input: StartupPickerInput): Promise<StartupPickerResult> {
 	if (!STARTUP_PICKER_REASONS.has(input.reason)) {
@@ -354,11 +366,7 @@ export async function runStartupPicker(input: StartupPickerInput): Promise<Start
 	}
 
 	const available = input.getAvailable();
-	const listedProfiles = profilesForStartupList(
-		input.config.profiles,
-		input.currentModel,
-		input.currentThinking,
-	);
+	const listedProfiles = input.config.profiles;
 	if (listedProfiles.length === 0 && available.length === 0 && !input.currentModel) {
 		return { action: "skipped", reason: "no-profiles-or-models" };
 	}

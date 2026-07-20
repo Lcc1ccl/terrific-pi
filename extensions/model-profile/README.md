@@ -32,7 +32,7 @@ Trusted project `.pi/terrific.json` can override a global profile by id. In a tr
     "profiles": [
       {
         "id": 1,
-        "alias": "default",
+        "alias": "solm",
         "provider": "openai",
         "model": "gpt-5.6-sol",
         "thinking": "medium"
@@ -51,7 +51,7 @@ See `examples/config.json`.
 | `openHotkey` | Open interactive picker (default `ctrl+alt+l`) |
 | `profiles[]` | Numeric `id` (1…), `alias`, `provider`, `model`, `thinking`; optional `label`/`hotkey` |
 | default hotkey | id `N` (1–9) → `alt+N` unless `hotkey` is set |
-| id `1` alias | defaults to `default` when `alias` omitted |
+| omitted `alias` | id `1` falls back to `default`; aliases do not affect startup order |
 
 ## Commands
 
@@ -93,11 +93,11 @@ Switches done through `/profile` / `alt+N` / startup picker **do not** show that
 |-----------|----------|
 | `session_start.reason` is `startup` or **`new`**, `startup: true`, TUI | Short-list picker |
 | `resume` / `fork` / `reload` | No picker |
-| List order | **Keep global default** on cold start / **Keep current session** on `/new` (first) → **default** profile (second) → other profiles → **`0 · Browse all models…`** (last) |
+| List order | **Keep global default** on cold start / **Keep current session** on `/new` (first) → configured profiles in their configured order → **`0 · Browse all models…`** (last) |
 | Keep current · cold start | Keep Pi's activated global default model/thinking |
 | Keep current · `/new` | Restore the previous session model/thinking and the original `settings.json` contents |
 | Navigation | Up/down wraps at both ends; `0` opens Browse, `1`–`9` immediately select the matching profile id |
-| Browse all models | Provider → model (`provider/id` labels), then session/global scope |
+| Browse all models | Provider → searchable model list (type-to-filter like `/model`), then session/global scope |
 
 ## Verify
 

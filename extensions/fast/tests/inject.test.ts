@@ -7,15 +7,18 @@ import fastExtension, {
 	hasFastPreference,
 	injectPriority,
 	isFastActive,
+	isGptModelId,
 	loadFastEnabled,
 	readSessionFastState,
 	saveFastEnabled,
 	shouldInjectPriority,
 	supportsFastApi,
+	supportsFastModel,
 } from "../extensions/fast.ts";
 
 function createExtensionHarness(options: {
 	api?: string;
+	modelId?: string;
 	agentDir?: string;
 	entries?: Array<{ type: string; customType?: string; data?: unknown }>;
 } = {}) {
@@ -46,7 +49,10 @@ function createExtensionHarness(options: {
 			},
 		},
 		sessionManager: { getBranch: () => entries },
-		model: { api: options.api ?? "openai-responses" } as { api?: string },
+		model: {
+			api: options.api ?? "openai-responses",
+			id: options.modelId ?? "gpt-5.6-sol",
+		} as { api?: string; id?: string },
 	};
 
 	const restoreEnv = () => {
@@ -57,7 +63,7 @@ function createExtensionHarness(options: {
 	return { commands, ctx, handlers, notifications, restoreEnv, statuses };
 }
 
-describe("supportsFastApi / isFastActive / shouldInjectPriority", () => {
+describe("supportsFastApi / isGptModelId / isFastActive / shouldInjectPriority", () => {
 	it("accepts openai-family Responses APIs only", () => {
 		assert.equal(supportsFastApi("openai-responses"), true);
 		assert.equal(supportsFastApi("openai-codex-responses"), true);
@@ -66,18 +72,36 @@ describe("supportsFastApi / isFastActive / shouldInjectPriority", () => {
 		assert.equal(supportsFastApi(undefined), false);
 	});
 
-	it("is active only when preferred and openai-family", () => {
-		assert.equal(isFastActive(true, "openai-responses"), true);
-		assert.equal(isFastActive(true, "anthropic-messages"), false);
-		assert.equal(isFastActive(false, "openai-responses"), false);
-		assert.equal(isFastActive(true, undefined), false);
+	it("accepts only GPT model ids", () => {
+		assert.equal(isGptModelId("gpt-5.6-sol"), true);
+		assert.equal(isGptModelId("GPT-4o"), true);
+		assert.equal(isGptModelId("gpt.5"), true);
+		assert.equal(isGptModelId("gpt"), true);
+		assert.equal(isGptModelId("grok-4.5"), false);
+		assert.equal(isGptModelId("claude-opus-4"), false);
+		assert.equal(isGptModelId("codex-auto-review"), false);
+		assert.equal(isGptModelId("o3-mini"), false);
+		assert.equal(isGptModelId(undefined), false);
 	});
 
-	it("injects only when the active API is known to support priority", () => {
-		assert.equal(shouldInjectPriority(true, "openai-responses"), true);
-		assert.equal(shouldInjectPriority(true, undefined), false);
-		assert.equal(shouldInjectPriority(true, "anthropic-messages"), false);
-		assert.equal(shouldInjectPriority(false, undefined), false);
+	it("is active only when preferred, openai-family API, and GPT model", () => {
+		assert.equal(supportsFastModel("openai-responses", "gpt-5.6-sol"), true);
+		assert.equal(supportsFastModel("openai-responses", "grok-4.5"), false);
+		assert.equal(supportsFastModel("anthropic-messages", "gpt-5.6-sol"), false);
+
+		assert.equal(isFastActive(true, "openai-responses", "gpt-5.6-sol"), true);
+		assert.equal(isFastActive(true, "openai-responses", "grok-4.5"), false);
+		assert.equal(isFastActive(true, "anthropic-messages", "gpt-5"), false);
+		assert.equal(isFastActive(false, "openai-responses", "gpt-5"), false);
+		assert.equal(isFastActive(true, "openai-responses", undefined), false);
+	});
+
+	it("injects only for GPT models on known openai-family APIs", () => {
+		assert.equal(shouldInjectPriority(true, "openai-responses", "gpt-5.2"), true);
+		assert.equal(shouldInjectPriority(true, "openai-responses", "grok-4.5"), false);
+		assert.equal(shouldInjectPriority(true, undefined, "gpt-5.2"), false);
+		assert.equal(shouldInjectPriority(true, "anthropic-messages", "gpt-5.2"), false);
+		assert.equal(shouldInjectPriority(false, "openai-responses", "gpt-5.2"), false);
 	});
 });
 
@@ -121,7 +145,7 @@ describe("fast global preference", () => {
 		assert.equal(loadFastEnabled(agentDir), false);
 	});
 
-	it("restores preferred state globally and shows badge only on openai models", async () => {
+	it("restores preferred state globally and shows badge only on GPT models", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "fast-restore-"));
 		saveFastEnabled(true, agentDir);
 
@@ -130,17 +154,49 @@ describe("fast global preference", () => {
 			for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
 			assert.equal(statuses.get("fast"), "");
 
-			ctx.model.api = "anthropic-messages";
+			ctx.model.api = "openai-responses";
+			ctx.model.id = "grok-4.5";
 			for (const handler of handlers.get("model_select") ?? []) {
-				await handler({ model: { api: "anthropic-messages" }, source: "set" }, ctx);
+				await handler({ model: { api: "openai-responses", id: "grok-4.5" }, source: "set" }, ctx);
 			}
 			assert.equal(statuses.get("fast"), undefined);
 
 			ctx.model.api = "openai-responses";
+			ctx.model.id = "gpt-5.6-luna";
 			for (const handler of handlers.get("model_select") ?? []) {
-				await handler({ model: { api: "openai-responses" }, source: "set" }, ctx);
+				await handler({ model: { api: "openai-responses", id: "gpt-5.6-luna" }, source: "set" }, ctx);
 			}
 			assert.equal(statuses.get("fast"), "");
+		} finally {
+			restoreEnv();
+		}
+	});
+
+	it("hides badge on model_select to non-GPT from event.model (model-profile path)", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "fast-model-select-yield-"));
+		saveFastEnabled(true, agentDir);
+		const { ctx, handlers, restoreEnv, statuses } = createExtensionHarness({ agentDir });
+		try {
+			for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
+			assert.equal(statuses.get("fast"), "");
+
+			ctx.model.api = "openai-responses";
+			ctx.model.id = "grok-4.5";
+			for (const handler of handlers.get("model_select") ?? []) {
+				await handler({ model: { api: "openai-responses", id: "grok-4.5" }, source: "set" }, ctx);
+			}
+			assert.equal(statuses.get("fast"), undefined);
+
+			const payload = { model: "grok-4.5" } as { model: string; service_tier?: string };
+			for (const handler of handlers.get("before_provider_request") ?? []) {
+				handler({ payload }, ctx);
+			}
+			assert.equal(payload.service_tier, undefined);
+
+			for (const handler of handlers.get("before_agent_start") ?? []) {
+				await handler({}, ctx);
+			}
+			assert.equal(statuses.get("fast"), undefined);
 		} finally {
 			restoreEnv();
 		}
@@ -184,7 +240,8 @@ describe("fast global preference", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "fast-toggle-"));
 		const { commands, ctx, restoreEnv, statuses } = createExtensionHarness({
 			agentDir,
-			api: "anthropic-messages",
+			api: "openai-responses",
+			modelId: "grok-4.5",
 		});
 		try {
 			await commands.get("fast")!.handler("on", ctx);
@@ -198,7 +255,7 @@ describe("fast global preference", () => {
 		}
 	});
 
-	it("injects on openai and skips non-openai or unknown APIs", async () => {
+	it("injects only for GPT models and skips non-GPT or unknown APIs", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "fast-inject-"));
 		saveFastEnabled(true, agentDir);
 		const { ctx, handlers, restoreEnv } = createExtensionHarness({ agentDir });
@@ -211,7 +268,16 @@ describe("fast global preference", () => {
 			}
 			assert.equal((payload as { service_tier?: string }).service_tier, "priority");
 
+			ctx.model.api = "openai-responses";
+			ctx.model.id = "grok-4.5";
+			const grok = { model: "grok-4.5" } as { model: string; service_tier?: string };
+			for (const handler of handlers.get("before_provider_request") ?? []) {
+				handler({ payload: grok }, ctx);
+			}
+			assert.equal(grok.service_tier, undefined);
+
 			ctx.model.api = "anthropic-messages";
+			ctx.model.id = "claude-opus-4";
 			const other = { model: "claude" } as { model: string; service_tier?: string };
 			for (const handler of handlers.get("before_provider_request") ?? []) {
 				handler({ payload: other }, ctx);
@@ -219,6 +285,7 @@ describe("fast global preference", () => {
 			assert.equal(other.service_tier, undefined);
 
 			delete ctx.model.api;
+			delete ctx.model.id;
 			const unknown = { model: "maybe-openai" } as { model: string; service_tier?: string };
 			for (const handler of handlers.get("before_provider_request") ?? []) {
 				handler({ payload: unknown }, ctx);

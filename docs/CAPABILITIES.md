@@ -60,7 +60,7 @@ terrific-pi/
 |------|--------|----------|----------|----------|
 | 底栏 HUD | `extensions/statusline` | 自动 footer；`/statusline` 配置 | 一眼看 path/model/tokens/mode/fast/状态；仅相关 widget 启用时显示 Context & usage | **本仓实现**（可配置 widget） |
 | 工具权限模式 | `extensions/mode` | `/mode ask\|plan\|edit\|auto\|config` | 会话内限制可写/可执行工具，并管理全局默认 | **本仓实现** |
-| OpenAI Priority | `extensions/fast` | `/fast [on\|off\|toggle\|status]` | Responses 请求打 `service_tier=priority` | **本仓实现**（窄注入） |
+| OpenAI Priority | `extensions/fast` | `/fast [on\|off\|toggle\|status]` | 仅 GPT 模型 + openai 家族 Responses 时注入 `service_tier=priority` | **本仓实现**（窄注入） |
 | 上下文拆解 | `extensions/context` | `/context [summary\|details\|config]`；`c` 复制、`x` 确认压缩 | 不调模型查看占用；压缩为显式动作 | **本仓实现** |
 | 旁路问答 | `extensions/btw` | `/btw …`、`status`、`config`、`context=none` | 独立内存会话问答，不污染主 session | **本仓实现**；模型可走 auxiliary 路由 |
 | 辅助模型 runtime | `extensions/auxiliary` | 裸 `/aux` 管理器、`/aux status`；工具 `aux_summarize`/`web_research`/`git_finalize`；compact/title 钩子 | 任务级旁路模型，不改主会话模型 | **本仓实现**；研究/视觉 **委托外部 pin** |

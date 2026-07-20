@@ -14,7 +14,6 @@ import {
 	formatKeepDefaultLabel,
 	rememberPendingNewSelection,
 	takePendingNewSelection,
-	profilesForStartupList,
 	readPreviousSessionSelection,
 	runStartupPicker,
 	startupDigitChoice,
@@ -286,13 +285,27 @@ describe("startupDigitChoice", () => {
 	});
 });
 
-describe("profilesForStartupList", () => {
-	it("keeps default first even when it matches the activated model", () => {
-		const listed = profilesForStartupList([...config.profiles].reverse(), current, "medium");
-		assert.deepEqual(
-			listed.map((p) => p.id),
-			["1", "2"],
-		);
+describe("startup profile order", () => {
+	it("treats a profile named default as an ordinary profile", async () => {
+		let seen: string[] | undefined;
+		const profiles = [...config.profiles].reverse();
+		await runStartupPicker({
+			reason: "startup",
+			hasUI: true,
+			config: { ...config, profiles },
+			deps: deps(),
+			currentModel: current,
+			currentThinking: "medium",
+			getAvailable: () => [],
+			ui: {
+				select: async (_title, options) => {
+					seen = options;
+					return coldKeepLabel;
+				},
+			},
+		});
+		assert.ok(seen);
+		assert.deepEqual(seen.slice(1, -1), profiles.map(profileLabel));
 	});
 });
 
@@ -337,15 +350,22 @@ describe("runStartupPicker", () => {
 	});
 
 	it("keeps the activated global default on cold startup", async () => {
+		const global = { provider: "grok", id: "grok-4.5" };
+		const globalLabel = formatKeepDefaultLabel(global, "high");
 		const result = await runStartupPicker({
 			reason: "startup",
 			hasUI: true,
 			config,
 			deps: deps(),
-			currentModel: current,
-			currentThinking: "medium",
+			currentModel: global,
+			currentThinking: "high",
 			getAvailable: () => [],
-			ui: { select: async () => coldKeepLabel },
+			ui: {
+				select: async (_title, options) => {
+					assert.equal(options[0], globalLabel);
+					return globalLabel;
+				},
+			},
 		});
 		assert.deepEqual(result, { action: "cancelled", reason: "keep-current" });
 	});
@@ -496,7 +516,7 @@ describe("runStartupPicker", () => {
 		}
 	});
 
-	it("lists keep first, default second, and numbered browse last", async () => {
+	it("lists keep first, configured profiles, and numbered browse last", async () => {
 		let seen: string[] | undefined;
 		await runStartupPicker({
 			reason: "startup",
@@ -574,5 +594,56 @@ describe("runStartupPicker", () => {
 			defaultModel: "gpt-5.6-sol",
 			defaultThinkingLevel: "medium",
 		});
+	});
+
+	it("browse all uses searchable model list when provided", async () => {
+		const searchableCalls: Array<{ title: string; values: string[] }> = [];
+		const settings = {
+			defaultProvider: "openai",
+			defaultModel: "gpt-5.6-sol",
+			defaultThinkingLevel: "medium" as const,
+		};
+		const result = await runStartupPicker({
+			reason: "startup",
+			hasUI: true,
+			config,
+			deps: deps({
+				setModel: async (model) => {
+					settings.defaultProvider = model.provider;
+					settings.defaultModel = model.id;
+					return true;
+				},
+				writeSettingsDefaults: (defaults) => {
+					Object.assign(settings, defaults);
+					return { ok: true };
+				},
+			}),
+			currentModel: current,
+			currentThinking: "medium",
+			getAvailable: () => [
+				{ provider: "openai", id: "gpt-5.6-luna", name: "Luna" },
+				{ provider: "openai", id: "gpt-5.6-sol" },
+				{ provider: "anthropic", id: "claude-fable-5" },
+			],
+			ui: {
+				select: async (title) => {
+					if (title === "Startup model profile") return "0 · Browse all models…";
+					if (title === "Browse models — provider") return "openai";
+					if (title === "Apply scope") return "global — also update defaults";
+					return undefined;
+				},
+				selectSearchable: async (title, items) => {
+					searchableCalls.push({ title, values: items.map((item) => item.value) });
+					return "openai/gpt-5.6-luna";
+				},
+			},
+		});
+		assert.equal(result.action, "applied");
+		assert.equal(searchableCalls.length, 1);
+		assert.equal(searchableCalls[0]!.title, "Browse models — openai");
+		assert.deepEqual(searchableCalls[0]!.values, ["openai/gpt-5.6-luna", "openai/gpt-5.6-sol"]);
+		if (result.action === "applied" && result.source === "manual") {
+			assert.equal(result.model.id, "gpt-5.6-luna");
+		}
 	});
 });
