@@ -14,7 +14,8 @@ terrific-pi/
 │   ├── mode/            # /mode 工具权限模式
 │   ├── btw/             # /btw 旁路问答
 │   ├── process-view/    # 结构化任务进度与实时工具 HUD
-│   └── docsflow/        # 项目文档流水线 (/docsflow)
+│   ├── docsflow/        # 项目文档流水线 (/docsflow)
+│   └── model-profile/   # 常用 model+thinking 短列表 (/profile)
 ├── skills/              # Agent skills（安装到 ~/.agents/skills）
 │   └── pi-provider-sync # 自定义 provider /models 同步与 vision 字段补全
 ├── snapshot/            # 可迁移本机配置快照（无密钥）
@@ -40,6 +41,7 @@ terrific-pi/
 | btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话） |
 | process-view | `extensions/process-view` | `process_update` 结构化里程碑、步骤计时与任务级 usage；原生 `Ctrl+O` 展开实时详情面板 |
 | docsflow | `extensions/docsflow` | 项目文档流水线：research→product→interface→delivery；默认写 `./docsflow/`，可选 Obsidian vault；`/docsflow remind` 可关配置提醒 |
+| model-profile | `extensions/model-profile` | 常用 3–5 套 model+thinking 短列表；`/profile` 会话/全局切换、热键、冷启动短列表 |
 
 > 共享插件配置主文件：`~/.pi/agent/terrific.json`。Auxiliary 模型路由只读取 global config，不接受 project override。
 
@@ -116,6 +118,8 @@ FORCE=1 RESTORE=1 ./install.sh
 "../vendor/terrific-pi/extensions/mode"
 "../vendor/terrific-pi/extensions/btw"
 "../vendor/terrific-pi/extensions/process-view"
+"../vendor/terrific-pi/extensions/docsflow"
+"../vendor/terrific-pi/extensions/model-profile"
 ```
 
 ## 安全约定
@@ -125,6 +129,12 @@ FORCE=1 RESTORE=1 ./install.sh
 - `snapshot/` 与 `agent/` 仅放可公开/可迁移的非密钥文件
 - 目标机真实密钥只写在本机 `~/.pi/agent/auth.json`
 - 详情见 [`snapshot/README.md`](./snapshot/README.md)
+
+## 能力全景与插件决策
+
+- 全盘能力、调用入口、协作关系、插件「为何新建」账本：[`docs/CAPABILITIES.md`](./docs/CAPABILITIES.md)
+- 单特性设计/实施计划：[`docs/plans/`](./docs/plans/)
+- model-profile 设计说明：[`docs/plans/2026-07-20-model-profile-plan.md`](./docs/plans/2026-07-20-model-profile-plan.md)
 
 ## 开发约定
 

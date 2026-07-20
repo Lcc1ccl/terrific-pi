@@ -1,0 +1,243 @@
+# terrific-pi 能力全景
+
+> 本文件是仓库的**能力地图 + 插件决策账本**。  
+> 目标：一眼看清「有什么、怎么调用、彼此如何协作、为什么存在」。  
+> 更新时机：新增/大改 extension 或 skill、引入外部 pin 包、改变跨插件约定时。
+
+相关文档：
+
+| 文档 | 用途 |
+|------|------|
+| [README.md](../README.md) | 安装/迁移/插件表（对外摘要） |
+| [AGENTS.md](../AGENTS.md) | 开发规范（检索、结构、打包） |
+| [docs/plans/](./plans/) | 单特性设计与实施计划 |
+| [snapshot/README.md](../snapshot/README.md) | 快照白名单与密钥消毒 |
+
+---
+
+## 1. 仓库结构（运行视角）
+
+```text
+terrific-pi/
+├── extensions/          # 可安装 pi packages（本机能力主体）
+├── skills/              # 可迁移 agent skills → ~/.agents/skills
+├── snapshot/agent/      # 无密钥配置快照（迁移用）
+├── agent/               # 可公开配置模板
+├── scripts/             # snapshot / pack / install
+├── docs/
+│   ├── CAPABILITIES.md  # 本文件
+│   └── plans/           # 设计与实施计划
+├── workflows/           # 工作流占位
+└── dist/                # 离线包产出（gitignore）
+```
+
+**加载关系（开发机典型）**：
+
+```text
+~/.pi/agent/settings.json
+  packages: [
+    "../vendor/terrific-pi/extensions/<name>",   # 本仓插件
+    "npm:pi-subagents@…",                        # 外部 pin
+    …
+  ]
+       │
+       ▼
+   pi 启动加载 extensions
+       │
+       ├─ statusline 接管 footer HUD
+       ├─ mode / fast / … 注册 slash 与 status
+       ├─ auxiliary 提供旁路 runtime + 工具
+       └─ skills 另路径：~/.agents/skills（install/snapshot 同步）
+```
+
+---
+
+## 2. 能力总表（调用入口）
+
+### 2.1 本仓 extensions
+
+| 能力 | 包路径 | 怎么调用 | 解决什么 | 实现性质 |
+|------|--------|----------|----------|----------|
+| 底栏 HUD | `extensions/statusline` | 自动 footer；`/statusline` 配置 | 一眼看 path/model/tokens/mode/fast/状态 | **本仓实现**（可配置 widget） |
+| 工具权限模式 | `extensions/mode` | `/mode ask\|plan\|edit\|auto` | 会话内限制可写/可执行工具 | **本仓实现** |
+| OpenAI Priority | `extensions/fast` | `/fast` `[on\|off]` | Responses 请求打 `service_tier=priority` | **本仓实现**（窄注入） |
+| 上下文拆解 | `extensions/context` | `/context` | 不调模型查看上下文占用结构 | **本仓实现** |
+| 旁路问答 | `extensions/btw` | `/btw …` | 独立内存会话问答，不污染主 session | **本仓实现**；模型可走 auxiliary 路由 |
+| 辅助模型 runtime | `extensions/auxiliary` | `/aux …`；工具 `aux_summarize`/`web_research`/`git_finalize`；compact/title 钩子 | 任务级旁路模型，不改主会话模型 | **本仓实现**；研究/视觉 **委托外部 pin** |
+| 任务进度 HUD | `extensions/process-view` | 模型调 `process_update`；`Ctrl+O` 展开 | 多步任务里程碑与工具活动 | **本仓实现** |
+| 文档流水线 | `extensions/docsflow` | `/docsflow …` | research→product→interface→delivery | **本仓编排**；执行靠 `pi-subagents` |
+| 模型常用配置 | `extensions/model-profile` | `/profile`、`list/status/startup`、`<id\|alias>`、`alt+N`、冷启动/`/new`；官方切换 defaults 警告提示；见 [计划](./plans/2026-07-20-model-profile-plan.md) | 3–5 套 model+thinking；session restore 默认；全局；启动 | **本仓薄封装**；配置 `terrific.json` |
+
+### 2.2 本仓 skills
+
+| 能力 | 路径 | 怎么用 | 解决什么 | 实现性质 |
+|------|------|--------|----------|----------|
+| Provider 模型同步 | `skills/pi-provider-sync` | 对话触发 / 按 SKILL 指引 | 从 OpenAI 兼容 `/models` 刷 `models.json`、补字段 | **本仓 skill**（非 extension） |
+
+### 2.3 本机常 pin 的外部包（不在本仓实现，但构成能力）
+
+以当前开发机 `settings.json` 为准（迁移后可能不同）：
+
+| 包 | 典型调用 | 角色 | 与本仓关系 |
+|----|----------|------|------------|
+| `npm:pi-subagents@…` | `subagent` 工具；docsflow / web_research | 子代理运行时 | auxiliary `web_research`、docsflow **依赖** |
+| `npm:pi-web-access@…` | `web_search` / `fetch_content` / … | 联网检索与抓取 | 研究链路；不进 auxiliary 内核 |
+| `npm:pi-vision-handoff@…` | vision 相关工具 | 多模态交接 | auxiliary 只桥 usage |
+| `npm:cc-safety-net@…` | 自动拦截高危 shell | 安全网 | 正交 |
+| `npm:@ayulab/pi-rewind@…` | rewind 相关 | 会话回滚 | 正交 |
+| `git:…/ponytail` | 技能：偷懒实现纪律 | 开发风格 | 正交 |
+
+### 2.4 官方 pi 内建（不重复造）
+
+| 能力 | 调用 | 备注 |
+|------|------|------|
+| 全量模型选择 | `/model`、`Ctrl+L` | 长列表权威入口 |
+| 模型循环 | `Ctrl+P` / `Shift+Ctrl+P` | 受 enabled/scoped models 影响 |
+| 保存默认模型 | `Ctrl+S` | 写 defaultProvider/Model（thinking 另设） |
+| 思考强度 | `Shift+Tab` 等 | 与 model-profile 的 profile.thinking 互补 |
+| 设置 | `/settings` | 全局项 |
+
+---
+
+## 3. 协作与数据流
+
+### 3.1 主会话 vs 旁路
+
+```text
+                    ┌──────────── 主会话 ────────────┐
+ 用户输入 ─────────►│ model / thinking / tools       │
+                    │ mode 限制工具集                 │
+                    │ fast 注入 Priority（若开启）    │
+                    │ process_update → process-view   │
+                    │ docsflow 编排（父）              │
+                    └───────────┬────────────────────┘
+                                │
+          ┌─────────────────────┼─────────────────────┐
+          ▼                     ▼                     ▼
+     /btw 旁路            auxiliary 任务          pi-subagents
+   (独立内存 session)    compact/title/summarize   researcher 等
+          │                     │                     │
+          └──────────► 不写主 session 历史 ◄──────────┘
+                       usage 可由 statusline/aux 展示
+```
+
+### 3.2 HUD 分层
+
+| 层 | 谁负责 | 内容 |
+|----|--------|------|
+| Footer 常驻 | **statusline** | path、model+thinking、tokens、cache、cost、mode、fast、state… |
+| 任务 HUD | **process-view** | 多步任务目标、步骤、blocker、工具活动 |
+| 扩展 status key | 各插件 `setStatus` | mode / fast / process / auxiliary 等；statusline 对部分 key **排除重复展示**（见 `EXCLUDED_PROGRESS_KEYS`） |
+
+约定：
+
+- 有专用 badge 的 key（如 `mode`、`fast`）不要再塞进通用 progress 区抢位  
+- 长时任务优先 `process_update`，不要刷屏自然语言进度  
+
+### 3.3 配置文件归属
+
+| 文件 | 谁读 | 内容 |
+|------|------|------|
+| `~/.pi/agent/settings.json` | pi 核心 + 全局默认 | packages、defaultProvider/Model/ThinkingLevel、theme… |
+| `~/.pi/agent/terrific.json` | mode / btw / context / auxiliary / docsflow / model-profile / fast | 本仓插件共享配置 |
+| `~/.pi/agent/statusline.json` | statusline | widget 布局与 profile |
+| `~/.pi/agent/models.json` | pi + pi-provider-sync | 自定义 provider/models |
+| `~/.pi/agent/auth.json` | pi | **密钥；禁止入库** |
+| 项目 `.pi/*` | 各插件（受 trust） | 项目覆盖；auxiliary 路由**禁止** project 覆盖模型 |
+
+### 3.4 交互矩阵（简化）
+
+|  | statusline | mode | fast | context | btw | auxiliary | process-view | docsflow | model-profile* |
+|--|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| statusline | — | 读 mode badge | 读 fast badge | 无 | 无 | 可展示 aux usage | 排除 process 重复 | 可选阶段 | 已有 model 行 |
+| mode | badge | — | 无 | 无 | 无 | ask/plan 限制工具是否含 aux | 无 | apply 需可写模式 | 无 |
+| fast | badge | 无 | — | 无 | 无 | 不继承 | 无 | 不继承 | 无 |
+| btw | 无 | 无 | 无 | 无 | — | **可走 btw 路由** | 无 | 无 | 无 |
+| auxiliary | usage/status | 工具可见性 | 无 | 无 | 路由 | — | web_research 活动文案 | 无 | **不改主模型** |
+| process-view | HUD 分工 | 无 | 无 | 无 | 无 | 活动标签协作 | — | 可报阶段 | 无 |
+| docsflow | 可选 | 落盘权限 | 无 | 无 | 无 | 不占用 | 阶段进度 | — | 无 |
+| model-profile* | model 行（原生）；官方切换 notify | 无 | 无 | 无 | 无 | 正交 | 无 | 无 | — |
+
+\* 计划中，见 §5。
+
+---
+
+## 4. 插件决策账本
+
+> 规则：新增插件必须登记。**优先安装/引用社区；仅当缺口明确时本仓新建。**
+
+| 名称 | 状态 | 为何要有 | 解决的问题 | 实现策略 | 明确不做什么 |
+|------|------|----------|------------|----------|--------------|
+| statusline | 已收录 | 官方 footer 不够密/不可配 | 可配置 HUD、quota、stacked/minimal | 本仓实现 | 不替代 process-view 任务面板 |
+| mode | 已收录 | 需要会话级工具策略 | ask/plan/edit/auto | 本仓实现 | 不切换模型/thinking |
+| fast | 已收录 | Priority 无一键开关 | `service_tier` 注入 | 本仓窄实现 | 不控制 thinking、不通用 header 框架 |
+| context | 已收录 | 需要可解释上下文占用 | `/context` 拆解 | 本仓实现 | 不压缩、不调模型 |
+| btw | 已收录 | 主会话外快速问一句 | 旁路内存 session | 本仓实现 | 不写主历史、不加载工具 |
+| auxiliary | 已收录 | Hermes 式任务槽 | compact/title/summary/research/git | 本仓 runtime + 外部 pin | 不做万能 agent 框架 |
+| process-view | 已收录 | 多步任务可见性 | `process_update` + HUD | 本仓实现 | 不为每句回复建任务 |
+| docsflow | 已收录 | 文档流水线要可迁移 | 四阶段 + 落盘 | 本仓编排 + pi-subagents | 不自研 subagent runtime |
+| **model-profile** | **已收录** | 社区单包无法一次满足 6 点 | 短列表 model+thinking；session restore；全局；startup/`new`；热键；status | **本仓薄封装**；模式来自 preset / presets-plus / startup-picker | 不重写全量选择器；官方 `/model` 仍改全局默认（pi 核心） |
+| pi-provider-sync (skill) | 已收录 | 自定义 provider 模型易过期 | `/models` 同步与字段补全 | skill 而非 extension | 不在 skill 里藏密钥 |
+
+### 4.1 社区对照（模型相关，避免重复建设）
+
+| 社区包 | 本仓态度 |
+|--------|----------|
+| `pi-model-picker` / `pi-model-cycler` | **不收录**；长列表用官方 `/model` |
+| `@sherif-fanous/pi-presets-plus` | **不 vendoring**；若用户要 tools+prompt 工作流可自行 `pi install`；与 model-profile 目标不同 |
+| `pi-startup-picker` | **不强制依赖**；启动短列表由 model-profile 自做（同源配置） |
+| `pi-session-model` | 语义参考；功能并入 model-profile 的 session scope |
+| `pi-model-router` | 不同需求（自动路由）；本仓暂不收录 |
+
+### 4.2 新增插件登记模板（复制到表中）
+
+```markdown
+| name | 计划/已收录 | 为何不用社区 X | 用户问题一句话 | 本仓实现 or 包装 | 联动 statusline? |
+```
+
+---
+
+## 5. 路线图条目：model-profile
+
+| 项 | 内容 |
+|----|------|
+| 计划 | [docs/plans/2026-07-20-model-profile-plan.md](./plans/2026-07-20-model-profile-plan.md) |
+| 用户动机 | 多 provider 列表过长；常用 3–5 个；要绑定 thinking；输入中可切；会话/全局；启动可选 |
+| 策略 | 薄插件 + 官方 API；UI 仅 `ctx.ui.select`；不重写社区 TUI |
+| 调用 | `/profile`、`list/status/startup`、`<id> [session\|global]`、hotkey、冷启动 |
+| 配置 | `terrific.json` → `modelProfile` |
+| 联动 | 默认无；statusline 已有 model 行足够；global 写 `settings.json` 三默认字段 |
+| 配置 | `~/.pi/agent/terrific.json` → `modelProfile`（与 mode/fast/auxiliary 等同文件） |
+| 联动 | session snapshot/restore settings 三默认字段；官方 `/model`/cycle/thinking 弹出 defaults-updated 警告 |
+| 状态 | **已交付** |
+
+---
+
+## 6. 运维与迁移能力
+
+| 能力 | 怎么调用 | 说明 |
+|------|----------|------|
+| 采集快照 | `./scripts/snapshot.sh` | 白名单 agent 文件 + skills 源；密钥消毒 |
+| 打离线包 | `./scripts/pack.sh` | `dist/terrific-pi-*.tar.gz` |
+| 安装/迁移 | `./install.sh` 或 `FORCE=1 RESTORE=1 ./install.sh` | 合并 packages；RESTORE 覆盖快照；auth 只 seed 空 key |
+| 开发引用 | settings `packages` 相对路径 `../vendor/terrific-pi/extensions/...` | 相对 `~/.pi/agent` |
+
+---
+
+## 7. 维护约定
+
+1. **改能力先改本文件**：命令名、配置键、跨插件约定变更必须同步。  
+2. **新插件必须写决策账本行**：为何新建、是否基于社区、非目标。  
+3. **README 插件表保持一句话**；细节与矩阵以本文件为准。  
+4. **禁止**把真实 `auth.json`、session 日志、本机私密路径写进文档示例。  
+
+---
+
+## 8. 修订记录
+
+| 日期 | 变更 |
+|------|------|
+| 2026-07-20 | 初版：结构、能力表、协作矩阵、决策账本；登记 model-profile 计划 |
+| 2026-07-20 | model-profile P0 落地：`/profile` session apply + 热键 + 单测 |
+| 2026-07-20 | model-profile P1：global settings 写入 + 冷启动短列表 + `/profile startup` |
+| 2026-07-20 | model-profile review 全修 + status key |

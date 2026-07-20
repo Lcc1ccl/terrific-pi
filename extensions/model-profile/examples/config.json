@@ -1,0 +1,49 @@
+{
+  "modelProfile": {
+    "startup": true,
+    "startupScope": "session",
+    "openHotkey": "ctrl+alt+l",
+    "profiles": [
+      {
+        "id": 1,
+        "alias": "default",
+        "label": "default",
+        "provider": "openai",
+        "model": "gpt-5.6-sol",
+        "thinking": "medium"
+      },
+      {
+        "id": 2,
+        "alias": "lunamax",
+        "label": "lunamax",
+        "provider": "openai",
+        "model": "gpt-5.6-luna",
+        "thinking": "max"
+      },
+      {
+        "id": 3,
+        "alias": "terramax",
+        "label": "terramax",
+        "provider": "openai",
+        "model": "gpt-5.6-terra",
+        "thinking": "max"
+      },
+      {
+        "id": 4,
+        "alias": "solx",
+        "label": "solx",
+        "provider": "openai",
+        "model": "gpt-5.6-sol",
+        "thinking": "xhigh"
+      },
+      {
+        "id": 5,
+        "alias": "solmax",
+        "label": "solmax",
+        "provider": "openai",
+        "model": "gpt-5.6-sol",
+        "thinking": "max"
+      }
+    ]
+  }
+}
