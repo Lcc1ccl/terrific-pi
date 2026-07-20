@@ -313,6 +313,29 @@ describe("runStartupPicker", () => {
 		}
 	});
 
+	it("returns to the top-level picker when scope selection is dismissed", async () => {
+		const answers: Array<string | undefined> = [profileLabel(config.profiles[0]!), undefined, undefined];
+		const titles: string[] = [];
+		const result = await runStartupPicker({
+			reason: "startup",
+			hasUI: true,
+			config,
+			deps: deps(),
+			currentModel: current,
+			currentThinking: "medium",
+			getAvailable: () => [],
+			ui: {
+				select: async (title) => {
+					titles.push(title);
+					return answers.shift();
+				},
+			},
+		});
+
+		assert.deepEqual(result, { action: "cancelled", reason: "dismissed" });
+		assert.deepEqual(titles, ["Startup model profile", "Apply scope", "Startup model profile"]);
+	});
+
 	it("keeps the activated global default on cold startup", async () => {
 		const result = await runStartupPicker({
 			reason: "startup",

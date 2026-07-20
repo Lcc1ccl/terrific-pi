@@ -117,16 +117,25 @@ function formatStatus(
 	].join("\n");
 }
 
-function selectStartupOption(
+function displayKey(key: string): string {
+	return ({ up: "Up", down: "Down", enter: "Enter", escape: "Esc" }[key] ?? key.replace(/\b[a-z]/g, (char) => char.toUpperCase()));
+}
+
+function selectTuiOption(
 	ctx: ExtensionContext,
 	title: string,
 	options: string[],
+	settings: { cancelAction: "back" | "cancel"; directChoice?: (data: string, options: readonly string[]) => string | undefined },
 ): Promise<string | undefined> {
-	return ctx.ui.custom<string | undefined>((tui, theme, _keybindings, done) => {
-		const container = new Container();
-		container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
-		container.addChild(new Text(theme.fg("accent", theme.bold(title)), 1, 0));
-
+	return ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
+		const keys = (id: "tui.select.up" | "tui.select.down" | "tui.select.confirm" | "tui.select.cancel", fallback: string) =>
+			displayKey(keybindings.getKeys?.(id)[0] ?? fallback);
+		const hint = [
+			`${keys("tui.select.up", "up")}/${keys("tui.select.down", "down")} navigate`,
+			`${keys("tui.select.confirm", "enter")} select`,
+			...(settings.directChoice ? ["0-9 direct"] : []),
+			`${keys("tui.select.cancel", "escape")} ${settings.cancelAction}`,
+		].join(" · ");
 		const list = new SelectList(
 			options.map((value) => ({ value, label: value })),
 			Math.min(options.length, 10),
@@ -140,23 +149,49 @@ function selectStartupOption(
 		);
 		list.onSelect = (item) => done(item.value);
 		list.onCancel = () => done(undefined);
-		container.addChild(list);
-		container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
 
 		return {
-			render: (width) => container.render(width),
-			invalidate: () => container.invalidate(),
+			render: (width) => {
+				const container = new Container();
+				container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+				container.addChild(new Text(theme.fg("accent", theme.bold(title)), 1, 0));
+				container.addChild(list);
+				container.addChild(new Text(theme.fg("dim", hint), 1, 0));
+				container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+				return container.render(width);
+			},
+			invalidate: () => list.invalidate(),
 			handleInput: (data) => {
-				const digitChoice = startupDigitChoice(data, options);
-				if (digitChoice !== undefined) {
-					done(digitChoice);
-					return;
+				if (keybindings.matches?.(data, "tui.select.cancel")) {
+					list.onCancel?.();
+				} else {
+					const directChoice = settings.directChoice?.(data, options);
+					if (directChoice !== undefined) done(directChoice);
+					else list.handleInput(data);
 				}
-				list.handleInput(data);
 				tui.requestRender();
 			},
 		};
 	});
+}
+
+function selectStartupOption(
+	ctx: ExtensionContext,
+	title: string,
+	options: string[],
+): Promise<string | undefined> {
+	return selectTuiOption(ctx, title, options, {
+		cancelAction: "cancel",
+		directChoice: startupDigitChoice,
+	});
+}
+
+function selectScopeOption(
+	ctx: ExtensionContext,
+	title: string,
+	options: string[],
+): Promise<string | undefined> {
+	return selectTuiOption(ctx, title, options, { cancelAction: "back" });
 }
 
 export default function (pi: ExtensionAPI) {
@@ -199,18 +234,6 @@ export default function (pi: ExtensionAPI) {
 				report(ctx, formatApplySuccess(result), applyResultLevel(result));
 			});
 		});
-	}
-
-	async function pickScope(
-		ctx: ExtensionContext,
-		preferred: ProfileScope,
-	): Promise<ProfileScope | undefined> {
-		if (!ctx.hasUI || ctx.mode !== "tui") return preferred;
-		const options =
-			preferred === "global" ? [SCOPE_GLOBAL, SCOPE_SESSION] : [SCOPE_SESSION, SCOPE_GLOBAL];
-		const choice = await ctx.ui.select("Apply scope", options);
-		if (!choice) return undefined;
-		return choice.startsWith("global") ? "global" : "session";
 	}
 
 	function parseArgs(args: string): {
@@ -284,20 +307,22 @@ export default function (pi: ExtensionAPI) {
 			ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
 			thinking,
 		);
-		const options = config.profiles.map((p) => {
-			const cur = matched && matched.id === p.id ? " (current)" : "";
-			return `${profileLabel(p)}${cur}`;
+		const options = config.profiles.map((profile) => {
+			const current = matched?.id === profile.id ? " (current)" : "";
+			return `${profileLabel(profile)}${current}`;
 		});
-		const choice = await ctx.ui.select("Model profile", options);
-		if (!choice) return;
+		while (true) {
+			const choice = await selectTuiOption(ctx, "Model profile", options, { cancelAction: "cancel" });
+			if (!choice) return;
 
-		const index = options.indexOf(choice);
-		const profile = index >= 0 ? config.profiles[index] : undefined;
-		if (!profile) return;
+			const profile = config.profiles[options.indexOf(choice)];
+			if (!profile) return;
 
-		const scope = await pickScope(ctx, "session");
-		if (!scope) return;
-		await runApply(ctx, profile, scope);
+			const scope = await selectScopeOption(ctx, "Apply scope", [SCOPE_SESSION, SCOPE_GLOBAL]);
+			if (!scope) continue;
+			await runApply(ctx, profile, scope.startsWith("global") ? "global" : "session");
+			return;
+		}
 	}
 
 	async function runProfileManager(ctx: ExtensionContext): Promise<void> {
@@ -535,6 +560,7 @@ export default function (pi: ExtensionAPI) {
 				ui: {
 					select: (title, options) => ctx.ui.select(title, options),
 					selectStartup: (title, options) => selectStartupOption(ctx, title, options),
+					selectScope: (title, options) => selectScopeOption(ctx, title, options),
 				},
 			}),
 		);

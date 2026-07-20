@@ -65,7 +65,7 @@ See `examples/config.json`.
 | `/profile <id\|alias> session\|global` | Apply with explicit scope |
 | `/profile help` | Usage + caveats |
 
-Quick apply keeps the short-list profile picker and `session` / `global` scope choice as the first manager action. The manager's effective summary reports the global/project source for every profile. `alt+N` always **session** apply (works with draft text). Profile and picker hotkey edits are persisted immediately; run **`/reload`** afterward because Pi cannot dynamically unregister old bindings.
+Quick apply keeps the short-list profile picker and `session` / `global` scope choice as the first manager action. The picker shows `Up/Down` navigate, `Enter` select/activate, and `Esc` action tips: `Esc` cancels from the profile list, while `Esc` on scope returns to the profile list. The manager's effective summary reports the global/project source for every profile. `alt+N` always **session** apply (works with draft text). Profile and picker hotkey edits are persisted immediately; run **`/reload`** afterward because Pi cannot dynamically unregister old bindings.
 
 ## Session vs global vs official /model
 

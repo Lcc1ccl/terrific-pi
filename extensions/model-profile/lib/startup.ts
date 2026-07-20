@@ -41,6 +41,7 @@ export type StartupPickerResult =
 export interface StartupUi {
 	select: (title: string, options: string[]) => Promise<string | undefined>;
 	selectStartup?: (title: string, options: string[]) => Promise<string | undefined>;
+	selectScope?: (title: string, options: string[]) => Promise<string | undefined>;
 }
 
 export interface AvailableModel {
@@ -216,7 +217,7 @@ async function pickScope(
 	if (!askScope) return preferred;
 	const preferredOrder =
 		preferred === "global" ? [SCOPE_GLOBAL, SCOPE_SESSION] : [SCOPE_SESSION, SCOPE_GLOBAL];
-	const scopeChoice = await ui.select("Apply scope", preferredOrder);
+	const scopeChoice = await (ui.selectScope ?? ui.select)("Apply scope", preferredOrder);
 	if (scopeChoice === undefined) return undefined;
 	return scopeChoice.startsWith("global") ? "global" : "session";
 }
@@ -368,48 +369,45 @@ export async function runStartupPicker(input: StartupPickerInput): Promise<Start
 	const labels = listedProfiles.map((p) => profileLabel(p));
 	const options = [keepLabel, ...labels, BROWSE_ALL];
 
-	const choice = await (input.ui.selectStartup ?? input.ui.select)("Startup model profile", options);
-	if (choice === undefined) {
-		return { action: "cancelled", reason: "dismissed" };
-	}
-	if (choice === keepLabel) {
-		if (input.reason !== "new" || !input.currentModel) {
-			return { action: "cancelled", reason: "keep-current" };
-		}
-		return applyManual(
-			{ provider: input.currentModel.provider, id: input.currentModel.id },
-			"session",
-			input.deps,
-			input.currentThinking,
-			"current",
-		);
-	}
-
 	const askScope = input.askScope !== false;
-
-	if (choice === BROWSE_ALL) {
-		const picked = await browseAllModels(input.ui, available);
-		if (!picked) {
-			return { action: "cancelled", reason: "browse-cancelled" };
+	while (true) {
+		const choice = await (input.ui.selectStartup ?? input.ui.select)("Startup model profile", options);
+		if (choice === undefined) {
+			return { action: "cancelled", reason: "dismissed" };
 		}
+		if (choice === keepLabel) {
+			if (input.reason !== "new" || !input.currentModel) {
+				return { action: "cancelled", reason: "keep-current" };
+			}
+			return applyManual(
+				{ provider: input.currentModel.provider, id: input.currentModel.id },
+				"session",
+				input.deps,
+				input.currentThinking,
+				"current",
+			);
+		}
+
+		if (choice === BROWSE_ALL) {
+			const picked = await browseAllModels(input.ui, available);
+			if (!picked) {
+				return { action: "cancelled", reason: "browse-cancelled" };
+			}
+			const scope = await pickScope(input.ui, input.config.startupScope, askScope);
+			if (!scope) continue;
+			return applyManual(picked, scope, input.deps);
+		}
+
+		const index = labels.indexOf(choice);
+		const profile = index >= 0 ? listedProfiles[index] : undefined;
+		if (!profile) {
+			return { action: "cancelled", reason: "unknown-choice" };
+		}
+
 		const scope = await pickScope(input.ui, input.config.startupScope, askScope);
-		if (!scope) {
-			return { action: "cancelled", reason: "scope-dismissed" };
-		}
-		return applyManual(picked, scope, input.deps);
-	}
+		if (!scope) continue;
 
-	const index = labels.indexOf(choice);
-	const profile = index >= 0 ? listedProfiles[index] : undefined;
-	if (!profile) {
-		return { action: "cancelled", reason: "unknown-choice" };
+		const result = await applyProfile(profile, scope, input.deps);
+		return { action: "applied", source: "profile", profile, scope, result };
 	}
-
-	const scope = await pickScope(input.ui, input.config.startupScope, askScope);
-	if (!scope) {
-		return { action: "cancelled", reason: "scope-dismissed" };
-	}
-
-	const result = await applyProfile(profile, scope, input.deps);
-	return { action: "applied", source: "profile", profile, scope, result };
 }
