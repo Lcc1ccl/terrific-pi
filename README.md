@@ -33,7 +33,7 @@ terrific-pi/
 | 插件 | 路径 | 说明 |
 |------|------|------|
 | statusline | `extensions/statusline` | 可配置底栏：single/stacked HUD、minimal profile、emoji/plain、原生 OAuth quota、token/cache/cost、git、运行状态；`/statusline` 交互配置 |
-| fast | `extensions/fast` | `/fast` 开关 OpenAI Priority processing（`service_tier=priority`）；开启后 footer 显示单列图标 `` |
+| fast | `extensions/fast` | `/fast` 全局开关 OpenAI Priority processing（`service_tier=priority`）；仅 openai 家族 Responses 生效，切走自动退让；badge 跟生效态 |
 | context | `extensions/context` | `/context` 上下文占用拆解（不调模型、不写 session） |
 | auxiliary | `extensions/auxiliary` | task-key 辅助模型 runtime：`/aux config` TUI、compression/title/summary/web research/Git finalize、独立 usage 与 HUD |
 | mode | `extensions/mode` | `/mode ask\|plan\|edit\|auto` 工具权限模式；status key `pi-essentials-mode` |

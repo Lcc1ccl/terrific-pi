@@ -2,6 +2,9 @@
   "context": {
     "topEntries": 10
   },
+  "fast": {
+    "enabled": false
+  },
   "mode": {
     "default": "edit",
     "persistPerSession": true
