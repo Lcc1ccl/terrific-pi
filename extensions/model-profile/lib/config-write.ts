@@ -14,7 +14,7 @@ import {
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-import type { ModelProfile, ProfileScope } from "./types.ts";
+import type { ProfileScope } from "./types.ts";
 import { TERRIFIC_CONFIG_BASENAME, resolveConfigPath } from "./config.ts";
 
 export type WriteConfigResult =
@@ -129,7 +129,7 @@ export function resolveConfigWritePath(agentDir: string): string {
  * Only patches provided keys; preserves profiles and other root sections.
  */
 export function patchModelProfileSection(
-	patch: { startup?: boolean; startupScope?: ProfileScope; openHotkey?: string; profiles?: ModelProfile[] },
+	patch: { startup?: boolean; startupScope?: ProfileScope; openHotkey?: string; profiles?: unknown[] },
 	agentDir: string,
 ): WriteConfigResult {
 	const path = resolveConfigPath(agentDir);

@@ -21,7 +21,14 @@
     "vaultEnabled": false,
     "configReminder": true,
     "vaultRoot": "/mnt/g/Mindriver",
-    "projectBase": "2_Career/01-INDIE/开发"
+    "projectBase": "2_Career/01-INDIE/开发",
+    "stageOverrides": {
+      "research": {
+        "model": "openai/gpt-5.6-sol",
+        "thinking": "high",
+        "timeoutMs": 900000
+      }
+    }
   }
 }
 ```
@@ -51,15 +58,17 @@ docsflow/
 ## 命令
 
 ```text
+/docsflow                              TUI manager: status, wizard, retry, drafts, reset, settings
 /docsflow start [--project slug] <requirement>
 /docsflow resume
 /docsflow status
 /docsflow reset
 /docsflow apply-drafts
+/docsflow settings
 /docsflow remind on|off
 ```
 
-`/docsflow remind off` 关闭 session 启动与 `/docsflow start` 的配置提醒，写入 `terrific.json` 的 `docsflow.configReminder`。
+`/docsflow settings` 在 TUI 中编辑本地/vault、提醒与每个阶段的 model/thinking/timeout 覆盖；模型必须是当前可用的 text model，thinking 也会按该模型能力校验，包括单字段 reset 后的最终组合。`projectBase` 必须是 `vaultRoot` 内的相对路径。`/docsflow remind off` 关闭 session 启动与 `/docsflow start` 的配置提醒，写入 `terrific.json` 的 `docsflow.configReminder`。
 
 ## 流水线
 
@@ -67,7 +76,7 @@ docsflow/
 research → product → interface → delivery → ready
 ```
 
-Hermes/外部评审为可选附加，不阻断。
+Hermes/外部评审为可选附加，不阻断。只有 agent contract 返回 `completed` 才推进阶段；`blocked`、`needs_input`、`failed` 保留当前阶段，`/docsflow resume` 会重试而不会跳过。
 
 ## 安装
 

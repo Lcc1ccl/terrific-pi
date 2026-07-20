@@ -13,6 +13,7 @@ import {
 	resolveLocalOutputRoot,
 	resolveVaultOutputRoot,
 	updateDocsflowConfig,
+	updateDocsflowStageOverride,
 	vaultConfigReminder,
 } from "../lib/vault.ts";
 
@@ -60,6 +61,28 @@ describe("vault config", () => {
 		assert.equal(defaultProjectSlug("/tmp/foo/bar"), "bar");
 	});
 
+	test("rejects a vault project base that escapes the configured vault", () => {
+		const vault = mkdtempSync(path.join(tmpdir(), "vault-safe-base-"));
+		assert.throws(
+			() => resolveVaultOutputRoot({
+				vaultEnabled: true,
+				configReminder: false,
+				vaultRoot: vault,
+				projectBase: "../outside",
+				stageOverrides: {},
+			}, "project"),
+			/projectBase/i,
+		);
+	});
+
+	test("refuses to persist an unsafe vault project base", () => {
+		const agentDir = mkdtempSync(path.join(tmpdir(), "docsflow-cfg-unsafe-base-"));
+		assert.throws(
+			() => updateDocsflowConfig(agentDir, { projectBase: "../outside" }),
+			/projectBase/i,
+		);
+	});
+
 	test("updateDocsflowConfig persists configReminder off", () => {
 		const agentDir = mkdtempSync(path.join(tmpdir(), "docsflow-cfg-remind-"));
 		writeFileSync(
@@ -77,5 +100,56 @@ describe("vault config", () => {
 		assert.equal(raw.keep, true);
 		assert.equal(raw.docsflow.configReminder, false);
 		assert.equal(raw.docsflow.vaultEnabled, false);
+	});
+
+	test("merges validated stage overrides without replacing sibling stage settings", () => {
+		const agentDir = mkdtempSync(path.join(tmpdir(), "docsflow-cfg-stage-"));
+		writeFileSync(path.join(agentDir, "terrific.json"), JSON.stringify({
+			docsflow: {
+				stageOverrides: {
+					research: { model: "openai/research", thinking: "high", timeoutMs: 45_000, future: "keep" },
+					product: { timeoutMs: 60_000 },
+				},
+			},
+		}), "utf8");
+
+		const updated = updateDocsflowStageOverride(agentDir, "research", { timeoutMs: 90_000 });
+		assert.equal(updated.stageOverrides.research?.model, "openai/research");
+		assert.equal(updated.stageOverrides.research?.thinking, "high");
+		assert.equal(updated.stageOverrides.research?.timeoutMs, 90_000);
+		assert.equal(updated.stageOverrides.product?.timeoutMs, 60_000);
+		const raw = JSON.parse(readFileSync(path.join(agentDir, "terrific.json"), "utf8"));
+		assert.equal(raw.docsflow.stageOverrides.research.future, "keep");
+	});
+
+	test("keeps a 15-minute stage timeout override", () => {
+		const agentDir = mkdtempSync(path.join(tmpdir(), "docsflow-cfg-timeout-"));
+		writeFileSync(path.join(agentDir, "terrific.json"), JSON.stringify({
+			docsflow: { stageOverrides: { research: { timeoutMs: 900_000 } } },
+		}), "utf8");
+
+		assert.equal(loadDocsflowConfig(agentDir).stageOverrides.research?.timeoutMs, 900_000);
+	});
+
+	test("refuses to write while the shared config lock is held", () => {
+		const agentDir = mkdtempSync(path.join(tmpdir(), "docsflow-cfg-lock-"));
+		const configPath = path.join(agentDir, "terrific.json");
+		writeFileSync(configPath, JSON.stringify({ fast: { enabled: true } }), "utf8");
+		writeFileSync(`${configPath}.lock`, "owned", "utf8");
+
+		assert.throws(() => updateDocsflowConfig(agentDir, { configReminder: false }), /lock/i);
+		assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), { fast: { enabled: true } });
+	});
+
+	test("refuses to overwrite malformed shared config", () => {
+		const agentDir = mkdtempSync(path.join(tmpdir(), "docsflow-cfg-corrupt-"));
+		const configPath = path.join(agentDir, "terrific.json");
+		writeFileSync(configPath, "{ bad", "utf8");
+
+		assert.throws(
+			() => updateDocsflowConfig(agentDir, { configReminder: false }),
+			/Failed to parse terrific\.json/,
+		);
+		assert.equal(readFileSync(configPath, "utf8"), "{ bad");
 	});
 });

@@ -26,6 +26,8 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+import { formatFastStatus } from "../lib/status.ts";
+
 const FAST_APIS = new Set(["openai-responses", "openai-codex-responses", "azure-openai-responses"]);
 const FAST_STATUS = "";
 const FAST_ENTRY_TYPE = "fast-state";
@@ -49,17 +51,9 @@ export function isFastActive(preferred: boolean, api: string | undefined): boole
 	return preferred && supportsFastApi(api);
 }
 
-/**
- * Injection gate:
- * - off preference → never
- * - known non-openai API → never
- * - known openai API → yes
- * - unknown/missing API → yes (avoid silent skip when ctx.model is stale)
- */
+/** Keep billing behavior aligned with the visible active-state badge. */
 export function shouldInjectPriority(preferred: boolean, api: string | undefined): boolean {
-	if (!preferred) return false;
-	if (api === undefined) return true;
-	return supportsFastApi(api);
+	return isFastActive(preferred, api);
 }
 
 export function defaultAgentDir(): string {
@@ -256,6 +250,12 @@ function applyStatus(ctx: ExtensionContext, active: boolean): void {
 	ctx.ui.setStatus("fast", active ? FAST_STATUS : undefined);
 }
 
+function reportFastStatus(ctx: ExtensionContext, preferred: boolean): void {
+	const text = formatFastStatus(preferred, modelApi(ctx), resolveConfigPath());
+	if (ctx.mode === "print") process.stdout.write(`${text}\n`);
+	else ctx.ui.notify(text, "info");
+}
+
 export default function (pi: ExtensionAPI) {
 	// User preference (global). Active only when model API is openai-family.
 	let preferred = false;
@@ -285,18 +285,19 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	pi.registerCommand("fast", {
-		description: "Toggle OpenAI Priority processing (service_tier=priority)",
+		description: "Toggle OpenAI Priority processing or show status (on|off|toggle|status)",
 		getArgumentCompletions: (prefix) => {
-			const opts = ["on", "off", "toggle"];
-			const filtered = opts.filter((o) => o.startsWith(prefix.trim()));
+			const opts = ["on", "off", "toggle", "status"];
+			const filtered = opts.filter((option) => option.startsWith(prefix.trim().toLowerCase()));
 			return filtered.map((value) => ({ value, label: value }));
 		},
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
-			if (arg === "on") setPreferred(ctx, true);
+			if (arg === "status") reportFastStatus(ctx, preferred);
+			else if (arg === "on") setPreferred(ctx, true);
 			else if (arg === "off") setPreferred(ctx, false);
 			else if (arg === "" || arg === "toggle") setPreferred(ctx, !preferred);
-			else ctx.ui.notify("Usage: /fast [on|off|toggle]", "error");
+			else ctx.ui.notify("Usage: /fast [on|off|toggle|status]", "error");
 		},
 	});
 

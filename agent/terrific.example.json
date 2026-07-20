@@ -5,6 +5,9 @@
   "fast": {
     "enabled": false
   },
+  "processView": {
+    "defaultViewMode": "compact"
+  },
   "mode": {
     "default": "edit",
     "persistPerSession": true

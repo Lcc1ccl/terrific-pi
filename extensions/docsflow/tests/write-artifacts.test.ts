@@ -39,5 +39,7 @@ describe("write artifacts", () => {
 		});
 		assert.equal(readFileSync(path.join(out, "00_Research.md"), "utf8"), "new\n");
 		assert.ok(existsSync(path.join(result.backupDir, "00_Research.md")));
+		assert.equal(existsSync(path.join(out, "00_Research.draft.md")), false);
+		assert.deepEqual(listDraftArtifacts(out), []);
 	});
 });

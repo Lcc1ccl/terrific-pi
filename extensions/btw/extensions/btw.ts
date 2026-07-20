@@ -15,7 +15,8 @@ import {
 import { truncateMessagesForBtw } from "../lib/btw-context.ts";
 import { createBtwUsageEntry, resolveBtwCandidates, type BtwCandidate } from "../lib/btw-route.ts";
 import { createIsolatedBtwSession } from "../lib/btw-session.ts";
-import { loadConfig } from "../lib/config.ts";
+import { loadConfig, resolveConfigPaths, updateBtwConfig } from "../lib/config.ts";
+import { formatBtwStatus, parseBtwCommandArgs, type BtwContextMode } from "../lib/command.ts";
 import { TextOverlay, type OverlayAction } from "../lib/overlay.ts";
 import { report } from "../lib/output.ts";
 import { charsToTokens, type ClassifiableMessage } from "../lib/tokens.ts";
@@ -69,7 +70,9 @@ function buildSnapshot(
 	maxContextTokens: number,
 	maxOutputTokens: number,
 	contextWindow: number,
+	contextMode: BtwContextMode,
 ): Message[] {
+	if (contextMode === "none") return [];
 	const context = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId());
 	const reserved = maxOutputTokens + charsToTokens(BTW_SYSTEM_PROMPT) + charsToTokens(question) + 256;
 	const budget = Math.max(0, Math.min(maxContextTokens, contextWindow - reserved));
@@ -91,7 +94,12 @@ function modelLabel(model: Model<Api>): string {
 	return `${model.provider}/${model.id}`.replace(/[\u0000-\u001f\u007f]/g, "");
 }
 
-async function askQuestion(pi: ExtensionAPI, ctx: ExtensionCommandContext, question: string): Promise<AskResult> {
+async function askQuestion(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	question: string,
+	contextMode: BtwContextMode,
+): Promise<AskResult> {
 	const { config, warnings } = loadConfig(
 		ctx.cwd,
 		getAgentDir(),
@@ -130,6 +138,7 @@ async function askQuestion(pi: ExtensionAPI, ctx: ExtensionCommandContext, quest
 						config.btw.maxContextTokens,
 						candidate.maxOutputTokens,
 						model.contextWindow,
+						contextMode,
 					);
 					const startedAt = Date.now();
 					let session: AgentSession | undefined;
@@ -252,9 +261,94 @@ async function showAnswer(
 }
 
 export default function (pi: ExtensionAPI) {
+	const runBtwConfig = async (ctx: ExtensionCommandContext) => {
+		const paths = resolveConfigPaths(ctx.cwd, getAgentDir(), ctx.isProjectTrusted(), CONFIG_DIR_NAME);
+		const loadScopes = () => ({
+			global: loadConfig(ctx.cwd, getAgentDir(), false, CONFIG_DIR_NAME),
+			effective: loadConfig(ctx.cwd, getAgentDir(), ctx.isProjectTrusted(), CONFIG_DIR_NAME),
+		});
+		if (!ctx.hasUI || ctx.mode !== "tui") {
+			const { effective } = loadScopes();
+			for (const warning of effective.warnings) report(ctx, warning, "warning");
+			report(ctx, `${formatBtwStatus(effective.config, ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined, paths)}\nUse /btw config in TUI to edit the context budget.`);
+			return;
+		}
+		let scope = "global" as "global" | "project";
+		while (true) {
+			const { global, effective } = loadScopes();
+			for (const warning of effective.warnings) report(ctx, warning, "warning");
+			const targetPath = scope === "project" ? paths[1]! : paths[0]!;
+			const target = scope === "global" ? global.config : effective.config;
+			const choice = await ctx.ui.select([
+				"BTW configuration",
+				`write: ${scope} (${targetPath})`,
+				`effective: ${effective.config.btw.maxContextTokens}`,
+				`source: ${paths.join(" -> ")}`,
+			].join("\n"), [
+				...(paths.length > 1 ? [`Scope: ${scope}`] : []),
+				`Write target context budget: ${target.btw.maxContextTokens}`,
+				"Auxiliary route: /aux config -> btw",
+				"Reset context budget override",
+				"Show effective config",
+				"Done",
+			]);
+			if (!choice || choice === "Done") return;
+			if (choice.startsWith("Scope:")) {
+				const selected = await ctx.ui.select("BTW config scope", ["global", "project"]);
+				if (selected === "global" || selected === "project") scope = selected;
+				continue;
+			}
+			if (choice.startsWith("Write target context budget:")) {
+				const raw = await ctx.ui.input("Context budget (1-1000000 tokens)", String(target.btw.maxContextTokens));
+				if (raw === undefined || !raw.trim()) continue;
+				if (!/^\d+$/.test(raw.trim())) {
+					ctx.ui.notify("Context budget must be an integer from 1 to 1000000", "warning");
+					continue;
+				}
+				const maxContextTokens = Number.parseInt(raw.trim(), 10);
+				if (maxContextTokens < 1 || maxContextTokens > 1_000_000) {
+					ctx.ui.notify("Context budget must be an integer from 1 to 1000000", "warning");
+					continue;
+				}
+				const result = updateBtwConfig(targetPath, (btw) => { btw.maxContextTokens = maxContextTokens; });
+				if (!result.ok) ctx.ui.notify(`Failed to update terrific.json: ${result.error}`, "error");
+				else ctx.ui.notify(`Context budget: ${maxContextTokens}`, "info");
+				continue;
+			}
+			if (choice.startsWith("Auxiliary route:")) {
+				ctx.ui.notify("Configure BTW model, thinking, timeout, output cap, and fallbacks through /aux config -> btw.", "info");
+				continue;
+			}
+			if (choice === "Reset context budget override") {
+				if (!await ctx.ui.confirm("Reset BTW context budget?", `Remove maxContextTokens from ${scope} scope while preserving other BTW settings?`)) continue;
+				const result = updateBtwConfig(targetPath, (btw) => { delete btw.maxContextTokens; });
+				if (!result.ok) ctx.ui.notify(`Failed to update terrific.json: ${result.error}`, "error");
+				else ctx.ui.notify(`${scope} BTW budget override reset`, "info");
+				continue;
+			}
+			report(ctx, formatBtwStatus(effective.config, ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined, paths));
+		}
+	};
+
 	pi.registerCommand("btw", {
-		description: "Ask a side question without polluting the main session",
+		description: "Ask a side question without polluting the main session (status|config|context=none)",
+		getArgumentCompletions: (prefix) => ["status", "config", "context=current", "context=none"].filter((option) => option.startsWith(prefix.trim().toLowerCase())).map((value) => ({ value, label: value })),
 		handler: async (args, ctx) => {
+			const raw = args.trim();
+			const { config, warnings } = loadConfig(ctx.cwd, getAgentDir(), ctx.isProjectTrusted(), CONFIG_DIR_NAME);
+			for (const warning of warnings) report(ctx, warning, "warning");
+			if (raw.toLowerCase() === "status") {
+				report(ctx, formatBtwStatus(
+					config,
+					ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
+					resolveConfigPaths(ctx.cwd, getAgentDir(), ctx.isProjectTrusted(), CONFIG_DIR_NAME),
+				));
+				return;
+			}
+			if (raw.toLowerCase() === "config") {
+				await runBtwConfig(ctx);
+				return;
+			}
 			if (!ctx.hasUI || ctx.mode !== "tui") {
 				report(ctx, "/btw is not supported in non-interactive mode", "error");
 				return;
@@ -264,7 +358,8 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			let question = args.trim();
+			const parsed = parseBtwCommandArgs(raw);
+			let question = parsed.question;
 			if (!question) {
 				const input = await ctx.ui.input("BTW question", "");
 				if (input === undefined) return;
@@ -278,7 +373,7 @@ export default function (pi: ExtensionAPI) {
 			running = true;
 			try {
 				while (true) {
-					const result = await askQuestion(pi, ctx, question);
+					const result = await askQuestion(pi, ctx, question, parsed.contextMode);
 					if (result.status === "cancelled") {
 						ctx.ui.notify("Cancelled", "info");
 						return;

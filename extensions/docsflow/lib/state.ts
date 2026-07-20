@@ -45,7 +45,6 @@ export function statePath(projectRoot: string): string {
 export function emptyState(partial?: Partial<DocsflowState>): DocsflowState {
 	const now = new Date().toISOString();
 	return {
-		version: STATE_VERSION,
 		requirement: "",
 		projectSlug: "",
 		vaultRoot: "",

@@ -1,4 +1,5 @@
 import {
+	getAgentDir,
 	keyText,
 	type ExtensionAPI,
 	type ExtensionContext,
@@ -6,6 +7,7 @@ import {
 import { Container } from "@earendil-works/pi-tui";
 
 import { ActivityTracker } from "../lib/activity.ts";
+import { loadProcessViewDefault, updateProcessViewConfig } from "../lib/config.ts";
 import { ProcessWidget, renderToolResult } from "../lib/render.ts";
 import {
 	buildContextReminder,
@@ -197,7 +199,7 @@ export default function processView(pi: ExtensionAPI) {
 	};
 
 	const restore = (ctx: ExtensionContext) => {
-		const restored = restoreProcessState(ctx.sessionManager.getBranch());
+		const restored = restoreProcessState(ctx.sessionManager.getBranch(), loadProcessViewDefault(getAgentDir()));
 		state = restored.state;
 		control = { requestStarted: false };
 		activity.reset();
@@ -270,45 +272,118 @@ export default function processView(pi: ExtensionAPI) {
 		},
 	});
 
+	const saveViewMode = (mode: ProcessViewMode, ctx: ExtensionContext) => {
+		const next = state.snapshot
+			? createPersistedState(state.snapshot, mode, state.telemetry)
+			: state.cleared
+				? createTombstone(mode)
+				: createPersistedState(undefined, mode);
+		try {
+			appendState(next);
+			refreshWidget(ctx);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			ctx.ui.notify(`Process mode could not be saved: ${message}`, "error");
+		}
+	};
+
+	const clearProcess = (ctx: ExtensionContext) => {
+		try {
+			appendState(createTombstone(state.viewMode));
+			control.pendingContextReminder = undefined;
+			pendingTelemetry = undefined;
+			activity.reset();
+			refreshWidget(ctx);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			ctx.ui.notify(`Process state could not be cleared: ${message}`, "error");
+		}
+	};
+
+	const confirmClearProcess = async (ctx: ExtensionContext) => {
+		if (!state.snapshot) {
+			ctx.ui.notify("No current task to clear", "warning");
+			return;
+		}
+		if (!ctx.hasUI || ctx.mode !== "tui") {
+			ctx.ui.notify("/process clear requires TUI confirmation", "warning");
+			return;
+		}
+		const done = state.snapshot.steps.filter((step) => step.status === "done").length;
+		const usage = state.telemetry?.usage;
+		const tokens = usage ? usage.input + usage.output + usage.cacheRead + usage.cacheWrite : 0;
+		const confirmed = await ctx.ui.confirm(
+			"Clear current task",
+			`Clear "${state.snapshot.title}" (${done}/${state.snapshot.steps.length}, ${state.telemetry?.turns ?? 0} turns, ${tokens} tokens)? This removes its saved progress and telemetry.`,
+		);
+		if (confirmed) clearProcess(ctx);
+	};
+
+	const setGlobalDefaultViewMode = (ctx: ExtensionContext, mode: ProcessViewMode) => {
+		const result = updateProcessViewConfig(getAgentDir(), mode);
+		if (!result.ok) {
+			ctx.ui.notify(`Failed to update terrific.json: ${result.error}`, "error");
+			return;
+		}
+		ctx.ui.notify(`Process View default for new sessions: ${mode}`, "info");
+	};
+
+	const runProcessManager = async (ctx: ExtensionContext) => {
+		while (true) {
+			const expanded = ctx.ui.getToolsExpanded();
+			const defaultMode = loadProcessViewDefault(getAgentDir());
+			const choice = await ctx.ui.select(processSummary(state), [
+				`View mode: ${state.viewMode}`,
+				`Default for new sessions: ${defaultMode}`,
+				`${expanded ? "Collapse" : "Expand"} live panel`,
+				...(state.snapshot ? ["Clear current task"] : []),
+				"Done",
+			]);
+			if (!choice || choice === "Done") return;
+			if (choice.startsWith("View mode:")) {
+				const mode = await ctx.ui.select("Process view mode", ["compact", "full", "off"]);
+				if (mode === "compact" || mode === "full" || mode === "off") saveViewMode(mode, ctx);
+				continue;
+			}
+			if (choice.startsWith("Default for new sessions:")) {
+				const mode = await ctx.ui.select("Default Process View mode", ["compact", "full", "off"]);
+				if (mode === "compact" || mode === "full" || mode === "off") setGlobalDefaultViewMode(ctx, mode);
+				continue;
+			}
+			if (choice.endsWith("live panel")) {
+				ctx.ui.setToolsExpanded(!expanded);
+				refreshWidget(ctx);
+				continue;
+			}
+			if (choice === "Clear current task") await confirmClearProcess(ctx);
+		}
+	};
+
 	pi.registerCommand("process", {
-		description: "Show or change the Process View: compact | full | off | clear",
+		description: "Manage Process View or use compact | full | off | clear | default <mode>",
 		handler: async (args, ctx) => {
-			const action = args.trim().toLowerCase();
+			const parts = args.trim().toLowerCase().split(/\s+/).filter(Boolean);
+			const action = parts[0];
 			if (!action) {
-				ctx.ui.notify(processSummary(state), "info");
+				if (ctx.mode === "tui") await runProcessManager(ctx);
+				else ctx.ui.notify(`${processSummary(state)} · global default ${loadProcessViewDefault(getAgentDir())}`, "info");
+				return;
+			}
+			if (action === "default") {
+				const mode = parts[1];
+				if (mode === "compact" || mode === "full" || mode === "off") setGlobalDefaultViewMode(ctx, mode);
+				else ctx.ui.notify(`Global default: ${loadProcessViewDefault(getAgentDir())}. Usage: /process default <compact|full|off>`, "warning");
 				return;
 			}
 			if (action === "clear") {
-				const next = createTombstone(state.viewMode);
-				try {
-					appendState(next);
-					control.pendingContextReminder = undefined;
-					pendingTelemetry = undefined;
-					activity.reset();
-					refreshWidget(ctx);
-				} catch (error) {
-					const message = error instanceof Error ? error.message : String(error);
-					ctx.ui.notify(`Process state could not be cleared: ${message}`, "error");
-				}
+				await confirmClearProcess(ctx);
 				return;
 			}
 			if (action === "compact" || action === "full" || action === "off") {
-				const mode = action as ProcessViewMode;
-				const next = state.snapshot
-					? createPersistedState(state.snapshot, mode, state.telemetry)
-					: state.cleared
-						? createTombstone(mode)
-						: createPersistedState(undefined, mode);
-				try {
-					appendState(next);
-					refreshWidget(ctx);
-				} catch (error) {
-					const message = error instanceof Error ? error.message : String(error);
-					ctx.ui.notify(`Process mode could not be saved: ${message}`, "error");
-				}
+				saveViewMode(action, ctx);
 				return;
 			}
-			ctx.ui.notify("Usage: /process [compact|full|off|clear]", "warning");
+			ctx.ui.notify("Usage: /process [compact|full|off|clear|default <compact|full|off>]", "warning");
 		},
 	});
 

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 
-import { loadConfig, mergeConfig, resolveConfigPaths } from "../lib/config.ts";
+import { loadConfig, mergeConfig, resolveConfigPaths, updateBtwConfig } from "../lib/config.ts";
 
 describe("resolveConfigPaths", () => {
 	it("ignores project config when the project is not trusted", () => {
@@ -18,6 +18,23 @@ describe("resolveConfigPaths", () => {
 			"/agent/terrific.json",
 			"/workspace/.custom-pi/terrific.json",
 		]);
+	});
+});
+
+describe("BTW config writer", () => {
+	it("updates only maxContextTokens and preserves auxiliary routing", () => {
+		const root = mkdtempSync(join(tmpdir(), "btw-config-write-"));
+		const path = join(root, "terrific.json");
+		writeFileSync(path, JSON.stringify({
+			auxiliary: { tasks: { btw: { model: "openai/pinned" } } },
+			btw: { future: "keep" },
+		}));
+		const result = updateBtwConfig(path, (btw) => { btw.maxContextTokens = 12_345; });
+		assert.equal(result.ok, true);
+		assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), {
+			auxiliary: { tasks: { btw: { model: "openai/pinned" } } },
+			btw: { future: "keep", maxContextTokens: 12_345 },
+		});
 	});
 });
 

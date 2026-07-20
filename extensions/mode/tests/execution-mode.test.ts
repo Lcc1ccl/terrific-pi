@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { it } from "node:test";
 import modeExtension from "../extensions/mode.ts";
 
@@ -27,4 +30,55 @@ it("restores startup tools before reload", async () => {
 	assert.deepEqual(tools, ["read", "grep", "find", "ls"]);
 	for (const handler of handlers.get("session_shutdown") ?? []) await handler({ reason: "reload" }, ctx);
 	assert.deepEqual(tools, ["read", "bash", "edit", "write"]);
+});
+
+it("shows the global write target separately from a trusted project's effective mode", async () => {
+	const root = mkdtempSync(join(tmpdir(), "mode-config-scope-"));
+	const agentDir = join(root, "agent");
+	const projectDir = join(root, "project");
+	mkdirSync(agentDir, { recursive: true });
+	mkdirSync(join(projectDir, ".pi"), { recursive: true });
+	writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({ mode: { default: "edit", persistPerSession: true } }));
+	writeFileSync(join(projectDir, ".pi", "terrific.json"), JSON.stringify({ mode: { default: "ask" } }));
+
+	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	try {
+		let tools = ["read", "bash", "edit", "write"];
+		let command: { handler: (args: string, ctx: any) => Promise<void> } | undefined;
+		modeExtension({
+			registerCommand: (_name: string, value: any) => { command = value; },
+			on() {},
+			getActiveTools: () => [...tools],
+			setActiveTools: (next: string[]) => { tools = [...next]; },
+			appendEntry() {},
+		} as never);
+
+		let title = "";
+		let options: string[] = [];
+		await command!.handler("config", {
+			cwd: projectDir,
+			hasUI: true,
+			mode: "tui",
+			isProjectTrusted: () => true,
+			ui: {
+				setStatus() {},
+				notify() {},
+				select: async (nextTitle: string, nextOptions: string[]) => {
+					title = nextTitle;
+					options = nextOptions;
+					return undefined;
+				},
+				confirm: async () => false,
+			},
+		});
+
+		assert.match(title, /write: global/);
+		assert.match(title, /effective: ask/);
+		assert.ok(options.includes("Global default mode: edit"));
+		assert.ok(options.includes("Global persist per session: on"));
+	} finally {
+		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+	}
 });

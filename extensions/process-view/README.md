@@ -60,14 +60,15 @@ Only `read`, `edit`, `write`, `grep`, `find`, and `ls` may show a sanitized path
 ## Commands
 
 ```text
-/process              show mode and current task summary
+/process              TUI manager: summary, view mode, global default, live-panel expansion, confirmed clear
 /process compact      compact by default; follow Pi's native tool expansion
 /process full         pin the live task/runtime panel open
 /process off          hide the HUD while retaining state and receipts
-/process clear        write a tombstone and clear the current task
+/process clear        TUI confirmation, then write a tombstone and clear the current task
+/process default <mode>  save compact|full|off for new session branches
 ```
 
-View mode is stored per session branch. No global Process View config file is created, and the extension registers no shortcuts. The default `Ctrl+O` remains owned by Pi as `app.tools.expand`, so user keybinding overrides continue to work.
+Outside TUI mode, bare `/process` prints the current summary and `/process clear` refuses without TUI confirmation. View mode is stored per session branch. `processView.defaultViewMode` in `~/.pi/agent/terrific.json` supplies the initial mode only when a branch has no saved Process View state; `/process default <mode>` writes that global default. The extension registers no shortcuts. The default `Ctrl+O` remains owned by Pi as `app.tools.expand`, so user keybinding overrides continue to work.
 
 ## Lifecycle
 

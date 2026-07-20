@@ -1,6 +1,19 @@
-import { existsSync, readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+	chmodSync,
+	closeSync,
+	existsSync,
+	fsyncSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	renameSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 
@@ -207,4 +220,65 @@ export function loadConfig(
 	}
 
 	return { config, warnings };
+}
+
+export type BtwConfigWriteResult = { ok: true; path: string } | { ok: false; path: string; error: string };
+
+/** Atomically mutate only the legacy BTW budget section at the selected config path. */
+export function updateBtwConfig(
+	path: string,
+	mutate: (btw: Record<string, unknown>) => void,
+): BtwConfigWriteResult {
+	try {
+		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+	} catch (error) {
+		return { ok: false, path, error: error instanceof Error ? error.message : String(error) };
+	}
+	const lockPath = `${path}.lock`;
+	try {
+		const descriptor = openSync(lockPath, "wx", 0o600);
+		closeSync(descriptor);
+	} catch (error) {
+		return { ok: false, path, error: `Failed to lock ${TERRIFIC_CONFIG_BASENAME}: ${error instanceof Error ? error.message : String(error)}` };
+	}
+	const temporary = join(dirname(path), `.${TERRIFIC_CONFIG_BASENAME}.${process.pid}.${randomUUID()}.tmp`);
+	try {
+		let root: Record<string, unknown> = {};
+		if (existsSync(path)) {
+			let parsed: unknown;
+			try {
+				parsed = JSON.parse(readFileSync(path, "utf8"));
+			} catch (error) {
+				return { ok: false, path, error: `Failed to parse ${TERRIFIC_CONFIG_BASENAME}: ${error instanceof Error ? error.message : String(error)}` };
+			}
+			if (!isRecord(parsed)) return { ok: false, path, error: `${TERRIFIC_CONFIG_BASENAME} root must be an object` };
+			root = parsed;
+		}
+		if (Object.hasOwn(root, "btw") && !isRecord(root.btw)) {
+			return { ok: false, path, error: "btw must be a JSON object" };
+		}
+		const btw = isRecord(root.btw) ? root.btw : {};
+		mutate(btw);
+		if (Object.keys(btw).length === 0) delete root.btw;
+		else root.btw = btw;
+		const descriptor = openSync(temporary, "wx", 0o600);
+		try {
+			writeFileSync(descriptor, `${JSON.stringify(root, null, 2)}\n`, "utf8");
+			chmodSync(temporary, existsSync(path) ? statSync(path).mode & 0o777 : 0o600);
+			fsyncSync(descriptor);
+		} finally {
+			closeSync(descriptor);
+		}
+		renameSync(temporary, path);
+		return { ok: true, path };
+	} catch (error) {
+		return { ok: false, path, error: error instanceof Error ? error.message : String(error) };
+	} finally {
+		try {
+			unlinkSync(temporary);
+		} catch {}
+		try {
+			unlinkSync(lockPath);
+		} catch {}
+	}
 }

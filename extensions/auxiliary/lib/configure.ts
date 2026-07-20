@@ -38,6 +38,21 @@ type RouteTarget = { kind: "default" } | { kind: "task"; task: ConfigurableTask 
 
 type MutationResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
+const TASK_ROUTE_FIELDS: Record<ConfigurableTask, ReadonlySet<RouteField>> = {
+	compression: new Set(ROUTE_OVERRIDE_FIELDS),
+	title_generation: new Set(ROUTE_OVERRIDE_FIELDS),
+	text_summary: new Set(ROUTE_OVERRIDE_FIELDS),
+	commit_message: new Set(ROUTE_OVERRIDE_FIELDS),
+	btw: new Set(ROUTE_OVERRIDE_FIELDS.filter((field) => field !== "maxRetries")),
+	web_research: new Set(ROUTE_OVERRIDE_FIELDS.filter(
+		(field) => field !== "maxRetries" && field !== "maxOutputTokens",
+	)),
+};
+
+function routeFieldVisible(target: RouteTarget, field: RouteField): boolean {
+	return target.kind === "default" || TASK_ROUTE_FIELDS[target.task].has(field);
+}
+
 export interface AuxiliaryConfiguratorUi {
 	select(title: string, options: string[]): Promise<string | undefined>;
 	input(title: string, placeholder: string): Promise<string | undefined>;
@@ -208,6 +223,86 @@ function setRouteField(
 	}), success);
 }
 
+function rawGitPolicy(source: Record<string, unknown>): Record<string, unknown> {
+	return isRecord(source.git) ? source.git : {};
+}
+
+function editGitPolicyObject(
+	auxiliary: Record<string, unknown>,
+	mutate: (policy: Record<string, unknown>) => void,
+): void {
+	if (Object.hasOwn(auxiliary, "git") && !isRecord(auxiliary.git)) {
+		throw new Error("auxiliary.git must be a JSON object");
+	}
+	const policy = isRecord(auxiliary.git) ? auxiliary.git : {};
+	mutate(policy);
+	if (Object.keys(policy).length === 0) delete auxiliary.git;
+	else auxiliary.git = policy;
+}
+
+function setGitPolicyField(
+	deps: AuxiliaryConfiguratorDeps,
+	field: "confirm" | "allowHeadless" | "allowPush",
+	value: boolean | undefined,
+	success: string,
+): boolean {
+	return applyMutation(deps, (auxiliary) => editGitPolicyObject(auxiliary, (policy) => {
+		if (value === undefined) delete policy[field];
+		else policy[field] = value;
+	}), success);
+}
+
+async function editGitPolicy(deps: AuxiliaryConfiguratorDeps): Promise<void> {
+	while (true) {
+		const loaded = loadState(deps.agentDir);
+		if (!loaded.ok) {
+			deps.ui.notify(loaded.error, "error");
+			return;
+		}
+		const state = loaded.value;
+		const raw = rawGitPolicy(state.source);
+		const config = state.config.git;
+		const choice = await deps.ui.select("Git finalize policy", [
+			`Confirm before commit: ${config.confirm ? "on" : "off"}`,
+			`Allow headless: ${config.allowHeadless ? "on" : "off"}`,
+			`Allow push: ${config.allowPush ? "on" : "off"}`,
+			...(( ["confirm", "allowHeadless", "allowPush"] as const).some((field) => Object.hasOwn(raw, field)) ? ["Reset Git policy"] : []),
+			"Back",
+		]);
+		if (!choice || choice === "Back") return;
+		if (choice === "Reset Git policy") {
+			const confirmed = await deps.ui.confirm(
+				"Reset Git finalize policy?",
+				"Restore Git finalization defaults while keeping unknown policy fields?",
+			);
+			if (confirmed) {
+				applyMutation(deps, (auxiliary) => editGitPolicyObject(auxiliary, (policy) => {
+					delete policy.confirm;
+					delete policy.allowHeadless;
+					delete policy.allowPush;
+				}), "Git finalize policy reset");
+			}
+			continue;
+		}
+		const field = choice.startsWith("Confirm before commit")
+			? "confirm"
+			: choice.startsWith("Allow headless")
+				? "allowHeadless"
+				: "allowPush";
+		const current = config[field];
+		const next = await deps.ui.select(choice, [
+			current ? "On [current]" : "On",
+			current ? "Off" : "Off [current]",
+			"Back",
+		]);
+		if (!next || next === "Back") continue;
+		const value = next.startsWith("On");
+		if (value !== current) {
+			setGitPolicyField(deps, field, value, `Git ${field}: ${value ? "on" : "off"}`);
+		}
+	}
+}
+
 function mainMenuTitle(deps: AuxiliaryConfiguratorDeps, state: ConfiguratorState): string {
 	return [
 		"Auxiliary Models",
@@ -231,6 +326,7 @@ function mainMenuItems(state: ConfiguratorState): Array<{ id: string; label: str
 		});
 	}
 	items.push(
+		{ id: "git", label: `Git finalize policy: confirm ${state.config.git.confirm ? "on" : "off"} · headless ${state.config.git.allowHeadless ? "on" : "off"} · push ${state.config.git.allowPush ? "on" : "off"}` },
 		{ id: "vision", label: "Vision: external · /vision-handoff" },
 		{ id: "show", label: "Show config" },
 		{ id: "done", label: "Done" },
@@ -462,8 +558,8 @@ async function routeMenu(deps: AuxiliaryConfiguratorDeps, target: RouteTarget): 
 			`Primary model: ${Object.hasOwn(raw, "model") ? compact(String(raw.model)) : `default · ${compact(route.model)}`}`,
 			`Thinking: ${Object.hasOwn(raw, "thinking") ? String(raw.thinking) : `default · ${route.thinking}`}`,
 			`Timeout: ${route.timeoutMs} ms`,
-			`Max output tokens: ${route.maxOutputTokens}`,
-			`Retries: ${route.maxRetries}`,
+			...(routeFieldVisible(target, "maxOutputTokens") ? [`Max output tokens: ${route.maxOutputTokens}`] : []),
+			...(routeFieldVisible(target, "maxRetries") ? [`Retries: ${route.maxRetries}`] : []),
 			`Fallback models: ${route.fallbackModels.length ? route.fallbackModels.map((value) => compact(value, 30)).join(", ") : "none"}`,
 			...(hasRouteOverride(raw, target) ? [`Reset ${target.kind === "default" ? "default route" : "task overrides"}`] : []),
 			"Back",
@@ -514,6 +610,8 @@ export async function runAuxiliaryConfigurator(deps: AuxiliaryConfiguratorDeps):
 			await routeMenu(deps, { kind: "default" });
 		} else if (selectedItem.id.startsWith("task:")) {
 			await routeMenu(deps, { kind: "task", task: selectedItem.id.slice(5) as ConfigurableTask });
+		} else if (selectedItem.id === "git") {
+			await editGitPolicy(deps);
 		} else if (selectedItem.id === "vision") {
 			deps.ui.notify("Vision routing is owned by pi-vision-handoff. Run /vision-handoff to configure it.", "info");
 		} else if (selectedItem.id === "show") {

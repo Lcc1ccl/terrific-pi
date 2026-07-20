@@ -111,16 +111,19 @@ describe("resolveConfigPaths / loadConfig", () => {
 			JSON.stringify({
 				modelProfile: {
 					startup: true,
-					profiles: [{ id: 1, alias: "default", provider: "grok", model: "new", thinking: "medium" }],
+					profiles: [{ id: 1, alias: "stale-project-label", label: "Stale project label", hotkey: "alt+9", provider: "grok", model: "new", thinking: "medium" }],
 				},
 			}),
 		);
 
 		const { config, warnings } = loadConfig(projectDir, agentDir, true, ".pi");
 		assert.equal(warnings.length, 0);
-		assert.equal(config.startup, true);
+		assert.equal(config.startup, false);
 		assert.equal(config.profiles.length, 2);
 		const daily = findProfileById(config.profiles, "1");
+		assert.equal(daily?.alias, "default");
+		assert.equal(daily?.label, "default");
+		assert.equal(daily?.hotkey, "alt+1");
 		assert.equal(daily?.model, "new");
 		assert.equal(daily?.thinking, "medium");
 		assert.ok(findProfileByAlias(config.profiles, "fast"));

@@ -269,6 +269,12 @@ describe("branch state", () => {
 		assert.equal(restored.state.telemetry?.steps[1]?.activeSince, NOW);
 	});
 
+	it("uses the configured global default when the branch has no saved state", () => {
+		const restored = restoreProcessState([], "off");
+		assert.equal(restored.corrupted, false);
+		assert.equal(restored.state.viewMode, "off");
+	});
+
 	it("lets a tombstone prevent older state from reviving", () => {
 		const restored = restoreProcessState([
 			entry(createPersistedState(snapshot(), "compact")),

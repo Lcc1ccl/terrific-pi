@@ -413,7 +413,10 @@ export interface RestoreResult {
 	corrupted: boolean;
 }
 
-export function restoreProcessState(entries: readonly unknown[]): RestoreResult {
+export function restoreProcessState(
+	entries: readonly unknown[],
+	defaultViewMode: ProcessViewMode = "compact",
+): RestoreResult {
 	for (let index = entries.length - 1; index >= 0; index -= 1) {
 		const entry = entries[index];
 		if (!isRecord(entry) || entry.type !== "custom" || entry.customType !== PROCESS_ENTRY_TYPE) continue;
@@ -427,7 +430,7 @@ export function restoreProcessState(entries: readonly unknown[]): RestoreResult 
 			corrupted: false,
 		};
 	}
-	return { state: createPersistedState(undefined, "compact"), corrupted: false };
+	return { state: createPersistedState(undefined, defaultViewMode), corrupted: false };
 }
 
 export function settleSnapshot(snapshot: ProcessSnapshot, now = Date.now()): ProcessSnapshot {

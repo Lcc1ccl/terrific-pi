@@ -31,10 +31,11 @@ File: `~/.pi/agent/terrific.json` (or trusted project `.pi/terrific.json`).
 
 ## Command
 
-- `/mode [ask|plan|edit|auto]`
-- Restricted modes only add auxiliary tools that were present in the captured startup baseline
-- Restricted modes restore the startup tool set before `/reload` or session shutdown
-- Print mode writes the selected mode and active tools to stdout
+- `/mode [ask|plan|edit|auto]` switches the current session mode.
+- `/mode config` edits only the global default and session-persistence fields. Its TUI and print summaries show the global write target separately from the effective value and trusted-project source chain.
+- Restricted modes only add auxiliary tools that were present in the captured startup baseline.
+- Restricted modes restore the startup tool set before `/reload` or session shutdown.
+- Print mode writes the selected mode and active tools to stdout.
 
 ## Verify
 

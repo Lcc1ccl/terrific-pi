@@ -21,7 +21,7 @@ in `~/.pi/agent/settings.json` `packages`, then `/reload` or restart pi.
 ## Configure
 
 **Config file:** `~/.pi/agent/terrific.json`（本仓插件统一配置）。  
-Trusted project `.pi/terrific.json` can override a profile by id. In a trusted project, `/profile` → **Project overrides** edits only that project's model/thinking override and offers **Reset project override**; profile CRUD and startup settings remain global.
+Trusted project `.pi/terrific.json` can override a global profile by id. In a trusted project, `/profile` → **Project overrides** persists only that profile id plus the edited model pair and/or thinking field, so alias, label, hotkey, profile CRUD, and startup settings continue to inherit globally. **Reset project override** removes those project fields.
 
 ```json
 {

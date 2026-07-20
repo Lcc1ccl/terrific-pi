@@ -1,6 +1,6 @@
 # context
 
-Pi `/context` occupancy inspector. No model calls, no session writes.
+Pi `/context` occupancy inspector. Inspection makes no model calls or session writes; an explicit confirmed compact action delegates to Pi's session compaction.
 
 ## Install
 
@@ -30,9 +30,12 @@ See `examples/config.json`.
 
 ## Command
 
-- `/context` — total context + category breakdown (estimated) + largest entries
-- TUI overlay: compact (`c`) / details (`Enter`) / copy
-- Print mode writes the text summary to stdout
+- `/context` — TUI inspector, or the complete text report outside TUI.
+- `/context summary` — total context + estimated categories + largest entries.
+- `/context details` — previews for the configured largest entries.
+- `/context config` — TUI editor for `topEntries` in global or trusted-project scope, with reset override. It labels the selected write target separately from the effective value and source paths.
+- TUI overlay: copy (`c`) / compact with confirmation (`x`) / details (`Enter`).
+- Print mode writes the text summary to stdout.
 
 ## Verify
 

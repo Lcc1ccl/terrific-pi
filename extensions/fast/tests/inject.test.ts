@@ -73,9 +73,9 @@ describe("supportsFastApi / isFastActive / shouldInjectPriority", () => {
 		assert.equal(isFastActive(true, undefined), false);
 	});
 
-	it("injects when preferred and API unknown, skips known non-openai", () => {
+	it("injects only when the active API is known to support priority", () => {
 		assert.equal(shouldInjectPriority(true, "openai-responses"), true);
-		assert.equal(shouldInjectPriority(true, undefined), true);
+		assert.equal(shouldInjectPriority(true, undefined), false);
 		assert.equal(shouldInjectPriority(true, "anthropic-messages"), false);
 		assert.equal(shouldInjectPriority(false, undefined), false);
 	});
@@ -198,7 +198,7 @@ describe("fast global preference", () => {
 		}
 	});
 
-	it("injects on openai, skips known non-openai, still injects when model api missing", async () => {
+	it("injects on openai and skips non-openai or unknown APIs", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "fast-inject-"));
 		saveFastEnabled(true, agentDir);
 		const { ctx, handlers, restoreEnv } = createExtensionHarness({ agentDir });
@@ -218,13 +218,12 @@ describe("fast global preference", () => {
 			}
 			assert.equal(other.service_tier, undefined);
 
-			// Unknown/missing model must not silently drop priority when preferred.
 			delete ctx.model.api;
 			const unknown = { model: "maybe-openai" } as { model: string; service_tier?: string };
 			for (const handler of handlers.get("before_provider_request") ?? []) {
 				handler({ payload: unknown }, ctx);
 			}
-			assert.equal(unknown.service_tier, "priority");
+			assert.equal(unknown.service_tier, undefined);
 		} finally {
 			restoreEnv();
 		}

@@ -38,9 +38,16 @@ When `auxiliary.tasks.btw` exists in the global config, `/btw` uses that route's
 
 The legacy `btw` block still controls the maximum context snapshot. If the global `auxiliary` config is absent, `/btw` keeps its previous behavior and uses the current main model. Trusted project config may adjust legacy snapshot limits but cannot override the global auxiliary model route.
 
+## Commands
+
+- `/btw [question]` asks one side question with a bounded snapshot of the current session.
+- `/btw context=none [question]` makes a one-shot question without main-session context.
+- `/btw status` prints the effective route, fallbacks, timeout, output cap, context budget, and config paths.
+- `/btw config` edits only `btw.maxContextTokens` in global or trusted-project scope and labels the selected write target separately from the effective value/source paths; Auxiliary route fields remain under `/aux config -> btw`.
+
 ## Behavior
 
-- `/btw [question]` asks one side question; cancel aborts only the isolated request.
+- Cancel aborts only the isolated request.
 - The snapshot preserves message roles, removes images and excluded messages, and is bounded before the call.
 - The overlay shows the actual `provider/model` used.
 - Each attempt emits a payload-free `terrific-pi:auxiliary-usage-v1` event through the auxiliary bridge.

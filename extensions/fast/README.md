@@ -10,6 +10,7 @@ Injects `service_tier: "priority"` into Responses / Codex Responses requests. Fo
 /fast          toggle
 /fast on       enable
 /fast off      disable
+/fast status   show preference, effective state, current API, and config path
 ```
 
 ## Behavior
@@ -18,8 +19,8 @@ Injects `service_tier: "priority"` into Responses / Codex Responses requests. Fo
 |---------|------|
 | Preference | Global, persisted in `~/.pi/agent/terrific.json` as `fast.enabled` |
 | Active (badge) | Preference ON **and** current model API is openai-family Responses |
-| Non-openai model | Auto-yield: no injection, badge hidden; preference kept |
-| Back to openai | Preference re-applies automatically |
+| Non-openai or unknown API | Auto-yield: no injection, badge hidden; preference kept |
+| Back to supported API | Preference re-applies automatically |
 | Legacy session `fast-state` | Migrated once into global config when `fast` key is absent |
 | Config writes | Locked merge into `terrific.json` (same lock file as other writers) |
 

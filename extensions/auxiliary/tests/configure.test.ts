@@ -238,6 +238,71 @@ describe("auxiliary configurator", () => {
 		}
 	});
 
+	test("shows only route fields consumed by BTW and Web Research", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-capabilities-"));
+		const ui = new ScriptedUi([
+			"btw",
+			"Back",
+			"web_research",
+			"Back",
+			"Done",
+		]);
+
+		await runAuxiliaryConfigurator({ agentDir, modelRefs: [], ui });
+
+		const btw = ui.dialogs.find((item) => item.title === "btw");
+		assert.ok(btw);
+		assert.ok(btw.options.some((option) => option.startsWith("Max output tokens")));
+		assert.equal(btw.options.some((option) => option.startsWith("Retries")), false);
+
+		const research = ui.dialogs.find((item) => item.title === "web_research");
+		assert.ok(research);
+		assert.equal(research.options.some((option) => option.startsWith("Max output tokens")), false);
+		assert.equal(research.options.some((option) => option.startsWith("Retries")), false);
+	});
+
+	test("edits Git finalize policy without replacing sibling configuration", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-git-"));
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
+			fast: { enabled: true },
+			auxiliary: { git: { confirm: true, allowHeadless: false, allowPush: true, futurePolicy: "keep" } },
+		}), "utf8");
+		const ui = new ScriptedUi([
+			"Git finalize policy",
+			"Confirm before commit",
+			"Off",
+			"Allow headless",
+			"On",
+			"Allow push",
+			"Off",
+			"Back",
+			"Done",
+		]);
+
+		await runAuxiliaryConfigurator({ agentDir, modelRefs: [], ui });
+
+		const saved = readConfig(agentDir);
+		assert.deepEqual(saved.fast, { enabled: true });
+		assert.deepEqual(saved.auxiliary.git, {
+			confirm: false,
+			allowHeadless: true,
+			allowPush: false,
+			futurePolicy: "keep",
+		});
+	});
+
+	test("confirms Git policy reset and preserves future policy keys", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-git-reset-"));
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
+			auxiliary: { git: { confirm: false, allowHeadless: true, allowPush: false, futurePolicy: "keep" } },
+		}), "utf8");
+		const ui = new ScriptedUi(["Git finalize policy", "Reset Git policy", "Back", "Done"], [], [], [true]);
+
+		await runAuxiliaryConfigurator({ agentDir, modelRefs: [], ui });
+
+		assert.deepEqual(readConfig(agentDir).auxiliary.git, { futurePolicy: "keep" });
+	});
+
 	test("rejects an explicit fallback that resolves to the current primary model", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-duplicate-current-"));
 		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({

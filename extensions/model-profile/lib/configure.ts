@@ -1,6 +1,6 @@
-import { asAlias, DEFAULT_CONFIG, defaultHotkeyForId, loadConfig, loadConfigWithSources, profileLabel, resolveConfigPath } from "./config.ts";
+import { asAlias, DEFAULT_CONFIG, defaultHotkeyForId, loadConfig, loadConfigWithSources, loadProjectProfileOverrides, profileLabel, resolveConfigPath } from "./config.ts";
 import { patchModelProfileSection } from "./config-write.ts";
-import type { ModelProfile, ModelProfileConfig, ProfileScope, ThinkingLevel } from "./types.ts";
+import type { ModelProfile, ModelProfileConfig, ProfileScope, ProjectProfileOverride, ThinkingLevel } from "./types.ts";
 
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
@@ -61,7 +61,7 @@ function projectContext(deps: ProfileConfiguratorDeps): { cwd: string; dir: stri
 	return { cwd: deps.cwd, dir: deps.projectDir, configDirName: deps.configDirName ?? ".pi" };
 }
 
-function persistProjectProfiles(deps: ProfileConfiguratorDeps, profiles: ModelProfile[]): boolean {
+function persistProjectProfiles(deps: ProfileConfiguratorDeps, profiles: ProjectProfileOverride[]): boolean {
 	const project = projectContext(deps);
 	if (!project) return false;
 	const result = patchModelProfileSection({ profiles }, project.dir);
@@ -203,10 +203,10 @@ async function editProjectOverride(deps: ProfileConfiguratorDeps, id: string): P
 	if (!project) return;
 	while (true) {
 		const effective = loadConfigWithSources(project.cwd, deps.agentDir, true, project.configDirName);
-		const base = effective.config.profiles.find((profile) => profile.id === id);
-		const local = loadConfig(project.dir, project.dir, false, project.configDirName).config;
-		const override = local.profiles.find((profile) => profile.id === id);
-		const profile = override ?? base;
+		const profile = effective.config.profiles.find((candidate) => candidate.id === id);
+		const local = loadProjectProfileOverrides(project.dir);
+		for (const warning of local.warnings) deps.ui.notify(warning, "warning");
+		const override = local.overrides.find((candidate) => candidate.id === id);
 		if (!profile) return;
 		const choice = await deps.ui.select(`${profileLabel(profile)} · source ${override ? "project" : effective.profileSources[id] ?? "global"}`, [
 			`Model: ${profile.provider}/${profile.model}`,
@@ -215,28 +215,28 @@ async function editProjectOverride(deps: ProfileConfiguratorDeps, id: string): P
 			"Back",
 		]);
 		if (!choice || choice === "Back") return;
-		let replacement: ModelProfile | undefined;
+		let replacement: ProjectProfileOverride | undefined;
 		if (choice.startsWith("Model:")) {
 			const ref = await deps.ui.pickModel("Project override model", `${profile.provider}/${profile.model}`, deps.modelRefs);
 			const model = ref ? splitModelRef(ref) : undefined;
 			if (!model) continue;
-			replacement = { ...profile, ...model };
+			replacement = { id, ...override, ...model };
 		} else if (choice.startsWith("Thinking:")) {
 			const thinking = await deps.ui.select("Project override thinking", THINKING_LEVELS);
 			if (!thinking) continue;
-			replacement = { ...profile, thinking: thinking as ThinkingLevel };
+			replacement = { id, ...override, thinking: thinking as ThinkingLevel };
 		} else if (choice === "Reset project override") {
 			if (!await deps.ui.confirm("Reset project profile override?", `Remove project override for ${profile.alias} and inherit the global profile?`)) continue;
-			if (persistProjectProfiles(deps, local.profiles.filter((candidate) => candidate.id !== id))) {
+			if (persistProjectProfiles(deps, local.overrides.filter((candidate) => candidate.id !== id))) {
 				deps.ui.notify(`Project override reset for ${profile.alias}`, "info");
 			}
 			continue;
 		}
 		if (replacement && persistProjectProfiles(deps, [
-			...local.profiles.filter((candidate) => candidate.id !== id),
+			...local.overrides.filter((candidate) => candidate.id !== id),
 			replacement,
 		])) {
-			deps.ui.notify(`Project override saved for ${replacement.alias}`, "info");
+			deps.ui.notify(`Project override saved for ${profile.alias}`, "info");
 		}
 	}
 }

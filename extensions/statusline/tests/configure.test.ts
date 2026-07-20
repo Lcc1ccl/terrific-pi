@@ -5,6 +5,7 @@ import {
 	buildWidgetEditorItems,
 	enabledFromEditorItems,
 	flattenEnabledByGroup,
+	contextUsageItems,
 	formatConfigSummary,
 	formatSettingChoices,
 	moveEditorItem,
@@ -196,6 +197,18 @@ describe("parseWidgetSpacing", () => {
 			assert.equal(result.ok, false);
 			if (!result.ok) assert.match(result.error, /default 1/);
 		}
+	});
+});
+
+describe("contextUsageItems", () => {
+	it("shows only settings backed by enabled widgets", () => {
+		const base: StatuslineConfig = {
+			widgets: ["path"], layout: "single", iconMode: "emoji", contextMode: "remaining", contextBarWidth: 10,
+			minimal: false, separator: "dot", spacing: 1, toolActivityMode: "detailed",
+		};
+		assert.deepEqual(contextUsageItems(base), []);
+		assert.deepEqual(contextUsageItems({ ...base, widgets: ["context"] }), ["Context mode"]);
+		assert.deepEqual(contextUsageItems({ ...base, widgets: ["contextBar", "toolActivity"] }), ["Context mode", "Context bar width", "Tool activity mode"]);
 	});
 });
 
@@ -399,7 +412,6 @@ describe("appearance submenu", () => {
 		assert.deepEqual(mainItems, [
 			"Widgets",
 			"Appearance",
-			"Context & usage",
 			"Show config",
 			"Reload from file",
 			"Reset to defaults",
@@ -511,7 +523,7 @@ describe("widget spacing prompt", () => {
 describe("context bar width prompt", () => {
 	it("shows the default, minimum, and maximum values", async () => {
 		const config: StatuslineConfig = {
-			widgets: ["path"],
+			widgets: ["path", "contextBar"],
 			layout: "single",
 			iconMode: "emoji",
 			contextMode: "remaining",

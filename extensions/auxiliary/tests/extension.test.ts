@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, test } from "node:test";
 
 import auxiliary, { canConfigureAuxiliary, summarizeText } from "../extensions/auxiliary.ts";
@@ -70,8 +73,8 @@ describe("auxiliary extension registration", () => {
 	});
 });
 
-describe("auxiliary configuration permissions", () => {
-	test("requires write permission before opening the config TUI", async () => {
+describe("auxiliary command interaction", () => {
+	test("opens the manager from bare /aux even when /mode removed write", async () => {
 		const commands = new Map<string, any>();
 		const pi = {
 			events: new Events(),
@@ -85,14 +88,85 @@ describe("auxiliary configuration permissions", () => {
 			getActiveTools() { return ["read", "grep"]; },
 		};
 		auxiliary(pi as never);
+		const previous = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "aux-command-"));
+		const titles: string[] = [];
+		try {
+			await commands.get("aux").handler("", {
+				mode: "tui",
+				modelRegistry: {
+					refresh: async () => {},
+					getAvailable: () => [],
+				},
+				ui: {
+					select: async (title: string) => {
+						titles.push(title);
+						return undefined;
+					},
+					notify() {},
+				},
+			});
+		} finally {
+			if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previous;
+		}
+		assert.match(titles[0] ?? "", /Auxiliary Models/);
+		assert.equal(canConfigureAuxiliary(["read", "grep", "find", "ls"]), true);
+	});
+
+	test("reports effective routes, branch usage, and recent auxiliary failures", async () => {
+		const commands = new Map<string, any>();
+		const pi = {
+			events: new Events(),
+			registerCommand(name: string, value: unknown) { commands.set(name, value); },
+			registerTool() {},
+			on() {},
+			appendEntry() {},
+			setSessionName() {},
+			getSessionName() { return undefined; },
+			exec: async () => ({ code: 0, stdout: "", stderr: "", killed: false }),
+		};
+		auxiliary(pi as never);
+		const previous = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "aux-status-"));
 		const notifications: string[] = [];
-		await commands.get("aux").handler("config", {
-			mode: "tui",
-			ui: { notify(message: string) { notifications.push(message); } },
-		});
-		assert.match(notifications.at(-1) ?? "", /write permission/i);
-		assert.equal(canConfigureAuxiliary(["read", "grep", "find", "ls"]), false);
-		assert.equal(canConfigureAuxiliary(["read", "bash", "edit", "write"]), true);
+		try {
+			await commands.get("aux").handler("status", {
+				mode: "print",
+				model: { provider: "openai", id: "main" },
+				modelRegistry: { find: () => undefined },
+				sessionManager: {
+					getBranch: () => [
+						{
+							type: "custom",
+							customType: "terrific-pi:auxiliary-usage-v1",
+							data: {
+								version: 1, id: "ok", task: "text_summary", executor: "call", provider: "openai", model: "mini",
+								thinking: "off", status: "ok", fallbackIndex: 0, startedAt: 1, durationMs: 2,
+								usage: { input: 8, output: 4, cacheRead: 0, cacheWrite: 0, totalTokens: 12, cost: { total: 0.25 } },
+							},
+						},
+						{
+							type: "custom",
+							customType: "terrific-pi:auxiliary-usage-v1",
+							data: {
+								version: 1, id: "failed", task: "web_research", executor: "delegation", provider: "openai", model: "mini",
+								thinking: "low", status: "timeout", fallbackIndex: 0, startedAt: 3, durationMs: 4, errorCode: "timeout",
+							},
+						},
+					],
+				},
+				ui: { notify(message: string) { notifications.push(message); } },
+			});
+		} finally {
+			if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previous;
+		}
+		const message = notifications.at(-1) ?? "";
+		assert.match(message, /text_summary: aux/);
+		assert.match(message, /git finalize: confirm on .*headless off .*push on/);
+		assert.match(message, /usage: 2 calls .*12 tokens .*\$0\.25 .*unknown cost/);
+		assert.match(message, /recent auxiliary errors: web_research=timeout/);
 	});
 });
 

@@ -18,6 +18,7 @@ import {
 	loadDocsflowConfig,
 	resolveDocsflowOutputRoot,
 	type DocsflowConfig,
+	type DocsflowStageOverride,
 } from "./vault.ts";
 import { materializeArtifacts } from "./write-artifacts.ts";
 
@@ -46,6 +47,41 @@ export interface FlowRunResult {
 
 export function profilesByName(profiles = loadDocsAgentProfiles()): Map<string, DocsAgentProfile> {
 	return new Map(profiles.map((profile) => [profile.name, profile]));
+}
+
+export function resolveStageRunConfig(
+	profile: DocsAgentProfile,
+	stage: DocsStage,
+	overrides: Partial<Record<DocsStage, DocsflowStageOverride>>,
+): { model?: string; timeoutMs: number } {
+	const override = overrides[stage];
+	const baseModel = override?.model ?? profile.model;
+	const thinking = override?.thinking ?? profile.thinking;
+	const model = baseModel && thinking ? `${baseModel}:${thinking}` : baseModel;
+	return {
+		...(model ? { model } : {}),
+		timeoutMs: override?.timeoutMs ?? (profile.timeoutSeconds ? profile.timeoutSeconds * 1000 : 900_000),
+	};
+}
+
+export function applyContractOutcome(
+	state: DocsflowState,
+	stage: DocsStage,
+	status: ArtifactContract["status"],
+	summary: string,
+): void {
+	state.activeAgent = null;
+	if (status === "completed") {
+		if (!state.completedStages.includes(stage)) state.completedStages = [...state.completedStages, stage];
+		state.currentStage = null;
+		state.lastError = undefined;
+		state.status = stage === "delivery" ? "ready" : "idle";
+		return;
+	}
+
+	state.currentStage = stage;
+	state.status = status === "failed" ? "failed" : "blocked";
+	state.lastError = summary;
 }
 
 /** Linear pipeline. External review (Hermes etc.) is optional and never blocks. */
@@ -81,6 +117,7 @@ export async function runStage(options: {
 	projectRoot: string;
 	stage: DocsStage;
 	events: DelegationEventBus;
+	agentDir?: string;
 	signal?: AbortSignal;
 	onUpdate?: (value: unknown) => void;
 	profiles?: Map<string, DocsAgentProfile>;
@@ -89,8 +126,9 @@ export async function runStage(options: {
 	const agentName = STAGE_AGENT[options.stage];
 	const profile = profiles.get(agentName);
 	if (!profile) throw new Error(`Missing profile: ${agentName}`);
-	if (profile.model?.startsWith("blocked/")) {
-		throw new Error(`Profile ${agentName} model is blocked (${profile.model}). Update MODEL_RESOLUTION and agent frontmatter.`);
+	const run = resolveStageRunConfig(profile, options.stage, loadDocsflowConfig(options.agentDir).stageOverrides);
+	if (run.model?.startsWith("blocked/")) {
+		throw new Error(`Profile ${agentName} model is blocked (${run.model}). Update MODEL_RESOLUTION and agent frontmatter.`);
 	}
 
 	const state = loadState(options.projectRoot);
@@ -100,7 +138,7 @@ export async function runStage(options: {
 	state.currentStage = options.stage;
 	state.activeAgent = agentName;
 	state.lastError = undefined;
-	if (profile.model) state.modelResolution[agentName] = profile.model;
+	if (run.model) state.modelResolution[agentName] = run.model;
 	saveState(options.projectRoot, state);
 
 	const response = await delegateDocsAgent({
@@ -110,8 +148,8 @@ export async function runStage(options: {
 			agent: agentName,
 			cwd: options.projectRoot,
 			task: taskFor(options.stage, state.requirement || "(no requirement text)", state.outputRoot),
-			model: profile.model,
-			timeoutMs: profile.timeoutSeconds ? profile.timeoutSeconds * 1000 : 900_000,
+			model: run.model,
+			timeoutMs: run.timeoutMs,
 			skill: profile.skills.includes("project-docs") ? "project-docs" : false,
 		}),
 		signal: options.signal,
@@ -122,7 +160,7 @@ export async function runStage(options: {
 		const failed = loadState(options.projectRoot);
 		failed.status = "failed";
 		failed.activeAgent = null;
-		failed.currentStage = null;
+		failed.currentStage = options.stage;
 		failed.lastError = response.error || `Delegation status: ${response.status}`;
 		saveState(options.projectRoot, failed);
 		return { state: failed, summary: failed.lastError, written: [] };
@@ -136,24 +174,9 @@ export async function runStage(options: {
 	});
 
 	const next = loadState(options.projectRoot);
-	if (!next.completedStages.includes(options.stage)) next.completedStages = [...next.completedStages, options.stage];
 	next.generatedArtifacts = unique([...next.generatedArtifacts, ...write.formal]);
 	next.draftArtifacts = unique([...next.draftArtifacts, ...write.drafts]);
-	next.activeAgent = null;
-	next.currentStage = null;
-	next.lastError = undefined;
-
-	if (contract.status === "blocked") {
-		next.status = "blocked";
-		next.lastError = contract.summary;
-	} else if (contract.status === "failed") {
-		next.status = "failed";
-		next.lastError = contract.summary;
-	} else if (options.stage === "delivery") {
-		next.status = "ready";
-	} else {
-		next.status = "idle";
-	}
+	applyContractOutcome(next, options.stage, contract.status, contract.summary);
 
 	saveState(options.projectRoot, next);
 	return {
@@ -208,6 +231,7 @@ export async function startFlow(options: {
 		projectRoot: options.projectRoot,
 		stage: "research",
 		events: options.events,
+		agentDir: options.agentDir,
 		signal: options.signal,
 		onUpdate: options.onUpdate,
 	});
@@ -216,6 +240,7 @@ export async function startFlow(options: {
 export async function resumeFlow(options: {
 	projectRoot: string;
 	events: DelegationEventBus;
+	agentDir?: string;
 	signal?: AbortSignal;
 	onUpdate?: (value: unknown) => void;
 }): Promise<FlowRunResult> {
@@ -235,6 +260,7 @@ export async function resumeFlow(options: {
 		projectRoot: options.projectRoot,
 		stage: action.stage!,
 		events: options.events,
+		agentDir: options.agentDir,
 		signal: options.signal,
 		onUpdate: options.onUpdate,
 	});

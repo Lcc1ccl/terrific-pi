@@ -46,6 +46,8 @@ interface HarnessOptions {
 	branch?: unknown[];
 	throwWidget?: boolean;
 	toolsExpanded?: boolean;
+	choices?: string[];
+	confirmations?: boolean[];
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -55,6 +57,10 @@ function createHarness(options: HarnessOptions = {}) {
 	const hiddenLabels: Array<string | undefined> = [];
 	const widgetCalls: Array<{ key: string; content: unknown }> = [];
 	const statusCalls: Array<{ key: string; value: string | undefined }> = [];
+	const selectCalls: Array<{ title: string; options: string[] }> = [];
+	const confirmCalls: Array<{ title: string; message: string }> = [];
+	const choices = [...(options.choices ?? [])];
+	const confirmations = [...(options.confirmations ?? [])];
 	const shortcuts: unknown[] = [];
 	let tool: any;
 	let command: any;
@@ -78,6 +84,19 @@ function createHarness(options: HarnessOptions = {}) {
 		},
 		getToolsExpanded() {
 			return toolsExpanded;
+		},
+		setToolsExpanded(value: boolean) {
+			toolsExpanded = value;
+		},
+		async select(title: string, items: string[]) {
+			selectCalls.push({ title, options: [...items] });
+			const prefix = choices.shift();
+			if (prefix === undefined) return undefined;
+			return items.find((item) => item === prefix || item.startsWith(prefix));
+		},
+		async confirm(title: string, message: string) {
+			confirmCalls.push({ title, message });
+			return confirmations.shift() ?? false;
 		},
 		notify(message: string, type?: string) {
 			notifications.push({ message, type });
@@ -129,6 +148,8 @@ function createHarness(options: HarnessOptions = {}) {
 		hiddenLabels,
 		widgetCalls,
 		statusCalls,
+		selectCalls,
+		confirmCalls,
 		shortcuts,
 		get tool() { return tool; },
 		get command() { return command; },
@@ -217,7 +238,7 @@ describe("process-view registration and tool", () => {
 		assert.deepEqual(harness.entries, []);
 		assert.deepEqual(harness.widgetCalls, []);
 		await harness.command.handler("", harness.ctx);
-		assert.match(harness.notifications.at(-1)?.message ?? "", /no active task/i);
+		assert.match(harness.selectCalls.at(-1)?.title ?? "", /no active task/i);
 	});
 
 	it("keeps in-memory state unchanged when appendEntry fails", async () => {
@@ -226,7 +247,7 @@ describe("process-view registration and tool", () => {
 		await assert.rejects(() => execute(harness), /session write failed/);
 		harness.setFailAppend(false);
 		await harness.command.handler("", harness.ctx);
-		assert.match(harness.notifications.at(-1)?.message ?? "", /no active task/i);
+		assert.match(harness.selectCalls.at(-1)?.title ?? "", /no active task/i);
 		assert.deepEqual(harness.entries, []);
 	});
 
@@ -394,7 +415,40 @@ describe("request, branch, and context lifecycle", () => {
 });
 
 describe("commands and passive telemetry", () => {
-	it("persists mode changes, rejects unknown args, and clears with a tombstone", async () => {
+	it("opens a shallow manager that changes view mode and native expansion", async () => {
+		const harness = createHarness({
+			choices: ["View mode", "full", "Expand live panel", "Done"],
+		});
+		await execute(harness);
+		await harness.command.handler("", harness.ctx);
+
+		assert.equal(harness.entries.at(-1)?.data.viewMode, "full");
+		assert.equal(harness.ctx.ui.getToolsExpanded(), true);
+		assert.match(harness.selectCalls[0]?.title ?? "", /running 1\/3.*Implement process view/i);
+	});
+
+	it("confirms clearing the current task from the manager", async () => {
+		const cancelled = createHarness({ choices: ["Clear current task", "Done"], confirmations: [false] });
+		await execute(cancelled);
+		const before = cancelled.entries.length;
+		await cancelled.command.handler("", cancelled.ctx);
+		assert.equal(cancelled.entries.length, before);
+
+		const accepted = createHarness({ choices: ["Clear current task"], confirmations: [true] });
+		await execute(accepted);
+		await accepted.command.handler("", accepted.ctx);
+		assert.deepEqual(accepted.entries.at(-1)?.data, { version: 1, viewMode: "compact", cleared: true });
+		assert.match(accepted.confirmCalls[0]?.message ?? "", /progress and telemetry/i);
+	});
+
+	it("keeps no-argument output textual outside TUI mode", async () => {
+		const harness = createHarness({ mode: "print" });
+		await harness.command.handler("", harness.ctx);
+		assert.match(harness.notifications.at(-1)?.message ?? "", /no active task/i);
+		assert.deepEqual(harness.selectCalls, []);
+	});
+
+	it("persists mode changes and rejects unknown args", async () => {
 		const harness = createHarness();
 		await execute(harness);
 		await harness.command.handler("full", harness.ctx);
@@ -405,8 +459,27 @@ describe("commands and passive telemetry", () => {
 		await harness.command.handler("unknown", harness.ctx);
 		assert.equal(harness.entries.length, count);
 		assert.match(harness.notifications.at(-1)?.message ?? "", /Usage:/);
-		await harness.command.handler("clear", harness.ctx);
-		assert.deepEqual(harness.entries.at(-1)?.data, { version: 1, viewMode: "off", cleared: true });
+	});
+
+	it("requires confirmation before direct clear", async () => {
+		const cancelled = createHarness({ confirmations: [false] });
+		await execute(cancelled);
+		const before = cancelled.entries.length;
+		await cancelled.command.handler("clear", cancelled.ctx);
+		assert.equal(cancelled.entries.length, before);
+		assert.match(cancelled.confirmCalls[0]?.message ?? "", /progress and telemetry/i);
+
+		const accepted = createHarness({ confirmations: [true] });
+		await execute(accepted);
+		await accepted.command.handler("clear", accepted.ctx);
+		assert.deepEqual(accepted.entries.at(-1)?.data, { version: 1, viewMode: "compact", cleared: true });
+
+		const print = createHarness({ mode: "print" });
+		await execute(print);
+		const printBefore = print.entries.length;
+		await print.command.handler("clear", print.ctx);
+		assert.equal(print.entries.length, printBefore);
+		assert.match(print.notifications.at(-1)?.message ?? "", /requires TUI confirmation/i);
 	});
 
 	it("follows native tool expansion and records task-local assistant usage", async () => {

@@ -18,6 +18,15 @@ export interface ModelProfile {
 	hotkey?: string;
 }
 
+export interface ProjectProfileOverride {
+	/** Profile identity inherited from global config. */
+	id: string;
+	/** Provider and model always override as a pair. */
+	provider?: string;
+	model?: string;
+	thinking?: ThinkingLevel;
+}
+
 export interface ModelProfileConfig {
 	/** Cold-start short-list picker. */
 	startup: boolean;

@@ -248,7 +248,7 @@ export function buildWidgetEditorItems(
 	);
 	const ordered = flattenByGroup(
 		order.filter((id) => allSet.has(id)),
-	overrides,
+		overrides,
 	);
 	const seen = new Set(ordered);
 	const items: WidgetEditorItem[] = ordered.map((id) => ({
@@ -642,19 +642,27 @@ async function runAppearanceMenu(deps: ConfigureDeps): Promise<void> {
 	}
 }
 
+export function contextUsageItems(config: StatuslineConfig): string[] {
+	const items: string[] = [];
+	if (config.widgets.includes("context") || config.widgets.includes("contextBar")) items.push("Context mode");
+	if (config.widgets.includes("contextBar")) items.push("Context bar width");
+	if (config.widgets.includes("toolActivity")) items.push("Tool activity mode");
+	return items;
+}
+
 async function runContextUsageMenu(deps: ConfigureDeps): Promise<void> {
 	while (true) {
+		const items = contextUsageItems(deps.getConfig());
+		if (items.length === 0) {
+			deps.ui.notify("Enable context, contextBar, or toolActivity before configuring their display settings.", "info");
+			return;
+		}
 		const choice = await deps.ui.select(
 			[
 				"Context & usage",
-				"percent mode · bar width · tool activity density",
+				"only settings for enabled widgets are shown",
 			].join("\n"),
-			[
-				"Context mode",
-				"Context bar width",
-				"Tool activity mode",
-				"Back",
-			],
+			[...items, "Back"],
 		);
 		if (!choice || choice === "Back") return;
 		switch (choice) {
@@ -683,7 +691,7 @@ export async function runStatuslineConfigurator(
 		const choice = await deps.ui.selectMain(mainMenuTitle(config, configPath), [
 			"Widgets",
 			"Appearance",
-			"Context & usage",
+			...(contextUsageItems(config).length > 0 ? ["Context & usage"] : []),
 			"Show config",
 			"Reload from file",
 			"Reset to defaults",

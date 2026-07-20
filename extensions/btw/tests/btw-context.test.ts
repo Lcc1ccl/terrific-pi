@@ -2,7 +2,24 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { truncateMessagesForBtw } from "../lib/btw-context.ts";
+import { parseBtwCommandArgs } from "../lib/command.ts";
 import { charsToTokens, type ClassifiableMessage } from "../lib/tokens.ts";
+
+describe("parseBtwCommandArgs", () => {
+	it("accepts an explicit no-context one-shot question", () => {
+		assert.deepEqual(parseBtwCommandArgs("context=none explain this"), {
+			contextMode: "none",
+			question: "explain this",
+		});
+	});
+
+	it("keeps current context as the default", () => {
+		assert.deepEqual(parseBtwCommandArgs("what changed?"), {
+			contextMode: "current",
+			question: "what changed?",
+		});
+	});
+});
 
 describe("truncateMessagesForBtw", () => {
 	it("strips images", () => {

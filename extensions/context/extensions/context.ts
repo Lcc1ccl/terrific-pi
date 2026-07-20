@@ -1,5 +1,5 @@
 /**
- * /context — context occupancy inspector (no model calls, no session writes).
+ * /context — context occupancy inspector (no model calls; optional explicit compaction).
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
@@ -9,7 +9,7 @@ import {
 	copyToClipboard,
 	getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { loadConfig } from "../lib/config.ts";
+import { DEFAULT_CONFIG, loadConfig, resolveConfigPaths, updateContextConfig } from "../lib/config.ts";
 import { TextOverlay, type OverlayAction } from "../lib/overlay.ts";
 import { report } from "../lib/output.ts";
 import { redactPreview } from "../lib/redact.ts";
@@ -120,6 +120,7 @@ async function showOverlay(
 	title: string,
 	lines: string[],
 	footer: string,
+	allowCompact: boolean,
 ): Promise<OverlayAction> {
 	return await ctx.ui.custom<OverlayAction>(
 		(tui, theme, _kb, done) =>
@@ -129,6 +130,7 @@ async function showOverlay(
 					title,
 					lines,
 					footer,
+					...(allowCompact ? { extraKeys: [{ key: "x", action: "extra" as const, hint: "compact" }] } : {}),
 				},
 				done,
 				() => tui.requestRender(),
@@ -137,10 +139,85 @@ async function showOverlay(
 	);
 }
 
+async function runContextConfig(ctx: ExtensionCommandContext): Promise<void> {
+	const paths = resolveConfigPaths(ctx.cwd, getAgentDir(), ctx.isProjectTrusted(), CONFIG_DIR_NAME);
+	const loadScopes = () => ({
+		global: loadConfig(ctx.cwd, getAgentDir(), false, CONFIG_DIR_NAME),
+		effective: loadConfig(ctx.cwd, getAgentDir(), ctx.isProjectTrusted(), CONFIG_DIR_NAME),
+	});
+	if (!ctx.hasUI || ctx.mode !== "tui") {
+		const { global, effective } = loadScopes();
+		report(ctx, [
+			`Global top entries: ${global.config.context.topEntries} (package default ${DEFAULT_CONFIG.context.topEntries})`,
+			`Effective top entries: ${effective.config.context.topEntries}`,
+			`Sources: ${paths.join(" -> ")}`,
+			"Use /context config in TUI to edit global or trusted-project scope.",
+		].join("\n"));
+		return;
+	}
+	let scope = "global" as "global" | "project";
+	while (true) {
+		const { global, effective } = loadScopes();
+		for (const warning of effective.warnings) report(ctx, warning, "warning");
+		const targetPath = scope === "project" ? paths[1]! : paths[0]!;
+		const target = scope === "global" ? global.config : effective.config;
+		const options = [
+			...(paths.length > 1 ? [`Scope: ${scope}`] : []),
+			`Write target top entries: ${target.context.topEntries}`,
+			"Reset override",
+			"Show effective config",
+			"Done",
+		];
+		const choice = await ctx.ui.select([
+			"Context configuration",
+			`write: ${scope} (${targetPath})`,
+			`effective: ${effective.config.context.topEntries}`,
+			`source: ${paths.join(" -> ")}`,
+		].join("\n"), options);
+		if (!choice || choice === "Done") return;
+		if (choice.startsWith("Scope:")) {
+			const selected = await ctx.ui.select("Context config scope", ["global", "project"]);
+			if (selected === "global" || selected === "project") scope = selected;
+			continue;
+		}
+		if (choice.startsWith("Write target top entries:")) {
+			const raw = await ctx.ui.input("Largest entries to show (1-100)", String(target.context.topEntries));
+			if (raw === undefined || !raw.trim()) continue;
+			if (!/^\d+$/.test(raw.trim())) {
+				ctx.ui.notify("Top entries must be an integer from 1 to 100", "warning");
+				continue;
+			}
+			const topEntries = Number.parseInt(raw.trim(), 10);
+			if (topEntries < 1 || topEntries > 100) {
+				ctx.ui.notify("Top entries must be an integer from 1 to 100", "warning");
+				continue;
+			}
+			const result = updateContextConfig(targetPath, (context) => { context.topEntries = topEntries; });
+			if (!result.ok) ctx.ui.notify(`Failed to update terrific.json: ${result.error}`, "error");
+			else ctx.ui.notify(`Top entries: ${topEntries}`, "info");
+			continue;
+		}
+		if (choice === "Reset override") {
+			if (!await ctx.ui.confirm("Reset context override?", `Remove topEntries from ${scope} scope while preserving other context settings?`)) continue;
+			const result = updateContextConfig(targetPath, (context) => { delete context.topEntries; });
+			if (!result.ok) ctx.ui.notify(`Failed to update terrific.json: ${result.error}`, "error");
+			else ctx.ui.notify(`${scope} context override reset`, "info");
+			continue;
+		}
+		report(ctx, [
+			`Global top entries: ${global.config.context.topEntries} (package default ${DEFAULT_CONFIG.context.topEntries})`,
+			`Effective top entries: ${effective.config.context.topEntries}`,
+			`Sources: ${paths.join(" -> ")}`,
+			`Write scope: ${scope} (${targetPath})`,
+		].join("\n"));
+	}
+}
+
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("context", {
-		description: "Inspect context usage by category (estimated breakdown)",
-		handler: async (_args, ctx) => {
+		description: "Inspect context usage (summary|details|config; TUI: c copy, x confirmed compact)",
+		getArgumentCompletions: (prefix) => ["summary", "details", "config"].filter((option) => option.startsWith(prefix.trim().toLowerCase())).map((value) => ({ value, label: value })),
+		handler: async (args, ctx) => {
 			const { config, warnings } = loadConfig(
 				ctx.cwd,
 				getAgentDir(),
@@ -149,8 +226,25 @@ export default function (pi: ExtensionAPI) {
 			);
 			for (const warning of warnings) report(ctx, warning, "warning");
 
+			const action = args.trim().toLowerCase();
+			if (action === "config") {
+				await runContextConfig(ctx);
+				return;
+			}
 			const breakdown = buildBreakdown(ctx);
 			const topN = config.context.topEntries;
+			if (action === "summary") {
+				report(ctx, summaryLines(breakdown, topN).join("\n"));
+				return;
+			}
+			if (action === "details") {
+				report(ctx, detailLines(breakdown.entries, topN).join("\n"));
+				return;
+			}
+			if (action) {
+				report(ctx, "Usage: /context [summary|details|config]", "warning");
+				return;
+			}
 
 			if (!ctx.hasUI || ctx.mode !== "tui") {
 				report(ctx, textSummary(breakdown, topN));
@@ -162,25 +256,14 @@ export default function (pi: ExtensionAPI) {
 				const lines = view === "summary" ? summaryLines(breakdown, topN) : detailLines(breakdown.entries, topN);
 				const footer =
 					view === "summary"
-						? "[c] compact  [Enter] details  [Esc] close"
+						? "[c] copy  [x] compact  [Enter] details  [Esc] close"
 						: "[c] copy  [Enter] back  [Esc] close";
 
-				const action = await showOverlay(ctx, "Context Inspector", lines, footer);
+				const overlayAction = await showOverlay(ctx, "Context Inspector", lines, footer, view === "summary");
 
-				if (action === "close") return;
+				if (overlayAction === "close") return;
 
-				if (action === "copy") {
-					if (view === "summary") {
-						const ok = await ctx.ui.confirm("Compact session?", "Run ctx.compact() now?");
-						if (ok) {
-							ctx.compact({
-								onComplete: () => ctx.ui.notify("Compaction complete", "info"),
-								onError: (error) => ctx.ui.notify(`Compaction failed: ${error.message}`, "error"),
-							});
-						}
-						return;
-					}
-
+				if (overlayAction === "copy") {
 					try {
 						await copyToClipboard(lines.join("\n"));
 						ctx.ui.notify("Copied to clipboard", "info");
@@ -190,7 +273,18 @@ export default function (pi: ExtensionAPI) {
 					continue;
 				}
 
-				if (action === "enter") {
+				if (overlayAction === "extra" && view === "summary") {
+					const ok = await ctx.ui.confirm("Compact session?", "Run ctx.compact() now?");
+					if (ok) {
+						ctx.compact({
+							onComplete: () => ctx.ui.notify("Compaction complete", "info"),
+							onError: (error) => ctx.ui.notify(`Compaction failed: ${error.message}`, "error"),
+						});
+					}
+					return;
+				}
+
+				if (overlayAction === "enter") {
 					view = view === "summary" ? "details" : "summary";
 					continue;
 				}

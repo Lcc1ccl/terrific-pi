@@ -76,17 +76,18 @@ See [`../../agent/terrific.example.json`](../../agent/terrific.example.json) for
 
 - `useAuxiliary`: set `false` to run the task with the current main model while preserving its saved auxiliary route
 - `model`: explicit `provider/model`, or `current` only when intentionally configured
-- `thinking`, `timeoutMs`, `maxOutputTokens`, and `maxRetries`
+- `thinking`, `timeoutMs`, and fields consumed by that task
 - up to three ordered `fallbackModels`
 
-Configurable task keys are `compression`, `title_generation`, `text_summary`, `commit_message`, `btw`, and `web_research`. Vision routing remains owned by `/vision-handoff`; `/aux config` exposes that external entry without writing an ineffective `tasks.vision` block.
+Most routes expose `maxOutputTokens` and `maxRetries`. BTW does not consume retries, while Web Research owns its bounded result contract and consumes neither retries nor a route-level output cap, so those ineffective fields are hidden from their menus. Configurable task keys are `compression`, `title_generation`, `text_summary`, `commit_message`, `btw`, and `web_research`. Vision routing remains owned by `/vision-handoff`; `/aux config` exposes that external entry without writing an ineffective `tasks.vision` block.
 
 ## Commands And Tools
 
 ```text
-/aux config
-/aux status
-/aux tasks
+/aux                         open the TUI manager (or print status outside TUI)
+/aux config                  edit routes and Git finalize policy
+/aux status                  effective routes, branch usage, and recent errors
+/aux tasks                   same route/status report
 /aux summarize <text>
 ```
 

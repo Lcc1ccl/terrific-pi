@@ -277,9 +277,11 @@ describe("model profile configurator", () => {
 
 		assert.equal(config(agentDir).modelProfile.profiles[0].model, "gpt-test");
 		const saved = config(projectConfigDir).modelProfile.profiles[0];
-		assert.equal(saved.provider, "anthropic");
-		assert.equal(saved.model, "claude-project");
-		assert.equal(saved.thinking, "medium");
+		assert.deepEqual(saved, {
+			id: "1",
+			provider: "anthropic",
+			model: "claude-project",
+		});
 	});
 
 	it("shows current, source, scope, and effective startup values", async () => {

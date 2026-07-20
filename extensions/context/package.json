@@ -1,7 +1,7 @@
 {
   "name": "context",
   "version": "0.1.0",
-  "description": "Pi /context occupancy inspector (no model calls, no session writes)",
+  "description": "Pi /context occupancy inspector with explicit confirmed compaction",
   "type": "module",
   "keywords": [
     "pi-package",

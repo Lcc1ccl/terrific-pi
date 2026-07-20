@@ -90,7 +90,7 @@ Single-line layout follows the configured order exactly. Stacked layout uses can
 }
 ```
 
-Package default is a single-line showcase (not the minimal profile). `mode`/`fast` render only while active. `toolActivityMode` defaults to `compact` so enabling `toolActivity` later stays dense.
+Package default is a single-line showcase (not the minimal profile). `mode`/`fast` render only while active. `toolActivityMode` defaults to `compact` so enabling `toolActivity` later stays dense. In `/statusline`, **Context & usage** is shown only when at least one of `context`, `contextBar`, or `toolActivity` is enabled.
 
 ### Minimal profile
 

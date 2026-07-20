@@ -23,6 +23,7 @@ auth.json
 **/auth.json
 **/sessions/
 **/*.jsonl
+.pi-subagents/
 
 # Build / cache
 dist/

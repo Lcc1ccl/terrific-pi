@@ -33,14 +33,14 @@ terrific-pi/
 
 | 插件 | 路径 | 说明 |
 |------|------|------|
-| statusline | `extensions/statusline` | 可配置底栏：single/stacked HUD、minimal profile、emoji/plain、原生 OAuth quota、token/cache/cost、git、运行状态；`/statusline` 交互配置 |
-| fast | `extensions/fast` | `/fast` 全局开关 OpenAI Priority processing（`service_tier=priority`）；仅 openai 家族 Responses 生效，切走自动退让；badge 跟生效态 |
-| context | `extensions/context` | `/context` 上下文占用拆解（不调模型、不写 session） |
-| auxiliary | `extensions/auxiliary` | task-key 辅助模型 runtime：`/aux config` TUI、compression/title/summary/web research/Git finalize、独立 usage 与 HUD |
-| mode | `extensions/mode` | `/mode ask\|plan\|edit\|auto` 工具权限模式；status key `mode` |
-| btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话） |
-| process-view | `extensions/process-view` | `process_update` 结构化里程碑、步骤计时与任务级 usage；原生 `Ctrl+O` 展开实时详情面板 |
-| docsflow | `extensions/docsflow` | 项目文档流水线：research→product→interface→delivery；默认写 `./docsflow/`，可选 Obsidian vault；`/docsflow remind` 可关配置提醒 |
+| statusline | `extensions/statusline` | 可配置底栏：single/stacked HUD、minimal profile、emoji/plain、原生 OAuth quota、token/cache/cost、git、运行状态；`/statusline` 仅在相关 widget 启用时显示 Context & usage |
+| fast | `extensions/fast` | `/fast [on\|off\|toggle\|status]` 全局开关 OpenAI Priority processing（`service_tier=priority`）；仅 openai 家族 Responses 生效，切走自动退让；badge 跟生效态 |
+| context | `extensions/context` | `/context [summary\|details\|config]` 上下文占用拆解；`c` 复制，`x` 确认后压缩 session |
+| auxiliary | `extensions/auxiliary` | task-key 辅助模型 runtime：裸 `/aux` 管理器、`/aux status`、compression/title/summary/web research/Git finalize、独立 usage 与 HUD |
+| mode | `extensions/mode` | `/mode ask\|plan\|edit\|auto\|config` 工具权限模式与全局默认管理；status key `mode` |
+| btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话）；`status`/`config` 与单次 `context=none` |
+| process-view | `extensions/process-view` | `process_update` 结构化里程碑、步骤计时与任务级 usage；`/process` 管理视图、展开、确认清除与新会话默认模式 |
+| docsflow | `extensions/docsflow` | 项目文档流水线：research→product→interface→delivery；裸命令管理器、阶段 model/thinking/timeout 覆盖；默认写 `./docsflow/`，可选 Obsidian vault |
 | model-profile | `extensions/model-profile` | 常用 3–5 套 model+thinking 短列表；`/profile` 快速应用、全局 CRUD、可信项目覆盖编辑、热键、冷启动短列表 |
 
 > 共享插件配置主文件：`~/.pi/agent/terrific.json`。Auxiliary 模型路由只读取 global config，不接受 project override。

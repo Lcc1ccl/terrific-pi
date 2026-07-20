@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { ModelProfile, ModelProfileConfig, ProfileScope, ThinkingLevel } from "./types.ts";
+import type { ModelProfile, ModelProfileConfig, ProfileScope, ProjectProfileOverride, ThinkingLevel } from "./types.ts";
 
 export const DEFAULT_CONFIG: ModelProfileConfig = {
 	startup: false,
@@ -251,6 +251,52 @@ function readJsonFile(path: string): { value?: unknown; warning?: string } {
 	}
 }
 
+function parseProjectProfileOverride(raw: unknown, index: number): { override?: ProjectProfileOverride; warning?: string } {
+	if (!isRecord(raw)) return { warning: `modelProfile.profiles[${index}] ignored: not an object` };
+	const id = asNumericId(raw.id);
+	if (!id) return { warning: `modelProfile.profiles[${index}] ignored: id must be a positive integer` };
+
+	const providerPresent = Object.hasOwn(raw, "provider");
+	const modelPresent = Object.hasOwn(raw, "model");
+	const provider = providerPresent ? asNonEmptyString(raw.provider) : undefined;
+	const model = modelPresent ? asNonEmptyString(raw.model) : undefined;
+	if ((providerPresent || modelPresent) && (!provider || !model)) {
+		return { warning: `modelProfile.profiles[${index}] (id=${id}) ignored: provider and model must be set together` };
+	}
+
+	const thinkingPresent = Object.hasOwn(raw, "thinking");
+	const thinking = thinkingPresent && isThinkingLevel(raw.thinking) ? raw.thinking : undefined;
+	if (thinkingPresent && thinking === undefined) {
+		return { warning: `modelProfile.profiles[${index}] (id=${id}) ignored: invalid thinking level` };
+	}
+	if (!provider && !thinking) {
+		return { warning: `modelProfile.profiles[${index}] (id=${id}) ignored: no model or thinking override` };
+	}
+	return { override: { id, ...(provider ? { provider, model: model! } : {}), ...(thinking ? { thinking } : {}) } };
+}
+
+function parseProjectProfileOverrides(section: unknown): { overrides: ProjectProfileOverride[]; warnings: string[] } {
+	if (!isRecord(section)) return { overrides: [], warnings: [] };
+	if (section.profiles !== undefined && !Array.isArray(section.profiles)) {
+		return { overrides: [], warnings: ["modelProfile.profiles ignored: expected an array"] };
+	}
+	const warnings: string[] = [];
+	const overrides: ProjectProfileOverride[] = [];
+	const seenIds = new Set<string>();
+	for (const [index, raw] of (Array.isArray(section.profiles) ? section.profiles : []).entries()) {
+		const { override, warning } = parseProjectProfileOverride(raw, index);
+		if (warning) warnings.push(warning);
+		if (!override) continue;
+		if (seenIds.has(override.id)) {
+			warnings.push(`modelProfile: duplicate project override id "${override.id}" ignored`);
+			continue;
+		}
+		seenIds.add(override.id);
+		overrides.push(override);
+	}
+	return { overrides, warnings };
+}
+
 function extractSection(root: unknown): unknown | undefined {
 	if (!isRecord(root)) return undefined;
 	if (isRecord(root.modelProfile)) return root.modelProfile;
@@ -265,9 +311,16 @@ function extractSection(root: unknown): unknown | undefined {
 
 export type ProfileConfigSource = "global" | "project";
 
+export function loadProjectProfileOverrides(configDir: string): { overrides: ProjectProfileOverride[]; warnings: string[] } {
+	const { value, warning } = readJsonFile(resolveConfigPath(configDir));
+	if (warning) return { overrides: [], warnings: [warning] };
+	const section = extractSection(value);
+	return parseProjectProfileOverrides(section);
+}
+
 /**
  * Load modelProfile from global (+ trusted project) terrific.json.
- * Later files override earlier ones by profile id; explicit startup fields override earlier values.
+ * Trusted projects may override a global profile's provider/model and thinking by id.
  */
 export function loadConfigWithSources(
 	cwd: string,
@@ -291,16 +344,33 @@ export function loadConfigWithSources(
 
 		const section = extractSection(value);
 		if (section === undefined) continue;
+		if (index === 0) {
+			const { config, warnings: sectionWarnings, overrides } = mergeConfig(section);
+			for (const w of sectionWarnings) warnings.push(`${path}: ${w}`);
+			if (overrides.startup !== undefined) startup = overrides.startup;
+			if (overrides.startupScope !== undefined) startupScope = overrides.startupScope;
+			if (overrides.openHotkey !== undefined) openHotkey = overrides.openHotkey;
+			for (const profile of config.profiles) {
+				byId.set(profile.id, profile);
+				profileSources[profile.id] = "global";
+			}
+			continue;
+		}
 
-		const { config, warnings: sectionWarnings, overrides } = mergeConfig(section);
+		const { overrides, warnings: sectionWarnings } = parseProjectProfileOverrides(section);
 		for (const w of sectionWarnings) warnings.push(`${path}: ${w}`);
-
-		if (overrides.startup !== undefined) startup = overrides.startup;
-		if (overrides.startupScope !== undefined) startupScope = overrides.startupScope;
-		if (overrides.openHotkey !== undefined) openHotkey = overrides.openHotkey;
-		for (const profile of config.profiles) {
-			byId.set(profile.id, profile);
-			profileSources[profile.id] = index === 0 ? "global" : "project";
+		for (const override of overrides) {
+			const profile = byId.get(override.id);
+			if (!profile) {
+				warnings.push(`${path}: modelProfile project override id "${override.id}" has no global profile`);
+				continue;
+			}
+			byId.set(override.id, {
+				...profile,
+				...(override.provider ? { provider: override.provider, model: override.model! } : {}),
+				...(override.thinking ? { thinking: override.thinking } : {}),
+			});
+			profileSources[override.id] = "project";
 		}
 	}
 

@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { assertAllowlisted, resolveDraftPath, resolveInsideOutputRoot } from "./artifacts.ts";
@@ -66,6 +66,7 @@ export function backupAndApplyDrafts(options: {
 	const backupDir = path.join(options.backupRoot, stamp);
 	mkdirSync(backupDir, { recursive: true });
 	const applied: string[] = [];
+	const appliedDrafts: string[] = [];
 	for (const pair of options.pairs) {
 		const draftAbs = resolveInsideOutputRoot(options.outputRoot, pair.draft);
 		const formalAbs = resolveInsideOutputRoot(options.outputRoot, pair.formal);
@@ -83,7 +84,9 @@ export function backupAndApplyDrafts(options: {
 		copyFileSync(draftAbs, tmp);
 		renameSync(tmp, formalAbs);
 		applied.push(pair.formal);
+		appliedDrafts.push(draftAbs);
 	}
+	for (const draft of appliedDrafts) unlinkSync(draft);
 	return { backupDir, applied };
 }
 
