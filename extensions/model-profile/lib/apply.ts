@@ -1,6 +1,5 @@
 import type { ApplyResult, ModelProfile, ProfileScope, ThinkingLevel } from "./types.ts";
-import type { SettingsDefaults, SettingsDefaultsSnapshot } from "./settings-defaults.ts";
-import { snapshotToRestoreDefaults } from "./settings-defaults.ts";
+import type { SettingsDefaults, SettingsFileSnapshot } from "./settings-defaults.ts";
 
 export interface ModelRef {
 	provider: string;
@@ -12,14 +11,47 @@ export interface ApplyDeps {
 	setModel: (model: ModelRef) => Promise<boolean>;
 	setThinkingLevel: (level: ThinkingLevel) => void;
 	getThinkingLevel: () => ThinkingLevel;
-	/**
-	 * Snapshot settings defaults before setModel.
-	 * Needed because pi's setModel/setThinkingLevel always persist globals.
-	 */
-	readSettingsDefaults?: () => SettingsDefaultsSnapshot | undefined;
+	/** Capture the exact settings.json state before Pi persists a model switch. */
+	snapshotSettingsFile?: () => SettingsFileSnapshot;
+	/** Restore the exact state captured by snapshotSettingsFile. */
+	restoreSettingsFile?: (
+		snapshot: Extract<SettingsFileSnapshot, { ok: true }>,
+	) => { ok: boolean; error?: string };
 	writeSettingsDefaults?: (
 		defaults: SettingsDefaults,
 	) => { ok: boolean; error?: string };
+}
+
+type SessionSettingsSnapshot = Extract<SettingsFileSnapshot, { ok: true }>;
+
+type SessionSettingsPreparation =
+	| { ok: true; snapshot: SessionSettingsSnapshot }
+	| { ok: false; error: string };
+
+export function prepareSessionSettings(deps: ApplyDeps): SessionSettingsPreparation {
+	if (!deps.snapshotSettingsFile || !deps.restoreSettingsFile) {
+		return { ok: false, error: "Session apply is unavailable: settings snapshot support is not configured." };
+	}
+	const snapshot = deps.snapshotSettingsFile();
+	if (!snapshot.ok) {
+		return { ok: false, error: `Session apply is unavailable: ${snapshot.error}` };
+	}
+	return { ok: true, snapshot };
+}
+
+export async function restoreSessionSettings(
+	deps: ApplyDeps,
+	snapshot: SessionSettingsSnapshot,
+): Promise<{ ok: boolean; error?: string }> {
+	// Pi exposes no settings flush API; its writes are queued on microtasks.
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	try {
+		const restored = deps.restoreSettingsFile?.(snapshot);
+		if (!restored) return { ok: false, error: "Session switched, but no settings restorer is configured." };
+		return restored.ok ? { ok: true } : { ok: false, error: restored.error };
+	} catch (error) {
+		return { ok: false, error: error instanceof Error ? error.message : String(error) };
+	}
 }
 
 /**
@@ -43,9 +75,14 @@ export async function applyProfile(
 		};
 	}
 
-	const thinkingBefore = deps.getThinkingLevel();
-	const defaultsSnapshot =
-		scope === "session" ? deps.readSettingsDefaults?.() : undefined;
+	const sessionSettings = scope === "session" ? prepareSessionSettings(deps) : undefined;
+	if (sessionSettings && !sessionSettings.ok) {
+		return {
+			ok: false,
+			kind: "settings-snapshot-failed",
+			reason: sessionSettings.error,
+		};
+	}
 
 	const ok = await deps.setModel(model);
 	if (!ok) {
@@ -61,24 +98,7 @@ export async function applyProfile(
 	const thinkingClamped = thinking !== profile.thinking;
 
 	if (scope === "session") {
-		if (!defaultsSnapshot || !deps.writeSettingsDefaults) {
-			return {
-				ok: true,
-				profile,
-				scope: "session",
-				thinking,
-				thinkingClamped,
-				settingsRestored: false,
-				settingsError:
-					"Session switched, but could not snapshot settings defaults — session-only is not guaranteed (pi persists on setModel). Prefer /profile <id> global only when you intend to change defaults; avoid official /model if you need sticky defaults.",
-			};
-		}
-
-		const { defaults, usedThinkingFallback } = snapshotToRestoreDefaults(
-			defaultsSnapshot,
-			thinkingBefore,
-		);
-		const restored = deps.writeSettingsDefaults(defaults);
+		const restored = await restoreSessionSettings(deps, sessionSettings!.snapshot);
 		if (!restored.ok) {
 			return {
 				ok: true,
@@ -89,15 +109,8 @@ export async function applyProfile(
 				settingsRestored: false,
 				settingsError:
 					restored.error ??
-					"Session switched, but failed to restore previous settings defaults (pi persists on setModel)",
+					"Session switched, but failed to restore the original settings.json state.",
 			};
-		}
-
-		const warnings: string[] = [];
-		if (defaultsSnapshot.incomplete || usedThinkingFallback) {
-			warnings.push(
-				"Settings defaults were incomplete; restored provider/model and used previous session thinking for defaultThinkingLevel.",
-			);
 		}
 
 		return {
@@ -107,7 +120,6 @@ export async function applyProfile(
 			thinking,
 			thinkingClamped,
 			settingsRestored: true,
-			settingsError: warnings.length > 0 ? warnings.join(" ") : undefined,
 		};
 	}
 
@@ -161,7 +173,7 @@ export function formatApplySuccess(result: Extract<ApplyResult, { ok: true }>): 
 		}
 	} else {
 		if (result.settingsRestored) {
-			lines.push("Restored previous settings.json defaults (session-only).");
+			lines.push("Restored original settings.json (session-only).");
 		}
 		if (result.settingsError) {
 			lines.push(result.settingsError);

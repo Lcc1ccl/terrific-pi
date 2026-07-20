@@ -7,7 +7,7 @@ import {
 	formatApplySuccess,
 	type ApplyDeps,
 } from "../lib/apply.ts";
-import type { SettingsDefaults, SettingsDefaultsSnapshot } from "../lib/settings-defaults.ts";
+import type { SettingsDefaults } from "../lib/settings-defaults.ts";
 import type { ModelProfile } from "../lib/types.ts";
 
 const profile: ModelProfile = {
@@ -24,38 +24,50 @@ function deps(overrides: Partial<ApplyDeps> & Pick<ApplyDeps, "getThinkingLevel"
 		findModel: (provider, modelId) => ({ provider, id: modelId }),
 		setModel: async () => true,
 		setThinkingLevel: () => {},
+		snapshotSettingsFile: () => ({
+			ok: true,
+			path: "/settings.json",
+			exists: true,
+			content: "{}",
+			mode: 0o600,
+		}),
+		restoreSettingsFile: () => ({ ok: true }),
 		...overrides,
 	};
 }
 
 describe("applyProfile", () => {
-	it("session apply restores prior defaults after pi-like setModel mutation", async () => {
-		const settings: SettingsDefaults = {
+	it("session apply restores the exact settings snapshot after pi-like mutation", async () => {
+		const original: SettingsDefaults = {
 			defaultProvider: "openai",
 			defaultModel: "gpt-5.6-sol",
 			defaultThinkingLevel: "medium",
 		};
-		const snapshot: SettingsDefaultsSnapshot = { ...settings, incomplete: false };
+		const settings: SettingsDefaults = { ...original };
 
 		const result = await applyProfile(
 			profile,
 			"session",
 			deps({
 				getThinkingLevel: () => "high",
-				readSettingsDefaults: () => ({ ...snapshot }),
-				setModel: async (m) => {
-					// Simulate pi.setModel writing globals
-					settings.defaultProvider = m.provider;
-					settings.defaultModel = m.id;
+				snapshotSettingsFile: () => ({
+					ok: true,
+					path: "/settings.json",
+					exists: true,
+					content: JSON.stringify(original),
+					mode: 0o600,
+				}),
+				setModel: async (model) => {
+					settings.defaultProvider = model.provider;
+					settings.defaultModel = model.id;
 					return true;
 				},
 				setThinkingLevel: (level) => {
 					settings.defaultThinkingLevel = level;
 				},
-				writeSettingsDefaults: (defaults) => {
-					settings.defaultProvider = defaults.defaultProvider;
-					settings.defaultModel = defaults.defaultModel;
-					settings.defaultThinkingLevel = defaults.defaultThinkingLevel;
+				restoreSettingsFile: (snapshot) => {
+					if (!snapshot.exists) return { ok: false, error: "expected settings file" };
+					Object.assign(settings, JSON.parse(snapshot.content) as SettingsDefaults);
 					return { ok: true };
 				},
 			}),
@@ -65,64 +77,64 @@ describe("applyProfile", () => {
 		if (result.ok) {
 			assert.equal(result.settingsRestored, true);
 			assert.equal(applyResultLevel(result), "info");
-			assert.match(formatApplySuccess(result), /Restored previous settings/);
+			assert.match(formatApplySuccess(result), /Restored original settings/);
 		}
-		assert.deepEqual(settings, {
+		assert.deepEqual(settings, original);
+	});
+
+	it("does not switch models when the settings snapshot is unavailable", async () => {
+		let setModelCalls = 0;
+		const result = await applyProfile(profile, "session", deps({
+			getThinkingLevel: () => "high",
+			snapshotSettingsFile: () => ({ ok: false, path: "/settings.json", error: "permission denied" }),
+			setModel: async () => {
+				setModelCalls += 1;
+				return true;
+			},
+		}));
+		assert.equal(result.ok, false);
+		assert.equal(setModelCalls, 0);
+	});
+
+	it("waits for Pi's queued thinking write before restoring settings", async () => {
+		const original: SettingsDefaults = {
 			defaultProvider: "openai",
 			defaultModel: "gpt-5.6-sol",
 			defaultThinkingLevel: "medium",
-		});
-	});
+		};
+		let settings: SettingsDefaults = { ...original };
+		let thinking: "medium" | "high" = "medium";
 
-	it("warns when snapshot missing", async () => {
-		const result = await applyProfile(
-			profile,
-			"session",
-			deps({
-				getThinkingLevel: () => "high",
-				readSettingsDefaults: () => undefined,
+		const result = await applyProfile(profile, "session", deps({
+			getThinkingLevel: () => thinking,
+			snapshotSettingsFile: () => ({
+				ok: true,
+				path: "/settings.json",
+				exists: true,
+				content: JSON.stringify(original),
+				mode: 0o600,
 			}),
-		);
-		assert.equal(result.ok, true);
-		if (result.ok) {
-			assert.equal(result.settingsRestored, false);
-			assert.equal(applyResultLevel(result), "warning");
-			assert.match(String(result.settingsError), /could not snapshot/i);
-		}
-	});
+			setModel: async (model) => {
+				settings.defaultProvider = model.provider;
+				settings.defaultModel = model.id;
+				return true;
+			},
+			setThinkingLevel: (level) => {
+				thinking = level as "medium" | "high";
+				queueMicrotask(() => {
+					settings.defaultThinkingLevel = level;
+				});
+			},
+			restoreSettingsFile: (snapshot) => {
+				if (!snapshot.exists) return { ok: false, error: "expected settings file" };
+				settings = JSON.parse(snapshot.content) as SettingsDefaults;
+				return { ok: true };
+			},
+		}));
 
-	it("restores incomplete snapshot with thinking fallback", async () => {
-		let written: SettingsDefaults | undefined;
-		const result = await applyProfile(
-			profile,
-			"session",
-			deps({
-				getThinkingLevel: () => {
-					// before switch returns medium; after setThinking returns high
-					return written ? "high" : "medium";
-				},
-				readSettingsDefaults: () => ({
-					defaultProvider: "openai",
-					defaultModel: "gpt-5.6-sol",
-					incomplete: true,
-				}),
-				writeSettingsDefaults: (defaults) => {
-					written = defaults;
-					return { ok: true };
-				},
-			}),
-		);
 		assert.equal(result.ok, true);
-		if (result.ok) {
-			assert.equal(result.settingsRestored, true);
-			assert.equal(applyResultLevel(result), "warning");
-			assert.match(String(result.settingsError), /incomplete/i);
-		}
-		assert.deepEqual(written, {
-			defaultProvider: "openai",
-			defaultModel: "gpt-5.6-sol",
-			defaultThinkingLevel: "medium",
-		});
+		if (result.ok) assert.equal(result.settingsRestored, true);
+		assert.deepEqual(settings, original);
 	});
 
 	it("reports thinking clamp", async () => {
@@ -131,13 +143,6 @@ describe("applyProfile", () => {
 			"session",
 			deps({
 				getThinkingLevel: () => "medium",
-				readSettingsDefaults: () => ({
-					defaultProvider: "openai",
-					defaultModel: "sol",
-					defaultThinkingLevel: "medium",
-					incomplete: false,
-				}),
-				writeSettingsDefaults: () => ({ ok: true }),
 			}),
 		);
 		assert.equal(result.ok, true);
@@ -167,12 +172,6 @@ describe("applyProfile", () => {
 			deps({
 				setModel: async () => false,
 				getThinkingLevel: () => "off",
-				readSettingsDefaults: () => ({
-					defaultProvider: "openai",
-					defaultModel: "sol",
-					defaultThinkingLevel: "medium",
-					incomplete: false,
-				}),
 			}),
 		);
 		assert.equal(result.ok, false);

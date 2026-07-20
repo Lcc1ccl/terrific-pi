@@ -5,8 +5,11 @@
  * Official /model and Ctrl+P still update global defaults (pi core behavior).
  */
 
+import { join } from "node:path";
+
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, DynamicBorder, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { Container, SelectList, Text } from "@earendil-works/pi-tui";
 
 import {
 	applyProfile,
@@ -15,21 +18,33 @@ import {
 	type ApplyDeps,
 } from "../lib/apply.ts";
 import { patchModelProfileSection } from "../lib/config-write.ts";
+import { runProfileConfigurator } from "../lib/configure.ts";
 import {
 	findProfile,
 	findProfileByHotkey,
 	isProfileScope,
 	loadConfig,
+	loadConfigWithSources,
 	profileLabel,
+	resolveConfigPaths,
 } from "../lib/config.ts";
 import { findMatchingProfile } from "../lib/match.ts";
 import { report } from "../lib/output.ts";
-import { readSettingsDefaults, writeSettingsDefaults } from "../lib/settings-defaults.ts";
+import {
+	restoreSettingsFile,
+	snapshotSettingsFile,
+	writeSettingsDefaults,
+} from "../lib/settings-defaults.ts";
 import { formatOfficialDefaultsTip } from "../lib/official-tip.ts";
 import {
+	CURRENT_SESSION_ENTRY,
 	formatManualApplyMessage,
 	manualResultLevel,
+	readPreviousSessionSelection,
+	rememberPendingNewSelection,
 	runStartupPicker,
+	startupDigitChoice,
+	takePendingNewSelection,
 } from "../lib/startup.ts";
 import type { ModelProfile, ProfileScope, ThinkingLevel } from "../lib/types.ts";
 
@@ -53,11 +68,9 @@ function makeDeps(pi: ExtensionAPI, ctx: ExtensionContext): ApplyDeps {
 			pi.setThinkingLevel(level);
 		},
 		getThinkingLevel: () => pi.getThinkingLevel() as ThinkingLevel,
-		readSettingsDefaults: () => readSettingsDefaults(agentDir),
-		writeSettingsDefaults: (defaults) => {
-			const result = writeSettingsDefaults(defaults, agentDir);
-			return result.ok ? { ok: true } : { ok: false, error: result.error };
-		},
+		snapshotSettingsFile: () => snapshotSettingsFile(agentDir),
+		restoreSettingsFile,
+		writeSettingsDefaults: (defaults) => writeSettingsDefaults(defaults, agentDir),
 	};
 }
 
@@ -102,6 +115,48 @@ function formatStatus(
 		`Startup picker: ${startup ? "on" : "off"} (preferred scope: ${startupScope})`,
 		"Note: official /model and Ctrl+P still update global defaults (pi core).",
 	].join("\n");
+}
+
+function selectStartupOption(
+	ctx: ExtensionContext,
+	title: string,
+	options: string[],
+): Promise<string | undefined> {
+	return ctx.ui.custom<string | undefined>((tui, theme, _keybindings, done) => {
+		const container = new Container();
+		container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+		container.addChild(new Text(theme.fg("accent", theme.bold(title)), 1, 0));
+
+		const list = new SelectList(
+			options.map((value) => ({ value, label: value })),
+			Math.min(options.length, 10),
+			{
+				selectedPrefix: (text) => theme.fg("accent", text),
+				selectedText: (text) => theme.fg("accent", text),
+				description: (text) => theme.fg("muted", text),
+				scrollInfo: (text) => theme.fg("dim", text),
+				noMatch: (text) => theme.fg("warning", text),
+			},
+		);
+		list.onSelect = (item) => done(item.value);
+		list.onCancel = () => done(undefined);
+		container.addChild(list);
+		container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+
+		return {
+			render: (width) => container.render(width),
+			invalidate: () => container.invalidate(),
+			handleInput: (data) => {
+				const digitChoice = startupDigitChoice(data, options);
+				if (digitChoice !== undefined) {
+					done(digitChoice);
+					return;
+				}
+				list.handleInput(data);
+				tui.requestRender();
+			},
+		};
+	});
 }
 
 export default function (pi: ExtensionAPI) {
@@ -245,6 +300,62 @@ export default function (pi: ExtensionAPI) {
 		await runApply(ctx, profile, scope);
 	}
 
+	async function runProfileManager(ctx: ExtensionContext): Promise<void> {
+		try {
+			await ctx.modelRegistry.refresh();
+		} catch (error) {
+			report(ctx, `Could not refresh models: ${error instanceof Error ? error.message : String(error)}`, "warning");
+		}
+		const modelRefs = [...new Set(ctx.modelRegistry.getAvailable().map((model) => `${model.provider}/${model.id}`))].sort();
+		await runProfileConfigurator({
+			agentDir: getAgentDir(),
+			...(ctx.isProjectTrusted() ? { projectDir: join(ctx.cwd, CONFIG_DIR_NAME), cwd: ctx.cwd, configDirName: CONFIG_DIR_NAME } : {}),
+			currentModel: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
+			currentThinking: pi.getThinkingLevel() as ThinkingLevel,
+			getCurrentSession: () => ({
+				model: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
+				thinking: pi.getThinkingLevel() as ThinkingLevel,
+			}),
+			modelRefs,
+			quickApply: () => interactivePick(ctx),
+			getEffectiveConfig: () => {
+				const effective = loadConfigWithSources(ctx.cwd, getAgentDir(), ctx.isProjectTrusted(), CONFIG_DIR_NAME);
+				return {
+					config: effective.config,
+					source: resolveConfigPaths(ctx.cwd, getAgentDir(), ctx.isProjectTrusted(), CONFIG_DIR_NAME).join(" → "),
+					profileSources: effective.profileSources,
+				};
+			},
+			ui: {
+				select: (title, options) => ctx.ui.select(title, options),
+				input: (title, placeholder) => ctx.ui.input(title, placeholder),
+				confirm: (title, message) => ctx.ui.confirm(title, message),
+				pickModel: async (title, current, refs) => {
+					const providers = [...new Set(refs.map((ref) => ref.slice(0, ref.indexOf("/"))).filter(Boolean))].sort();
+					if (providers.length === 0) {
+						report(ctx, "No authenticated models are available", "warning");
+						return undefined;
+					}
+					const currentProvider = current?.slice(0, current.indexOf("/"));
+					const providerOptions = providers.map((provider) => {
+						const count = refs.filter((ref) => ref.startsWith(`${provider}/`)).length;
+						return `${provider} (${count})${provider === currentProvider ? " [current]" : ""}`;
+					});
+					const providerChoice = await ctx.ui.select(`${title}: provider`, providerOptions);
+					const providerIndex = providerChoice ? providerOptions.indexOf(providerChoice) : -1;
+					if (providerIndex < 0) return undefined;
+					const provider = providers[providerIndex]!;
+					const options = refs
+						.filter((ref) => ref.startsWith(`${provider}/`))
+						.map((ref) => `${ref}${ref === current ? " [current]" : ""}`);
+					const choice = await ctx.ui.select(`${title}: ${provider}`, options);
+					return choice?.replace(/ \[current\]$/, "");
+				},
+				notify: (message, level) => ctx.ui.notify(message, level),
+			},
+		});
+	}
+
 	async function ensureHotkeys(ctx: ExtensionContext): Promise<void> {
 		const { config } = load(ctx);
 
@@ -294,7 +405,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("profile", {
 		description:
-			"Switch model+thinking profile. /profile [list|status|startup| <id|alias> [session|global]]",
+			"Manage or switch model+thinking profiles. /profile [list|status|startup| <id|alias> [session|global]]",
 		handler: async (args, ctx) => {
 			const { config, warnings } = load(ctx);
 			for (const warning of warnings) report(ctx, warning, "warning");
@@ -318,7 +429,7 @@ export default function (pi: ExtensionAPI) {
 					ctx,
 					[
 						"Usage:",
-						"  /profile                      pick profile, then scope",
+						"  /profile                      open manager (Quick apply / CRUD / startup)",
 						"  /profile list                 list profiles",
 						"  /profile status               current match + startup flag",
 						"  /profile startup [on|off]     cold-start /new short-list picker",
@@ -381,8 +492,19 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			await interactivePick(ctx);
+			if (ctx.hasUI && ctx.mode === "tui") await runProfileManager(ctx);
+			else await interactivePick(ctx);
 		},
+	});
+
+	pi.on("session_shutdown", async (event, ctx) => {
+		if (event.reason !== "new" || !ctx.model || !load(ctx).config.startup) return;
+		const selection = {
+			model: { provider: ctx.model.provider, id: ctx.model.id },
+			thinking: pi.getThinkingLevel() as ThinkingLevel,
+		};
+		rememberPendingNewSelection(event.targetSessionFile, selection);
+		pi.appendEntry(CURRENT_SESSION_ENTRY, selection);
 	});
 
 	pi.on("session_start", async (event: SessionStartEvent, ctx) => {
@@ -390,16 +512,20 @@ export default function (pi: ExtensionAPI) {
 		for (const warning of warnings) report(ctx, warning, "warning");
 		await ensureHotkeys(ctx);
 
+		const previous = event.reason === "new"
+			? takePendingNewSelection(ctx.sessionManager.getSessionFile())
+				?? readPreviousSessionSelection(event.previousSessionFile)
+			: undefined;
 		const startup = await withSuppressedDefaultsTip(() =>
 			runStartupPicker({
 				reason: event.reason,
 				hasUI: ctx.hasUI && ctx.mode === "tui",
 				config,
 				deps: makeDeps(pi, ctx),
-				currentModel: ctx.model
+				currentModel: previous?.model ?? (ctx.model
 					? { provider: ctx.model.provider, id: ctx.model.id }
-					: null,
-				currentThinking: pi.getThinkingLevel() as ThinkingLevel,
+					: null),
+				currentThinking: previous?.thinking ?? (pi.getThinkingLevel() as ThinkingLevel),
 				getAvailable: () =>
 					ctx.modelRegistry.getAvailable().map((m) => ({
 						provider: m.provider,
@@ -408,6 +534,7 @@ export default function (pi: ExtensionAPI) {
 					})),
 				ui: {
 					select: (title, options) => ctx.ui.select(title, options),
+					selectStartup: (title, options) => selectStartupOption(ctx, title, options),
 				},
 			}),
 		);
@@ -420,7 +547,7 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
-		if (startup.source === "manual") {
+		if (startup.source !== "profile") {
 			report(ctx, formatManualApplyMessage(startup), manualResultLevel(startup));
 			return;
 		}

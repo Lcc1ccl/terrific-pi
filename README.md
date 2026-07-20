@@ -41,7 +41,7 @@ terrific-pi/
 | btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话） |
 | process-view | `extensions/process-view` | `process_update` 结构化里程碑、步骤计时与任务级 usage；原生 `Ctrl+O` 展开实时详情面板 |
 | docsflow | `extensions/docsflow` | 项目文档流水线：research→product→interface→delivery；默认写 `./docsflow/`，可选 Obsidian vault；`/docsflow remind` 可关配置提醒 |
-| model-profile | `extensions/model-profile` | 常用 3–5 套 model+thinking 短列表；`/profile` 会话/全局切换、热键、冷启动短列表 |
+| model-profile | `extensions/model-profile` | 常用 3–5 套 model+thinking 短列表；`/profile` 快速应用、全局 CRUD、可信项目覆盖编辑、热键、冷启动短列表 |
 
 > 共享插件配置主文件：`~/.pi/agent/terrific.json`。Auxiliary 模型路由只读取 global config，不接受 project override。
 

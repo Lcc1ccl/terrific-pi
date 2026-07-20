@@ -66,7 +66,7 @@ terrific-pi/
 | 辅助模型 runtime | `extensions/auxiliary` | `/aux …`；工具 `aux_summarize`/`web_research`/`git_finalize`；compact/title 钩子 | 任务级旁路模型，不改主会话模型 | **本仓实现**；研究/视觉 **委托外部 pin** |
 | 任务进度 HUD | `extensions/process-view` | 模型调 `process_update`；`Ctrl+O` 展开 | 多步任务里程碑与工具活动 | **本仓实现** |
 | 文档流水线 | `extensions/docsflow` | `/docsflow …` | research→product→interface→delivery | **本仓编排**；执行靠 `pi-subagents` |
-| 模型常用配置 | `extensions/model-profile` | `/profile`、`list/status/startup`、`<id\|alias>`、`alt+N`、冷启动/`/new`；官方切换 defaults 警告提示；见 [计划](./plans/2026-07-20-model-profile-plan.md) | 3–5 套 model+thinking；session restore 默认；全局；启动 | **本仓薄封装**；配置 `terrific.json` |
+| 模型常用配置 | `extensions/model-profile` | `/profile` 管理/快速应用、可信项目 overrides、`list/status/startup`、`<id\|alias>`、`alt+N`、冷启动/`/new`；见 [计划](./plans/2026-07-20-model-profile-plan.md) | 3–5 套 model+thinking；全局/project 来源；session/global；启动 | **本仓薄封装**；配置 `terrific.json` |
 
 ### 2.2 本仓 skills
 
@@ -203,8 +203,8 @@ terrific-pi/
 |----|------|
 | 计划 | [docs/plans/2026-07-20-model-profile-plan.md](./plans/2026-07-20-model-profile-plan.md) |
 | 用户动机 | 多 provider 列表过长；常用 3–5 个；要绑定 thinking；输入中可切；会话/全局；启动可选 |
-| 策略 | 薄插件 + 官方 API；UI 仅 `ctx.ui.select`；不重写社区 TUI |
-| 调用 | `/profile`、`list/status/startup`、`<id> [session\|global]`、hotkey、冷启动 |
+| 策略 | 薄插件 + 官方 API；CRUD 用原生 `select/input/confirm`，启动列表薄包装 `SelectList`；不重写全量 model TUI |
+| 调用 | `/profile` 管理/快速应用、`list/status/startup`、`<id> [session\|global]`、hotkey、冷启动 |
 | 配置 | `terrific.json` → `modelProfile` |
 | 联动 | 默认无；statusline 已有 model 行足够；global 写 `settings.json` 三默认字段 |
 | 配置 | `~/.pi/agent/terrific.json` → `modelProfile`（与 mode/fast/auxiliary 等同文件） |

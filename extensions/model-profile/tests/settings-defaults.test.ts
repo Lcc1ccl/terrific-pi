@@ -6,6 +6,8 @@ import { describe, it } from "node:test";
 
 import {
 	readSettingsDefaults,
+	restoreSettingsFile,
+	snapshotSettingsFile,
 	snapshotToRestoreDefaults,
 	writeSettingsDefaults,
 } from "../lib/settings-defaults.ts";
@@ -118,5 +120,27 @@ describe("writeSettingsDefaults", () => {
 		const restored = snapshotToRestoreDefaults(snap!, "low");
 		assert.equal(restored.usedThinkingFallback, true);
 		assert.equal(restored.defaults.defaultThinkingLevel, "low");
+	});
+
+	it("restores the exact original settings file, including an absent or malformed file", () => {
+		const missingDir = mkdtempSync(join(tmpdir(), "mp-settings-missing-"));
+		const missingSnapshot = snapshotSettingsFile(missingDir);
+		assert.equal(missingSnapshot.ok, true);
+		if (!missingSnapshot.ok) return;
+		assert.equal(missingSnapshot.exists, false);
+		writeFileSync(join(missingDir, "settings.json"), JSON.stringify({ defaultModel: "changed" }), "utf8");
+		assert.equal(restoreSettingsFile(missingSnapshot).ok, true);
+		assert.equal(readSettingsDefaults(missingDir), undefined);
+
+		const corruptDir = mkdtempSync(join(tmpdir(), "mp-settings-corrupt-"));
+		const corruptPath = join(corruptDir, "settings.json");
+		const original = "{ not valid json\n";
+		writeFileSync(corruptPath, original, "utf8");
+		const corruptSnapshot = snapshotSettingsFile(corruptDir);
+		assert.equal(corruptSnapshot.ok, true);
+		if (!corruptSnapshot.ok) return;
+		writeFileSync(corruptPath, JSON.stringify({ defaultModel: "changed" }), "utf8");
+		assert.equal(restoreSettingsFile(corruptSnapshot).ok, true);
+		assert.equal(readFileSync(corruptPath, "utf8"), original);
 	});
 });

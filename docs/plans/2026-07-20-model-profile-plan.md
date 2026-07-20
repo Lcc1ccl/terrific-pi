@@ -1,6 +1,6 @@
 # model-profile 开发与实现方案
 
-> 状态：**已交付**（P0+P1+review 修复）  
+> 状态：**已交付**（P0+P1+review 修复 + slash 管理器）
 > 日期：2026-07-20  
 > 决策：方案 2 —— 本仓薄插件；**基于社区/官方模式，不重写选择器大盘**
 
@@ -10,7 +10,7 @@
 |----|------|
 | 产品形态 | **常用 3–5 套「模型 + 思考强度」配置切换器**，不是第二个全量 `/model` |
 | 实现位置 | `extensions/model-profile/`（独立 pi package） |
-| 实现策略 | **薄封装 + 官方 API**；UI 只用 `ctx.ui.select/confirm`；逻辑对齐社区/官方 preset 的 apply 模式 |
+| 实现策略 | **薄封装 + 官方 API**；CRUD 用原生 `ctx.ui.select/input/confirm`，启动主列表薄包装官方 `SelectList`；逻辑对齐社区/官方 preset 的 apply 模式 |
 | 不做什么 | 不 vendoring `pi-presets-plus` 源码；不做 provider 分 tab 长列表；不做 tools/system-prompt 预设；不改 mode 语义 |
 | 与社区关系 | **模式复用**（apply/baseline/startup 钩子）；**能力缺口自补**（短列表 + thinking + 会话/全局双写 + 启动同源） |
 | 交付顺序 | 文档（本文件 + CAPABILITIES）→ P0 会话切换 → P1 全局/启动 → P2 联动与验收 |
@@ -26,7 +26,7 @@
 | R3 | 选模型后默认到指定思考强度 | 每个 profile 含 `thinking`；apply 时 `setModel` + `setThinkingLevel` |
 | R4 | 输入框有内容也能切换 | 主路径用 **快捷键 + slash 命令**；禁止依赖「清空编辑器才能 `/model`」 |
 | R5 | 全局默认 vs 当前会话临时 | 选择后二次确认或双命令：`session` / `global` |
-| R6 | 启动时选择 | 冷启动 `session_start(reason=startup)` 弹出短列表；resume/fork/reload 默认不弹 |
+| R6 | 启动时选择 | 冷启动与会话内 `/new` 弹出短列表；resume/fork/reload 默认不弹 |
 
 非目标（YAGNI）：
 
@@ -82,7 +82,7 @@ Profile = {
 
 - **Session apply**：只改当前会话 model + thinking  
 - **Global apply**：session apply + 写入用户 settings 的 `defaultProvider` / `defaultModel` / `defaultThinkingLevel`  
-- **Startup**：仅 `reason === "startup"` 时，从同一 profile 列表选一次（默认 session apply；可选「同时设为全局」）
+- **Startup**：`reason === "startup" | "new"` 时从同一列表选一次；冷启动 Keep 保留全局默认，`/new` Keep 恢复上一会话选择
 
 ### 4.2 用户路径
 
@@ -92,7 +92,8 @@ Profile = {
 
 会话中（编辑器可有草稿）
   ├─ 快捷键 ctrl+alt+1..n  → 直接 session apply（最快）
-  ├─ /profile              → 列表 → 选 profile → 选 scope(session|global)
+  ├─ /profile              → 管理器 → Quick apply / Add / Edit / Delete / Startup
+  ├─ Quick apply           → 选 profile → 选 scope(session|global)
   ├─ /profile daily        → session apply
   ├─ /profile daily global → global apply
   └─ 冷门模型仍用官方 Ctrl+L / /model（不接管）
@@ -170,13 +171,14 @@ Profile = {
 
 | `session_start.reason` | 行为 |
 |------------------------|------|
-| `startup` | 可弹 |
-| `resume` / `fork` / `reload` / `new` | 不弹 |
+| `startup` | 可弹；Keep 保留 Pi 已激活的全局默认 model/thinking |
+| `new` | 可弹；Keep 从 `previousSessionFile` 恢复上一会话 model/thinking，且不改全局默认 |
+| `resume` / `fork` / `reload` | 不弹 |
 | 无 UI / print/rpc | 不弹 |
 | `startup: false` | 不弹 |
-| 用户取消 | 保留 pi 已解析的默认 model，不报错 |
+| 用户取消 | 保留 Pi 已激活的 model，不报错 |
 
-启动弹窗选项只含配置的 profiles（+ 可选 “Keep default”），**不** Browse all providers。
+启动列表首项随来源明确标为 `Keep global default`（冷启动）或 `Keep current session`（`/new`），随后固定为 default → 其余 profiles → `0 · Browse all models…`；上下键首尾循环，`0`/`1`–`9` 可直接选择 Browse/profile id。
 
 ## 5. 实现方案（技术）
 
@@ -245,9 +247,10 @@ async function applyProfile(pi, ctx, profile, scope: "session" | "global") {
 
 ### 5.4 UI 策略（避免重写）
 
-- 列表：`ctx.ui.select(title, labels)`  
+- CRUD 与子选择：`ctx.ui.select/input/confirm`
+- 启动主列表：`ctx.ui.custom` 薄包装官方 `SelectList`，仅补首尾循环与 `0`/`1`–`9` 直达
 - 确认 scope：`select(["session (this chat only)", "global (also update defaults)"])`  
-- 不引入自定义 `pi-tui` Component（除非 select 无法满足 R4——目前快捷键路径已满足）
+- 只管理 3–5 项短列表，不自研列表引擎，也不复制官方全量 `/model` 浏览器
 
 ### 5.5 跨插件联动
 
@@ -301,6 +304,8 @@ async function applyProfile(pi, ctx, profile, scope: "session" | "global") {
 
 ### P2 — 打磨 ✅（review 闭环）
 
+- [x] `/profile` 原生浅层管理器：Quick apply、从当前会话新增、编辑/删除、启动与快捷键配置
+- [x] 全局 `terrific.json` CRUD：原子替换、并发锁、坏 JSON 拒绝覆盖、保留兄弟配置段
 - [x] 与 CAPABILITIES / 根 README 同步  
 - [x] status key `model-profile`（alias → progress）  
 - [x] session restore 对抗 pi `setModel` 持久化 + settings 文件锁  
@@ -346,7 +351,7 @@ async function applyProfile(pi, ctx, profile, scope: "session" | "global") {
 | 命令名 `/profile` vs `/mp` vs `/modelslot` | **`/profile`** |
 | 启动默认 scope | **`session`**（更安全） |
 | 热键是否预置 | 示例有，默认配置可空 |
-| 是否做 profile CRUD TUI | **否**；手改 JSON + `/profile reload`（若需要） |
+| 是否做 profile CRUD TUI | **是，限 3–5 项短列表的原生浅层 CRUD**；不做第二个全量 `/model` |
 | 是否 pin 社区包作依赖 | **否** |
 
 ---

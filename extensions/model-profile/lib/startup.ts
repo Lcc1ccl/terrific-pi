@@ -1,12 +1,16 @@
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { parseKey } from "@earendil-works/pi-tui";
+
 import type { ApplyResult, ModelProfile, ModelProfileConfig, ProfileScope, ThinkingLevel } from "./types.ts";
-import { profileLabel } from "./config.ts";
+import { isThinkingLevel, profileLabel } from "./config.ts";
 import {
 	applyProfile,
+	prepareSessionSettings,
+	restoreSessionSettings,
 	type ApplyDeps,
 	type ModelRef,
 } from "./apply.ts";
-import { profileMatches } from "./match.ts";
-import { snapshotToRestoreDefaults, type SettingsDefaults } from "./settings-defaults.ts";
+import type { SettingsDefaults } from "./settings-defaults.ts";
 
 export type SessionStartReason = "startup" | "reload" | "new" | "resume" | "fork";
 
@@ -25,7 +29,7 @@ export type StartupPickerResult =
 	  }
 	| {
 			action: "applied";
-			source: "manual";
+			source: "manual" | "current";
 			model: ModelRef;
 			thinking: ThinkingLevel;
 			scope: ProfileScope;
@@ -36,6 +40,7 @@ export type StartupPickerResult =
 
 export interface StartupUi {
 	select: (title: string, options: string[]) => Promise<string | undefined>;
+	selectStartup?: (title: string, options: string[]) => Promise<string | undefined>;
 }
 
 export interface AvailableModel {
@@ -50,7 +55,7 @@ export interface StartupPickerInput {
 	config: ModelProfileConfig;
 	deps: ApplyDeps;
 	ui: StartupUi;
-	/** Already-activated session model when the picker opens. */
+	/** Keep-current target: activated global default on startup, previous session selection on /new. */
 	currentModel?: ModelRef | null;
 	currentThinking?: ThinkingLevel;
 	/** Full registry of available models (auth-ready). */
@@ -61,7 +66,14 @@ export interface StartupPickerInput {
 
 const SCOPE_SESSION = "session — this chat only";
 const SCOPE_GLOBAL = "global — also update defaults";
-const BROWSE_ALL = "Browse all models…";
+const BROWSE_ALL = "0 · Browse all models…";
+export const CURRENT_SESSION_ENTRY = "model-profile-current";
+
+export function startupDigitChoice(data: string, options: readonly string[]): string | undefined {
+	const key = parseKey(data);
+	if (!key || !/^\d$/.test(key)) return undefined;
+	return options.find((option) => option.startsWith(`${key} · `));
+}
 
 /** Label for keeping the already-activated session model (not “settings default”). */
 export function formatKeepCurrentLabel(
@@ -75,10 +87,92 @@ export function formatKeepCurrentLabel(
 	return `Keep current session · ${model.provider}/${model.id} · ${think}`;
 }
 
-export function formatManualApplyMessage(
-	result: Extract<StartupPickerResult, { source: "manual" }>,
+export function formatKeepDefaultLabel(
+	model: ModelRef | null | undefined,
+	thinking: ThinkingLevel | undefined,
 ): string {
-	const base = `Manual: ${result.model.provider}/${result.model.id} · ${result.thinking} (${result.scope})`;
+	if (!model) {
+		return "Keep global default (none loaded)";
+	}
+	const think = thinking ?? "?";
+	return `Keep global default · ${model.provider}/${model.id} · ${think}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+type SessionSelection = { model: ModelRef; thinking: ThinkingLevel };
+type PendingNewSelection = SessionSelection & { targetSessionFile: string | undefined };
+const pendingNewSelectionKey = Symbol.for("terrific-pi.model-profile.pending-new-selection");
+
+function pendingNewSelectionStore(): Record<symbol, unknown> {
+	return globalThis as Record<symbol, unknown>;
+}
+
+function isSessionSelection(value: unknown): value is SessionSelection {
+	if (!isRecord(value) || !isRecord(value.model)) return false;
+	return (
+		typeof value.model.provider === "string"
+		&& typeof value.model.id === "string"
+		&& isThinkingLevel(value.thinking)
+	);
+}
+
+/**
+ * Bridge /new within this Pi process before the source session has its first
+ * assistant response and therefore no JSONL file to read yet.
+ */
+export function rememberPendingNewSelection(
+	targetSessionFile: string | undefined,
+	selection: SessionSelection,
+): void {
+	pendingNewSelectionStore()[pendingNewSelectionKey] = { ...selection, targetSessionFile };
+}
+
+export function takePendingNewSelection(
+	targetSessionFile: string | undefined,
+): SessionSelection | undefined {
+	const store = pendingNewSelectionStore();
+	const pending = store[pendingNewSelectionKey];
+	if (!isRecord(pending) || pending.targetSessionFile !== targetSessionFile || !isSessionSelection(pending)) {
+		return undefined;
+	}
+	delete store[pendingNewSelectionKey];
+	return { model: pending.model, thinking: pending.thinking };
+}
+
+export function readPreviousSessionSelection(
+	path: string | undefined,
+): { model: ModelRef; thinking: ThinkingLevel } | undefined {
+	if (!path) return undefined;
+	try {
+		const branch = SessionManager.open(path).getBranch();
+		for (let index = branch.length - 1; index >= 0; index -= 1) {
+			const entry = branch[index];
+			if (entry?.type !== "custom" || entry.customType !== CURRENT_SESSION_ENTRY || !isRecord(entry.data)) continue;
+			const model = entry.data.model;
+			const thinking = entry.data.thinking;
+			if (
+				isRecord(model)
+				&& typeof model.provider === "string"
+				&& typeof model.id === "string"
+				&& isThinkingLevel(thinking)
+			) {
+				return { model: { provider: model.provider, id: model.id }, thinking };
+			}
+		}
+	} catch {
+		// A missing or malformed previous session falls back to the activated default.
+	}
+	return undefined;
+}
+
+export function formatManualApplyMessage(
+	result: Extract<StartupPickerResult, { source: "manual" | "current" }>,
+): string {
+	const prefix = result.source === "current" ? "Kept current" : "Manual";
+	const base = `${prefix}: ${result.model.provider}/${result.model.id} · ${result.thinking} (${result.scope})`;
 	const lines = [base];
 	if (result.scope === "global") {
 		if (result.settingsWritten) {
@@ -88,7 +182,7 @@ export function formatManualApplyMessage(
 		}
 	} else {
 		if (result.settingsRestored) {
-			lines.push("Restored previous settings.json defaults (session-only).");
+			lines.push("Restored original settings.json (session-only).");
 		}
 		if (result.settingsError) {
 			lines.push(result.settingsError);
@@ -98,7 +192,7 @@ export function formatManualApplyMessage(
 }
 
 export function manualResultLevel(
-	result: Extract<StartupPickerResult, { source: "manual" }>,
+	result: Extract<StartupPickerResult, { source: "manual" | "current" }>,
 ): "info" | "warning" {
 	if (result.settingsError) return "warning";
 	if (result.scope === "global" && result.settingsWritten === false) return "warning";
@@ -159,11 +253,14 @@ async function applyManual(
 	model: AvailableModel,
 	scope: ProfileScope,
 	deps: ApplyDeps,
+	requestedThinking?: ThinkingLevel,
+	source: "manual" | "current" = "manual",
 ): Promise<StartupPickerResult> {
 	const ref = { provider: model.provider, id: model.id };
-	const thinkingBefore = deps.getThinkingLevel();
-	const defaultsSnapshot =
-		scope === "session" ? deps.readSettingsDefaults?.() : undefined;
+	const sessionSettings = scope === "session" ? prepareSessionSettings(deps) : undefined;
+	if (sessionSettings && !sessionSettings.ok) {
+		return { action: "cancelled", reason: sessionSettings.error };
+	}
 
 	const ok = await deps.setModel(ref);
 	if (!ok) {
@@ -173,60 +270,37 @@ async function applyManual(
 		};
 	}
 
+	if (requestedThinking !== undefined) deps.setThinkingLevel(requestedThinking);
 	const thinking = deps.getThinkingLevel();
 
 	if (scope === "session") {
-		if (!defaultsSnapshot || !deps.writeSettingsDefaults) {
-			return {
-				action: "applied",
-				source: "manual",
-				model: ref,
-				thinking,
-				scope: "session",
-				settingsRestored: false,
-				settingsError:
-					"Session switched, but could not snapshot settings defaults — session-only is not guaranteed (pi persists on setModel).",
-			};
-		}
-
-		const { defaults, usedThinkingFallback } = snapshotToRestoreDefaults(
-			defaultsSnapshot,
-			thinkingBefore,
-		);
-		const restored = deps.writeSettingsDefaults(defaults);
-		const warnings: string[] = [];
+		const restored = await restoreSessionSettings(deps, sessionSettings!.snapshot);
 		if (!restored.ok) {
 			return {
 				action: "applied",
-				source: "manual",
+				source,
 				model: ref,
 				thinking,
 				scope: "session",
 				settingsRestored: false,
 				settingsError:
-					restored.error ?? "Failed to restore settings defaults after session switch",
+					restored.error ?? "Failed to restore the original settings.json state after session switch",
 			};
-		}
-		if (defaultsSnapshot.incomplete || usedThinkingFallback) {
-			warnings.push(
-				"Settings defaults were incomplete; restored provider/model and used previous session thinking for defaultThinkingLevel.",
-			);
 		}
 		return {
 			action: "applied",
-			source: "manual",
+			source,
 			model: ref,
 			thinking,
 			scope: "session",
 			settingsRestored: true,
-			settingsError: warnings.length > 0 ? warnings.join(" ") : undefined,
 		};
 	}
 
 	if (!deps.writeSettingsDefaults) {
 		return {
 			action: "applied",
-			source: "manual",
+			source,
 			model: ref,
 			thinking,
 			scope: "global",
@@ -243,7 +317,7 @@ async function applyManual(
 
 	return {
 		action: "applied",
-		source: "manual",
+		source,
 		model: ref,
 		thinking,
 		scope: "global",
@@ -252,24 +326,20 @@ async function applyManual(
 	};
 }
 
-/**
- * Profiles offered in the picker: drop any that already match the activated
- * session (typically the `default` profile), so Keep replaces that redundant row.
- */
+/** Keep the named default independent from Keep current and place it second. */
 export function profilesForStartupList(
 	profiles: readonly ModelProfile[],
-	currentModel: ModelRef | null | undefined,
-	currentThinking: ThinkingLevel | undefined,
+	_currentModel: ModelRef | null | undefined,
+	_currentThinking: ThinkingLevel | undefined,
 ): ModelProfile[] {
-	if (!currentModel || currentThinking === undefined) {
-		return [...profiles];
-	}
-	return profiles.filter((profile) => !profileMatches(profile, currentModel, currentThinking));
+	const defaultIndex = profiles.findIndex((profile) => profile.alias === "default");
+	if (defaultIndex <= 0) return [...profiles];
+	return [profiles[defaultIndex]!, ...profiles.slice(0, defaultIndex), ...profiles.slice(defaultIndex + 1)];
 }
 
 /**
  * Startup /new short-list picker.
- * Order: keep current session (first) → other profiles → browse all models (last).
+ * Order: keep current (first) → default profile → other profiles → numbered Browse (last).
  */
 export async function runStartupPicker(input: StartupPickerInput): Promise<StartupPickerResult> {
 	if (!STARTUP_PICKER_REASONS.has(input.reason)) {
@@ -292,16 +362,27 @@ export async function runStartupPicker(input: StartupPickerInput): Promise<Start
 		return { action: "skipped", reason: "no-profiles-or-models" };
 	}
 
-	const keepLabel = formatKeepCurrentLabel(input.currentModel, input.currentThinking);
+	const keepLabel = input.reason === "new"
+		? formatKeepCurrentLabel(input.currentModel, input.currentThinking)
+		: formatKeepDefaultLabel(input.currentModel, input.currentThinking);
 	const labels = listedProfiles.map((p) => profileLabel(p));
 	const options = [keepLabel, ...labels, BROWSE_ALL];
 
-	const choice = await input.ui.select("Startup model profile", options);
+	const choice = await (input.ui.selectStartup ?? input.ui.select)("Startup model profile", options);
 	if (choice === undefined) {
 		return { action: "cancelled", reason: "dismissed" };
 	}
 	if (choice === keepLabel) {
-		return { action: "cancelled", reason: "keep-current" };
+		if (input.reason !== "new" || !input.currentModel) {
+			return { action: "cancelled", reason: "keep-current" };
+		}
+		return applyManual(
+			{ provider: input.currentModel.provider, id: input.currentModel.id },
+			"session",
+			input.deps,
+			input.currentThinking,
+			"current",
+		);
 	}
 
 	const askScope = input.askScope !== false;

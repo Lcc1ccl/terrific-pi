@@ -28,7 +28,11 @@ export interface ModelProfileConfig {
 	profiles: ModelProfile[];
 }
 
-export type ApplyFailureKind = "unknown-model" | "set-model-refused" | "settings-write-failed";
+export type ApplyFailureKind =
+	| "unknown-model"
+	| "set-model-refused"
+	| "settings-snapshot-failed"
+	| "settings-write-failed";
 
 export type ApplyResult =
 	| {

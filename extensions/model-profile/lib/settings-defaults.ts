@@ -36,6 +36,12 @@ export type WriteSettingsResult =
 	| { ok: true; path: string }
 	| { ok: false; error: string; path: string };
 
+/** Exact on-disk state captured before Pi persists a model switch. */
+export type SettingsFileSnapshot =
+	| { ok: true; path: string; exists: false }
+	| { ok: true; path: string; exists: true; content: string; mode: number }
+	| { ok: false; path: string; error: string };
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -99,6 +105,89 @@ function releaseLock(lock: Extract<Lock, { ok: true }>): void {
 	}
 }
 
+function writeFileAtomically(path: string, content: string, mode: number, prefix: string): void {
+	const temporary = join(dirname(path), `.${prefix}.${process.pid}.${randomUUID()}.tmp`);
+	try {
+		const descriptor = openSync(temporary, "wx", 0o600);
+		try {
+			writeFileSync(descriptor, content, "utf8");
+			chmodSync(temporary, mode);
+			fsyncSync(descriptor);
+		} finally {
+			closeSync(descriptor);
+		}
+		renameSync(temporary, path);
+	} catch (error) {
+		try {
+			unlinkSync(temporary);
+		} catch {
+			// ignore
+		}
+		throw error;
+	}
+}
+
+/** Capture settings.json byte-for-byte, including its absence or malformed JSON. */
+export function snapshotSettingsFile(agentDir: string): SettingsFileSnapshot {
+	const path = resolveSettingsPath(agentDir);
+	try {
+		const stats = statSync(path);
+		return {
+			ok: true,
+			path,
+			exists: true,
+			content: readFileSync(path, "utf8"),
+			mode: stats.mode & 0o777,
+		};
+	} catch (error) {
+		if (errorCode(error) === "ENOENT") return { ok: true, path, exists: false };
+		return {
+			ok: false,
+			path,
+			error: `Cannot snapshot settings.json: ${error instanceof Error ? error.message : String(error)}`,
+		};
+	}
+}
+
+/** Restore a snapshot created by snapshotSettingsFile after Pi persists a session switch. */
+export function restoreSettingsFile(
+	snapshot: Extract<SettingsFileSnapshot, { ok: true }>,
+): WriteSettingsResult {
+	const path = snapshot.path;
+	try {
+		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+	} catch (error) {
+		return {
+			ok: false,
+			path,
+			error: `Cannot create agent dir: ${error instanceof Error ? error.message : String(error)}`,
+		};
+	}
+
+	const lock = acquireLock(path);
+	if (!lock.ok) return { ok: false, path, error: lock.error };
+	try {
+		if (!snapshot.exists) {
+			try {
+				unlinkSync(path);
+			} catch (error) {
+				if (errorCode(error) !== "ENOENT") throw error;
+			}
+			return { ok: true, path };
+		}
+		writeFileAtomically(path, snapshot.content, snapshot.mode, "settings");
+		return { ok: true, path };
+	} catch (error) {
+		return {
+			ok: false,
+			path,
+			error: error instanceof Error ? error.message : String(error),
+		};
+	} finally {
+		releaseLock(lock);
+	}
+}
+
 /**
  * Read global default model fields from settings.json.
  * Returns undefined if file missing, corrupt, or provider/model incomplete.
@@ -156,7 +245,6 @@ export function writeSettingsDefaults(
 		return { ok: false, path, error: lock.error };
 	}
 
-	const temporary = join(dirname(path), `.settings.${process.pid}.${randomUUID()}.tmp`);
 	try {
 		let root: Record<string, unknown> = {};
 		if (existsSync(path)) {
@@ -180,22 +268,9 @@ export function writeSettingsDefaults(
 		root.defaultThinkingLevel = defaults.defaultThinkingLevel;
 
 		const mode = existsSync(path) ? statSync(path).mode & 0o777 : 0o600;
-		const descriptor = openSync(temporary, "wx", 0o600);
-		try {
-			writeFileSync(descriptor, `${JSON.stringify(root, null, 2)}\n`, "utf8");
-			chmodSync(temporary, mode);
-			fsyncSync(descriptor);
-		} finally {
-			closeSync(descriptor);
-		}
-		renameSync(temporary, path);
+		writeFileAtomically(path, `${JSON.stringify(root, null, 2)}\n`, mode, "settings");
 		return { ok: true, path };
 	} catch (error) {
-		try {
-			unlinkSync(temporary);
-		} catch {
-			// ignore
-		}
 		return {
 			ok: false,
 			path,

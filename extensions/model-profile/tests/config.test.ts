@@ -11,6 +11,7 @@ import {
 	findProfileByHotkey,
 	findProfileById,
 	loadConfig,
+	loadConfigWithSources,
 	mergeConfig,
 	parseProfile,
 	resolveConfigPaths,
@@ -123,6 +124,38 @@ describe("resolveConfigPaths / loadConfig", () => {
 		assert.equal(daily?.model, "new");
 		assert.equal(daily?.thinking, "medium");
 		assert.ok(findProfileByAlias(config.profiles, "fast"));
+		const sourced = loadConfigWithSources(projectDir, agentDir, true, ".pi");
+		assert.equal(sourced.profileSources["1"], "project");
+		assert.equal(sourced.profileSources["2"], "global");
+	});
+
+	it("keeps global startup options when a project only overrides profiles", () => {
+		const root = mkdtempSync(join(tmpdir(), "model-profile-inherit-"));
+		const agentDir = join(root, "agent");
+		const projectDir = join(root, "project");
+		const projectPi = join(projectDir, ".pi");
+		mkdirSync(agentDir, { recursive: true });
+		mkdirSync(projectPi, { recursive: true });
+
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
+			modelProfile: {
+				startup: true,
+				startupScope: "global",
+				openHotkey: "ctrl+alt+p",
+				profiles: [{ id: 1, provider: "openai", model: "global", thinking: "medium" }],
+			},
+		}), "utf8");
+		writeFileSync(join(projectPi, "terrific.json"), JSON.stringify({
+			modelProfile: {
+				profiles: [{ id: 1, provider: "anthropic", model: "project", thinking: "high" }],
+			},
+		}), "utf8");
+
+		const { config } = loadConfig(projectDir, agentDir, true, ".pi");
+		assert.equal(config.startup, true);
+		assert.equal(config.startupScope, "global");
+		assert.equal(config.openHotkey, "ctrl+alt+p");
+		assert.equal(config.profiles[0]?.model, "project");
 	});
 
 	it("survives corrupt JSON", () => {

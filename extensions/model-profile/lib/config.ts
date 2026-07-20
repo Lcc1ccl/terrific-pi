@@ -27,6 +27,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+interface ConfigOverrides {
+	startup?: boolean;
+	startupScope?: ProfileScope;
+	openHotkey?: string;
+}
+
 function asBool(value: unknown, fallback: boolean): boolean {
 	return typeof value === "boolean" ? value : fallback;
 }
@@ -139,20 +145,27 @@ export function parseProfile(raw: unknown, index: number): { profile?: ModelProf
 }
 
 /** Merge a modelProfile section (or full terrific.json root) into a safe config. */
-export function mergeConfig(raw: unknown): { config: ModelProfileConfig; warnings: string[] } {
+export function mergeConfig(raw: unknown): {
+	config: ModelProfileConfig;
+	warnings: string[];
+	overrides: ConfigOverrides;
+} {
 	const warnings: string[] = [];
 	if (raw === undefined || raw === null) {
-		return { config: { ...DEFAULT_CONFIG, profiles: [] }, warnings };
+		return { config: { ...DEFAULT_CONFIG, profiles: [] }, warnings, overrides: {} };
 	}
 	if (!isRecord(raw)) {
 		warnings.push("modelProfile ignored: expected an object");
-		return { config: { ...DEFAULT_CONFIG, profiles: [] }, warnings };
+		return { config: { ...DEFAULT_CONFIG, profiles: [] }, warnings, overrides: {} };
 	}
 
 	const section = isRecord(raw.modelProfile) ? raw.modelProfile : raw;
+	const startupOverride = typeof section.startup === "boolean" ? section.startup : undefined;
+	const startupScopeOverride = isProfileScope(section.startupScope) ? section.startupScope : undefined;
+	const openHotkeyOverride = asHotkey(section.openHotkey);
 	const startup = asBool(section.startup, DEFAULT_CONFIG.startup);
 	const startupScope = asScope(section.startupScope, DEFAULT_CONFIG.startupScope);
-	const openHotkey = asHotkey(section.openHotkey) ?? DEFAULT_CONFIG.openHotkey;
+	const openHotkey = openHotkeyOverride ?? DEFAULT_CONFIG.openHotkey;
 
 	const profiles: ModelProfile[] = [];
 	const seenIds = new Set<string>();
@@ -202,6 +215,11 @@ export function mergeConfig(raw: unknown): { config: ModelProfileConfig; warning
 	return {
 		config: { startup, startupScope, openHotkey, profiles },
 		warnings,
+		overrides: {
+			...(startupOverride !== undefined ? { startup: startupOverride } : {}),
+			...(startupScopeOverride !== undefined ? { startupScope: startupScopeOverride } : {}),
+			...(openHotkeyOverride !== undefined ? { openHotkey: openHotkeyOverride } : {}),
+		},
 	};
 }
 
@@ -236,20 +254,27 @@ function readJsonFile(path: string): { value?: unknown; warning?: string } {
 function extractSection(root: unknown): unknown | undefined {
 	if (!isRecord(root)) return undefined;
 	if (isRecord(root.modelProfile)) return root.modelProfile;
-	if (Array.isArray(root.profiles) || typeof root.startup === "boolean") return root;
+	if (
+		Array.isArray(root.profiles)
+		|| "startup" in root
+		|| "startupScope" in root
+		|| "openHotkey" in root
+	) return root;
 	return undefined;
 }
 
+export type ProfileConfigSource = "global" | "project";
+
 /**
  * Load modelProfile from global (+ trusted project) terrific.json.
- * Later files override earlier ones by profile id; startup flags take last file's values.
+ * Later files override earlier ones by profile id; explicit startup fields override earlier values.
  */
-export function loadConfig(
+export function loadConfigWithSources(
 	cwd: string,
 	agentDir: string,
 	projectTrusted: boolean,
 	configDirName: string,
-): { config: ModelProfileConfig; warnings: string[] } {
+): { config: ModelProfileConfig; warnings: string[]; profileSources: Record<string, ProfileConfigSource> } {
 	const warnings: string[] = [];
 	const paths = resolveConfigPaths(cwd, agentDir, projectTrusted, configDirName);
 
@@ -257,8 +282,9 @@ export function loadConfig(
 	let startupScope = DEFAULT_CONFIG.startupScope;
 	let openHotkey = DEFAULT_CONFIG.openHotkey;
 	const byId = new Map<string, ModelProfile>();
+	const profileSources: Record<string, ProfileConfigSource> = {};
 
-	for (const path of paths) {
+	for (const [index, path] of paths.entries()) {
 		const { value, warning } = readJsonFile(path);
 		if (warning) warnings.push(warning);
 		if (value === undefined) continue;
@@ -266,14 +292,15 @@ export function loadConfig(
 		const section = extractSection(value);
 		if (section === undefined) continue;
 
-		const { config, warnings: sectionWarnings } = mergeConfig(section);
+		const { config, warnings: sectionWarnings, overrides } = mergeConfig(section);
 		for (const w of sectionWarnings) warnings.push(`${path}: ${w}`);
 
-		startup = config.startup;
-		startupScope = config.startupScope;
-		openHotkey = config.openHotkey ?? openHotkey;
+		if (overrides.startup !== undefined) startup = overrides.startup;
+		if (overrides.startupScope !== undefined) startupScope = overrides.startupScope;
+		if (overrides.openHotkey !== undefined) openHotkey = overrides.openHotkey;
 		for (const profile of config.profiles) {
 			byId.set(profile.id, profile);
+			profileSources[profile.id] = index === 0 ? "global" : "project";
 		}
 	}
 
@@ -287,7 +314,18 @@ export function loadConfig(
 			profiles,
 		},
 		warnings,
+		profileSources,
 	};
+}
+
+export function loadConfig(
+	cwd: string,
+	agentDir: string,
+	projectTrusted: boolean,
+	configDirName: string,
+): { config: ModelProfileConfig; warnings: string[] } {
+	const { config, warnings } = loadConfigWithSources(cwd, agentDir, projectTrusted, configDirName);
+	return { config, warnings };
 }
 
 export function findProfileById(profiles: readonly ModelProfile[], id: string): ModelProfile | undefined {

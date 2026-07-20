@@ -6,7 +6,7 @@ For long registries and many providers: keep 3–5 named profiles and switch the
 
 | Scope | Status | Behavior |
 |-------|--------|----------|
-| session | ✅ | Switch session model/thinking, then **restore** previous `settings.json` defaults (pi’s `setModel` always persists otherwise) |
+| session | ✅ | Switch session model/thinking, then **restore** the exact prior `settings.json` contents after Pi finishes its queued write |
 | global | ✅ | session apply + keep/update `settings.json` defaults |
 | startup picker | ✅ | cold-start + `/new` short list when `modelProfile.startup: true` |
 
@@ -21,7 +21,7 @@ in `~/.pi/agent/settings.json` `packages`, then `/reload` or restart pi.
 ## Configure
 
 **Config file:** `~/.pi/agent/terrific.json`（本仓插件统一配置）。  
-Trusted project `.pi/terrific.json` can override by profile id.
+Trusted project `.pi/terrific.json` can override a profile by id. In a trusted project, `/profile` → **Project overrides** edits only that project's model/thinking override and offers **Reset project override**; profile CRUD and startup settings remain global.
 
 ```json
 {
@@ -57,7 +57,7 @@ See `examples/config.json`.
 
 | Command | Behavior |
 |---------|----------|
-| `/profile` | TUI: pick profile → pick `session` / `global` |
+| `/profile` | TUI manager: Quick apply, add current session, edit/delete profiles, startup/shortcut settings, effective summary |
 | `/profile list` | Print profiles + startup flag (`*` = match) |
 | `/profile status` | Current model/thinking, match, startup flag |
 | `/profile startup [on\|off]` | Persist startup flag into `terrific.json` |
@@ -65,7 +65,7 @@ See `examples/config.json`.
 | `/profile <id\|alias> session\|global` | Apply with explicit scope |
 | `/profile help` | Usage + caveats |
 
-`alt+N` always **session** apply (works with draft text). After editing hotkeys, run **`/reload`**.
+Quick apply keeps the short-list profile picker and `session` / `global` scope choice as the first manager action. The manager's effective summary reports the global/project source for every profile. `alt+N` always **session** apply (works with draft text). Profile and picker hotkey edits are persisted immediately; run **`/reload`** afterward because Pi cannot dynamically unregister old bindings.
 
 ## Session vs global vs official /model
 
@@ -93,8 +93,10 @@ Switches done through `/profile` / `alt+N` / startup picker **do not** show that
 |-----------|----------|
 | `session_start.reason` is `startup` or **`new`**, `startup: true`, TUI | Short-list picker |
 | `resume` / `fork` / `reload` | No picker |
-| List order | **Keep current session** (first) → other profiles → **Browse all models…** (last) |
-| Keep current session | Stay on already-activated session model (name shown); matching profile rows omitted |
+| List order | **Keep global default** on cold start / **Keep current session** on `/new` (first) → **default** profile (second) → other profiles → **`0 · Browse all models…`** (last) |
+| Keep current · cold start | Keep Pi's activated global default model/thinking |
+| Keep current · `/new` | Restore the previous session model/thinking and the original `settings.json` contents |
+| Navigation | Up/down wraps at both ends; `0` opens Browse, `1`–`9` immediately select the matching profile id |
 | Browse all models | Provider → model (`provider/id` labels), then session/global scope |
 
 ## Verify
