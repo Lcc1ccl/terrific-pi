@@ -16,41 +16,58 @@ import {
 	type AuxiliaryConfiguratorUi,
 } from "../lib/configure.ts";
 
+type ScriptedOption = string | { value: string; label?: string; description?: string };
+
 class ScriptedUi implements AuxiliaryConfiguratorUi {
 	readonly notifications: Array<{ message: string; level?: "info" | "warning" | "error" }> = [];
-	readonly dialogs: Array<{ title: string; options: string[] }> = [];
+	readonly dialogs: Array<{ title: string; options: string[]; descriptions: Record<string, string> }> = [];
+	readonly confirmDialogs: Array<{ title: string; message: string }> = [];
 	private readonly choices: string[];
 	private readonly inputs: string[];
 	private readonly models: string[];
 	private readonly confirmations: boolean[];
+	private readonly onConfirm?: () => void;
 
 	constructor(
 		choices: string[],
 		inputs: string[] = [],
 		models: string[] = [],
 		confirmations: boolean[] = [],
+		onConfirm?: () => void,
 	) {
 		this.choices = choices;
 		this.inputs = inputs;
 		this.models = models;
 		this.confirmations = confirmations;
+		this.onConfirm = onConfirm;
 	}
 
-	async select(title: string, options: string[]): Promise<string | undefined> {
-		this.dialogs.push({ title, options: [...options] });
+	async select(title: string, options: ScriptedOption[]): Promise<string | undefined> {
+		const normalized = options.map((option) => typeof option === "string"
+			? { value: option, label: option, description: undefined }
+			: { value: option.value, label: option.label ?? option.value, description: option.description });
+		this.dialogs.push({
+			title,
+			options: normalized.map((option) => option.label),
+			descriptions: Object.fromEntries(normalized.flatMap((option) =>
+				option.description ? [[option.label, option.description]] : [])),
+		});
 		const prefix = this.choices.shift();
 		if (prefix === undefined) return undefined;
-		const choice = options.find((option) => option === prefix || option.startsWith(prefix));
-		assert.ok(choice, `No option starts with ${JSON.stringify(prefix)} in ${JSON.stringify(options)}`);
-		return choice;
+		const choice = normalized.find((option) => option.label === prefix || option.label.startsWith(prefix));
+		assert.ok(choice, `No option starts with ${JSON.stringify(prefix)} in ${JSON.stringify(normalized.map((option) => option.label))}`);
+		return choice.value;
 	}
 
 	async input(): Promise<string | undefined> {
 		return this.inputs.shift();
 	}
 
-	async confirm(): Promise<boolean> {
-		return this.confirmations.shift() ?? false;
+	async confirm(title: string, message: string): Promise<boolean> {
+		this.confirmDialogs.push({ title, message });
+		const confirmed = this.confirmations.shift() ?? false;
+		if (confirmed) this.onConfirm?.();
+		return confirmed;
 	}
 
 	async pickModel(): Promise<string | undefined> {
@@ -145,6 +162,118 @@ describe("auxiliary configurator", () => {
 		});
 	});
 
+	test("applies the default primary model to every task and enables auxiliary routing", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-apply-all-"));
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
+			auxiliary: {
+				default: { model: "openai/gpt-5.6-sol", futureDefault: "keep" },
+				tasks: {
+					compression: { useAuxiliary: false, timeoutMs: 45_000, futureTask: "keep" },
+					title_generation: { model: "openai/old-title", thinking: "low" },
+					custom_task: { model: "openai/custom" },
+				},
+			},
+		}), "utf8");
+		const ui = new ScriptedUi([
+			"Default route",
+			"Apply primary model to all tasks",
+			"Back",
+			"Done",
+		], [], [], [true]);
+
+		await runAuxiliaryConfigurator({
+			agentDir,
+			modelRefs: ["openai/gpt-5.6-sol"],
+			ui,
+		});
+
+		const auxiliary = readConfig(agentDir).auxiliary;
+		for (const task of ["compression", "title_generation", "text_summary", "commit_message", "btw", "web_research"]) {
+			assert.equal(auxiliary.tasks[task].model, "openai/gpt-5.6-sol", task);
+			assert.notEqual(auxiliary.tasks[task].useAuxiliary, false, task);
+		}
+		assert.deepEqual(auxiliary.default, { model: "openai/gpt-5.6-sol", futureDefault: "keep" });
+		assert.deepEqual(auxiliary.tasks.compression, {
+			model: "openai/gpt-5.6-sol",
+			timeoutMs: 45_000,
+			futureTask: "keep",
+		});
+		assert.deepEqual(auxiliary.tasks.title_generation, {
+			model: "openai/gpt-5.6-sol",
+			thinking: "low",
+		});
+		assert.deepEqual(auxiliary.tasks.custom_task, { model: "openai/custom" });
+	});
+
+	test("does not apply the default model when bulk confirmation is cancelled", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-apply-all-cancel-"));
+		const original = {
+			auxiliary: {
+				default: { model: "openai/gpt-5.6-sol" },
+				tasks: { compression: { useAuxiliary: false, model: "openai/old" } },
+			},
+		};
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify(original), "utf8");
+		const ui = new ScriptedUi([
+			"Default route",
+			"Apply primary model to all tasks",
+			"Back",
+			"Done",
+		], [], [], [false]);
+
+		await runAuxiliaryConfigurator({ agentDir, modelRefs: ["openai/gpt-5.6-sol"], ui });
+
+		assert.deepEqual(readConfig(agentDir), original);
+	});
+
+	test("describes route limits, bulk application, reset scope, and Git policy impact", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-tips-"));
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
+			auxiliary: {
+				default: { model: "openai/default", maxOutputTokens: 4_096 },
+				tasks: { compression: { model: "openai/compression" } },
+			},
+		}), "utf8");
+		const ui = new ScriptedUi([
+			"Default route",
+			"Back",
+			"compression",
+			"Back",
+			"Git finalize policy",
+			"Back",
+			"Done",
+		]);
+
+		await runAuxiliaryConfigurator({ agentDir, modelRefs: ["openai/default", "openai/compression"], ui });
+
+		const main = ui.dialogs.find((item) => item.title.startsWith("Auxiliary Models"));
+		assert.ok(main);
+		const defaultMain = main.options.find((option) => option.startsWith("Default route"));
+		assert.ok(defaultMain);
+		assert.match(main.descriptions[defaultMain] ?? "", /task-specific.*override/i);
+
+		const defaultRoute = ui.dialogs.find((item) => item.title === "Default route");
+		assert.ok(defaultRoute);
+		assert.match(defaultRoute.descriptions["Apply primary model to all tasks"] ?? "", /enable.*all six/i);
+		const output = defaultRoute.options.find((option) => option.startsWith("Max output tokens"));
+		assert.ok(output);
+		assert.match(defaultRoute.descriptions[output] ?? "", /generated.*not.*input.*context/i);
+		assert.match(defaultRoute.descriptions["Reset default route"] ?? "", /package defaults.*task overrides.*unchanged/i);
+
+		const taskRoute = ui.dialogs.find((item) => item.title === "compression");
+		assert.ok(taskRoute);
+		assert.match(taskRoute.descriptions["Reset task overrides"] ?? "", /package preset.*default route/i);
+
+		const git = ui.dialogs.find((item) => item.title === "Git finalize policy");
+		assert.ok(git);
+		const headless = git.options.find((option) => option.startsWith("Allow headless"));
+		const push = git.options.find((option) => option.startsWith("Allow push"));
+		assert.ok(headless);
+		assert.ok(push);
+		assert.match(git.descriptions[headless] ?? "", /without interactive confirmation/i);
+		assert.match(git.descriptions[push] ?? "", /explicit.*existing upstream/i);
+	});
+
 	test("resets only known route fields and preserves future fields", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-reset-"));
 		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
@@ -175,6 +304,39 @@ describe("auxiliary configurator", () => {
 		assert.deepEqual(auxiliary.default, { futureDefault: "keep" });
 		assert.deepEqual(auxiliary.tasks.compression, { futureTask: "keep" });
 		assert.deepEqual(auxiliary.tasks.custom_task, { model: "openai/custom" });
+		assert.match(ui.confirmDialogs[0]?.message ?? "", /After reset: model openai\/gpt-5\.4-mini.*thinking off.*timeout 60000 ms.*max output 2048.*retries 1.*fallbacks none/i);
+		assert.match(ui.confirmDialogs[0]?.message ?? "", /task overrides stay unchanged/i);
+		assert.match(ui.confirmDialogs[1]?.message ?? "", /After reset: model openai\/gpt-5\.4-mini.*thinking low.*timeout 120000 ms.*max output 12000.*fallbacks none/i);
+		assert.match(ui.confirmDialogs[1]?.message ?? "", /auxiliary routing returns to enabled/i);
+	});
+
+	test("aborts a reset when its effective preview changes during confirmation", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-reset-race-"));
+		const path = join(agentDir, "terrific.json");
+		writeFileSync(path, JSON.stringify({
+			auxiliary: {
+				default: { model: "openai/old-default" },
+				tasks: { compression: { model: "openai/compression" } },
+			},
+		}), "utf8");
+		const ui = new ScriptedUi([
+			"compression",
+			"Reset task overrides",
+			"Back",
+			"Done",
+		], [], [], [true], () => {
+			const current = readConfig(agentDir);
+			current.auxiliary.default.model = "openai/new-default";
+			writeFileSync(path, JSON.stringify(current), "utf8");
+		});
+
+		await runAuxiliaryConfigurator({ agentDir, modelRefs: [], ui });
+
+		const auxiliary = readConfig(agentDir).auxiliary;
+		assert.equal(auxiliary.default.model, "openai/new-default");
+		assert.equal(auxiliary.tasks.compression.model, "openai/compression");
+		assert.ok(ui.notifications.some(({ message, level }) =>
+			level === "error" && /changed while confirming reset/i.test(message)));
 	});
 
 	test("resets one numeric override without changing the rest of the task route", async () => {
@@ -238,9 +400,11 @@ describe("auxiliary configurator", () => {
 		}
 	});
 
-	test("shows only route fields consumed by BTW and Web Research", async () => {
+	test("shows only route fields consumed by Compression, BTW, and Web Research", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-capabilities-"));
 		const ui = new ScriptedUi([
+			"compression",
+			"Back",
 			"btw",
 			"Back",
 			"web_research",
@@ -249,6 +413,11 @@ describe("auxiliary configurator", () => {
 		]);
 
 		await runAuxiliaryConfigurator({ agentDir, modelRefs: [], ui });
+
+		const compression = ui.dialogs.find((item) => item.title === "compression");
+		assert.ok(compression);
+		assert.ok(compression.options.some((option) => option.startsWith("Max output tokens")));
+		assert.equal(compression.options.some((option) => option.startsWith("Retries")), false);
 
 		const btw = ui.dialogs.find((item) => item.title === "btw");
 		assert.ok(btw);

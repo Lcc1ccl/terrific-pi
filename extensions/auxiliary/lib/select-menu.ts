@@ -2,6 +2,14 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 import { Container, SelectList, Text } from "@earendil-works/pi-tui";
 
+export interface SelectMenuItem {
+	value: string;
+	label?: string;
+	description?: string;
+}
+
+export type SelectMenuOption = string | SelectMenuItem;
+
 export type SelectMenuOptions = {
 	cancelAction?: "back" | "cancel";
 	maxVisible?: number;
@@ -14,19 +22,25 @@ function displayKey(key: string): string {
 export function selectMenu(
 	ctx: ExtensionContext,
 	title: string,
-	options: string[],
+	options: readonly SelectMenuOption[],
 	settings: SelectMenuOptions = {},
 ): Promise<string | undefined> {
 	if (options.length === 0) return Promise.resolve(undefined);
-	if (ctx.mode !== "tui") return ctx.ui.select(title, options);
+	const items = options.map((option) => typeof option === "string"
+		? { value: option, label: option, description: undefined }
+		: { value: option.value, label: option.label ?? option.value, description: option.description });
+	if (ctx.mode !== "tui") {
+		return ctx.ui.select(title, items.map((item) => item.label)).then((label) =>
+			items.find((item) => item.label === label)?.value);
+	}
 
-	const cancelAction = settings.cancelAction ?? (options.includes("Back") ? "back" : "cancel");
+	const cancelAction = settings.cancelAction ?? (items.some((item) => item.value === "Back") ? "back" : "cancel");
 	return ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
 		const key = (binding: "tui.select.up" | "tui.select.down" | "tui.select.confirm" | "tui.select.cancel", fallback: string) =>
 			displayKey(keybindings.getKeys?.(binding)[0] ?? fallback);
 		const list = new SelectList(
-			options.map((value) => ({ value, label: value })),
-			Math.min(options.length, settings.maxVisible ?? 10),
+			items.map(({ value, label }) => ({ value, label })),
+			Math.min(items.length, settings.maxVisible ?? 10),
 			{
 				selectedPrefix: (text) => theme.fg("accent", text),
 				selectedText: (text) => theme.fg("accent", text),
@@ -36,10 +50,16 @@ export function selectMenu(
 			},
 		);
 		let selectedIndex = 0;
-		const select = () => done(options[selectedIndex]);
+		const tip = new Text("", 1, 0);
+		const updateTip = () => tip.setText(items[selectedIndex]?.description
+			? theme.fg("muted", `Tip: ${items[selectedIndex]!.description}`)
+			: "");
+		updateTip();
+		const select = () => done(items[selectedIndex]?.value);
 		const move = (direction: -1 | 1) => {
-			selectedIndex = (selectedIndex + direction + options.length) % options.length;
+			selectedIndex = (selectedIndex + direction + items.length) % items.length;
 			list.setSelectedIndex(selectedIndex);
+			updateTip();
 		};
 		const hint = [
 			`${key("tui.select.up", "up")}/${key("tui.select.down", "down")} navigate`,
@@ -50,6 +70,7 @@ export function selectMenu(
 		container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 		container.addChild(new Text(theme.fg("accent", theme.bold(title)), 1, 0));
 		container.addChild(list);
+		container.addChild(tip);
 		container.addChild(new Text(theme.fg("dim", hint), 1, 0));
 		container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 		return {

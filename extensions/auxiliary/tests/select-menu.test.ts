@@ -47,6 +47,36 @@ async function choose(inputs: string[], cancelAction: "back" | "cancel" = "cance
 	return { value, rendered, customCalls, ctx };
 }
 
+it("renders the selected option description and updates it while navigating", async () => {
+	let initial = "";
+	let afterMove = "";
+	const value = await selectMenu({
+		mode: "tui",
+		ui: {
+			select: async () => undefined,
+			custom: async (factory: any) => new Promise<string | undefined>((resolve) => {
+				const component = factory(
+					{ requestRender() {} },
+					{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+					createKeybindings(),
+					resolve,
+				);
+				initial = component.render(72).join("\n");
+				component.handleInput("\x1b[B");
+				afterMove = component.render(72).join("\n");
+				component.handleInput("\r");
+			}),
+		},
+	} as never, "Impacts", [
+		{ value: "first", description: "First option keeps saved routes." },
+		{ value: "second", label: "Second label", description: "Second option changes runtime behavior." },
+	] as never);
+
+	assert.equal(value, "second");
+	assert.match(initial, /First option keeps saved routes/);
+	assert.match(afterMove, /Second option changes runtime behavior/);
+});
+
 it("wraps menu navigation, labels cancel scope, and safely ignores an empty list", async () => {
 	assert.equal((await choose(["\x1b[A", "\r"])).value, "third");
 	assert.equal((await choose(["\x1b[B", "\x1b[B", "\x1b[B", "\r"])).value, "first");

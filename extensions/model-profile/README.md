@@ -99,7 +99,7 @@ Switches done through `/profile` / `alt+N` / startup picker **do not** show that
 | Keep current · cold start | Keep Pi's activated global default model/thinking |
 | Keep current · `/new` | Restore the previous session model/thinking and the original `settings.json` contents |
 | Navigation | Up/down wraps at both ends; `0` opens Browse, `1`–`9` immediately select the matching profile id |
-| Browse all models | Provider → searchable model list (type-to-filter like `/model`), then session/global scope |
+| Browse all models | Provider → fuzzy-searchable model list by partial ID/ref/name (`5.6`, `sol`, etc.), then session/global scope |
 
 ## Verify
 

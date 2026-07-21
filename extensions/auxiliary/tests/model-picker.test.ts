@@ -48,6 +48,56 @@ it("shows filtering and keybinding hints in the auxiliary model picker", async (
 	assert.match(rendered, /Esc back/);
 });
 
+async function searchModels(query: string, confirm: boolean) {
+	const models = [
+		{ provider: "openai", id: "gpt-5.6-luna", name: "Luna Research" },
+		{ provider: "openai", id: "gpt-5.6-sol", name: "Solar Coder" },
+	];
+	let rendered = "";
+	const result = await pickAvailableModel({
+		mode: "print",
+		model: models[0],
+		modelRegistry: {
+			find(provider: string, id: string) {
+				return models.find((model) => model.provider === provider && model.id === id);
+			},
+		},
+		ui: {
+			select: async (_title: string, options: string[]) => options[0],
+			custom: async (factory: any) => new Promise<string | undefined>((resolve) => {
+				const component = factory(
+					{ requestRender() {} },
+					{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+					{
+						matches: (data: string, binding: string) =>
+							(data === "\r" && binding === "tui.select.confirm")
+							|| (data === "\x1b" && binding === "tui.select.cancel"),
+						getKeys: () => [],
+					},
+					resolve,
+				);
+				for (const character of query) component.handleInput(character);
+				rendered = component.render(100).join("\n");
+				if (confirm) component.handleInput("\r");
+				component.handleInput("\x1b");
+			}),
+			notify() {},
+		},
+	} as never, "Model", "current", models.map((model) => `${model.provider}/${model.id}`));
+	return { result, rendered };
+}
+
+it("fuzzy-matches model ids and names without requiring a prefix", async () => {
+	const partialId = await searchModels("5.6", false);
+	assert.match(partialId.rendered, /gpt-5\.6-luna/);
+	assert.match(partialId.rendered, /gpt-5\.6-sol/);
+	assert.equal((await searchModels("SOL", true)).result, "openai/gpt-5.6-sol");
+	assert.equal((await searchModels("research", true)).result, "openai/gpt-5.6-luna");
+
+	const missing = await searchModels("missing", false);
+	assert.match(missing.rendered, /No matching models/);
+});
+
 it("uses injected bindings to navigate and select filtered models", async () => {
 	const models = [
 		{ provider: "openai", id: "gpt-a", name: "GPT A" },

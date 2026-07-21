@@ -70,7 +70,9 @@ Only the global file is read for auxiliary routing:
 
 Project-local `auxiliary` config is intentionally ignored because a model route decides which provider receives project data. The config must not contain API keys, headers, or base URLs; authentication and endpoints stay in Pi's model registry.
 
-Run `/aux config` in TUI mode to edit the global runtime, default route, and task routes. Each confirmed change is written atomically while preserving other `terrific.json` sections; malformed JSON is never overwritten.
+Run `/aux config` in TUI mode to edit the global runtime, default route, and task routes. The selected menu item shows a wrapped `Tip:` explaining its runtime impact. Model pickers use fuzzy matching across model IDs, full refs, and display names, so queries such as `5.6` or `sol` find `gpt-5.6-sol`. Each confirmed change is written atomically while preserving other `terrific.json` sections; malformed JSON is never overwritten.
+
+The Default route menu includes **Apply primary model to all tasks**. After confirmation, it copies the effective default model to all six configurable task routes and enables auxiliary routing for every task. Existing thinking, timeout, output, retry, fallback, and unknown task fields remain unchanged; vision is excluded.
 
 See [`../../agent/terrific.example.json`](../../agent/terrific.example.json) for the complete template. Each task can set:
 
@@ -79,7 +81,7 @@ See [`../../agent/terrific.example.json`](../../agent/terrific.example.json) for
 - `thinking`, `timeoutMs`, and fields consumed by that task
 - up to three ordered `fallbackModels`
 
-Most routes expose `maxOutputTokens` and `maxRetries`. BTW does not consume retries, while Web Research owns its bounded result contract and consumes neither retries nor a route-level output cap, so those ineffective fields are hidden from their menus. Configurable task keys are `compression`, `title_generation`, `text_summary`, `commit_message`, `btw`, and `web_research`. Vision routing remains owned by `/vision-handoff`; `/aux config` exposes that external entry without writing an ineffective `tasks.vision` block.
+Most routes expose `maxOutputTokens` and `maxRetries`. Compression and BTW do not consume retries, while Web Research owns its bounded result contract and consumes neither retries nor a route-level output cap, so those ineffective fields are hidden from their menus. Configurable task keys are `compression`, `title_generation`, `text_summary`, `commit_message`, `btw`, and `web_research`. Vision routing remains owned by `/vision-handoff`; `/aux config` exposes that external entry without writing an ineffective `tasks.vision` block.
 
 ## Commands And Tools
 

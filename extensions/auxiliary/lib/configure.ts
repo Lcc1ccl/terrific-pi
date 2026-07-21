@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { DynamicBorder, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Container, Input, SelectList, Spacer, Text } from "@earendil-works/pi-tui";
+import { Container, Input, Spacer, Text, fuzzyFilter } from "@earendil-works/pi-tui";
 
 import {
 	mergeAuxiliaryConfig,
@@ -10,7 +10,7 @@ import {
 	resolveTaskRoute,
 	updateAuxiliaryConfig,
 } from "./config.ts";
-import { selectMenu } from "./select-menu.ts";
+import { selectMenu, type SelectMenuOption } from "./select-menu.ts";
 import type { AuxiliaryConfig, AuxiliaryRouteConfig, AuxiliaryTaskKey } from "./types.ts";
 
 export const CONFIGURABLE_AUXILIARY_TASKS = [
@@ -40,7 +40,7 @@ type RouteTarget = { kind: "default" } | { kind: "task"; task: ConfigurableTask 
 type MutationResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const TASK_ROUTE_FIELDS: Record<ConfigurableTask, ReadonlySet<RouteField>> = {
-	compression: new Set(ROUTE_OVERRIDE_FIELDS),
+	compression: new Set(ROUTE_OVERRIDE_FIELDS.filter((field) => field !== "maxRetries")),
 	title_generation: new Set(ROUTE_OVERRIDE_FIELDS),
 	text_summary: new Set(ROUTE_OVERRIDE_FIELDS),
 	commit_message: new Set(ROUTE_OVERRIDE_FIELDS),
@@ -55,7 +55,7 @@ function routeFieldVisible(target: RouteTarget, field: RouteField): boolean {
 }
 
 export interface AuxiliaryConfiguratorUi {
-	select(title: string, options: string[]): Promise<string | undefined>;
+	select(title: string, options: readonly SelectMenuOption[]): Promise<string | undefined>;
 	input(title: string, placeholder: string): Promise<string | undefined>;
 	confirm(title: string, message: string): Promise<boolean>;
 	pickModel(title: string, current: string, modelRefs: readonly string[]): Promise<string | undefined>;
@@ -83,6 +83,10 @@ function compact(value: string, maximum = 52): string {
 	if (value.length <= maximum) return value;
 	const left = Math.floor((maximum - 3) / 2);
 	return `${value.slice(0, left)}...${value.slice(value.length - (maximum - 3 - left))}`;
+}
+
+function menuItem(value: string, description: string): SelectMenuOption {
+	return { value, description };
 }
 
 function loadState(agentDir: string): MutationResult<ConfiguratorState> {
@@ -264,10 +268,21 @@ async function editGitPolicy(deps: AuxiliaryConfiguratorDeps): Promise<void> {
 		const raw = rawGitPolicy(state.source);
 		const config = state.config.git;
 		const choice = await deps.ui.select("Git finalize policy", [
-			`Confirm before commit: ${config.confirm ? "on" : "off"}`,
-			`Allow headless: ${config.allowHeadless ? "on" : "off"}`,
-			`Allow push: ${config.allowPush ? "on" : "off"}`,
-			...(( ["confirm", "allowHeadless", "allowPush"] as const).some((field) => Object.hasOwn(raw, field)) ? ["Reset Git policy"] : []),
+			menuItem(
+				`Confirm before commit: ${config.confirm ? "on" : "off"}`,
+				"Shows the exact branch, commit subject, and push action for confirmation before an interactive commit.",
+			),
+			menuItem(
+				`Allow headless: ${config.allowHeadless ? "on" : "off"}`,
+				"Allows git_finalize to commit without interactive confirmation when no TUI is available.",
+			),
+			menuItem(
+				`Allow push: ${config.allowPush ? "on" : "off"}`,
+				"Permits a normal push only when explicitly requested and an existing upstream is configured.",
+			),
+			...(( ["confirm", "allowHeadless", "allowPush"] as const).some((field) => Object.hasOwn(raw, field))
+				? [menuItem("Reset Git policy", "Restores package Git policy defaults while preserving unknown policy fields.")]
+				: []),
 			"Back",
 		]);
 		if (!choice || choice === "Back") return;
@@ -313,10 +328,18 @@ function mainMenuTitle(deps: AuxiliaryConfiguratorDeps, state: ConfiguratorState
 	].join("\n");
 }
 
-function mainMenuItems(state: ConfiguratorState): Array<{ id: string; label: string }> {
-	const items = [
-		{ id: "runtime", label: `Runtime: ${state.config.enabled ? "enabled" : "disabled"}` },
-		{ id: "default", label: `Default route: ${compact(state.config.default.model)} · ${state.config.default.thinking}` },
+function mainMenuItems(state: ConfiguratorState): Array<{ id: string; label: string; description?: string }> {
+	const items: Array<{ id: string; label: string; description?: string }> = [
+		{
+			id: "runtime",
+			label: `Runtime: ${state.config.enabled ? "enabled" : "disabled"}`,
+			description: "Disabling stops auxiliary hooks and tools without deleting saved routes.",
+		},
+		{
+			id: "default",
+			label: `Default route: ${compact(state.config.default.model)} · ${state.config.default.thinking}`,
+			description: "Fallback values for route fields without a task-specific preset or override; task-specific values still win.",
+		},
 	];
 	for (const task of CONFIGURABLE_AUXILIARY_TASKS) {
 		const enabled = state.config.tasks[task]?.useAuxiliary !== false;
@@ -324,12 +347,19 @@ function mainMenuItems(state: ConfiguratorState): Array<{ id: string; label: str
 		items.push({
 			id: `task:${task}`,
 			label: `${task}: ${enabled ? "aux" : "main"} · ${compact(enabled ? route.model : "current")}`,
+			description: enabled
+				? "Uses its saved auxiliary route; task-specific limits and fallbacks can override the default route."
+				: "Uses the current main model while keeping its saved auxiliary route for later.",
 		});
 	}
 	items.push(
-		{ id: "git", label: `Git finalize policy: confirm ${state.config.git.confirm ? "on" : "off"} · headless ${state.config.git.allowHeadless ? "on" : "off"} · push ${state.config.git.allowPush ? "on" : "off"}` },
-		{ id: "vision", label: "Vision: external · /vision-handoff" },
-		{ id: "show", label: "Show config" },
+		{
+			id: "git",
+			label: `Git finalize policy: confirm ${state.config.git.confirm ? "on" : "off"} · headless ${state.config.git.allowHeadless ? "on" : "off"} · push ${state.config.git.allowPush ? "on" : "off"}`,
+			description: "Controls interactive confirmation, headless commits, and permission for normal pushes.",
+		},
+		{ id: "vision", label: "Vision: external · /vision-handoff", description: "Vision routing is configured separately by /vision-handoff." },
+		{ id: "show", label: "Show config", description: "Displays the stored auxiliary section with credential-bearing fields redacted." },
 		{ id: "done", label: "Done" },
 	);
 	return items;
@@ -530,18 +560,73 @@ async function editFallbacks(deps: AuxiliaryConfiguratorDeps, target: RouteTarge
 	}
 }
 
-async function resetTarget(deps: AuxiliaryConfiguratorDeps, target: RouteTarget): Promise<boolean> {
+async function applyDefaultModelToAllTasks(
+	deps: AuxiliaryConfiguratorDeps,
+	model: string,
+): Promise<void> {
+	const confirmed = await deps.ui.confirm(
+		`Apply ${model} to all auxiliary tasks?`,
+		`Set this primary model and enable auxiliary routing for ${CONFIGURABLE_AUXILIARY_TASKS.join(", ")}. Other task fields stay unchanged; vision is excluded.`,
+	);
+	if (!confirmed) return;
+	applyMutation(deps, (auxiliary) => {
+		for (const task of CONFIGURABLE_AUXILIARY_TASKS) {
+			editRouteObject(auxiliary, { kind: "task", task }, (route) => {
+				route.model = model;
+				delete route.useAuxiliary;
+			});
+		}
+	}, `Applied ${model} to all auxiliary tasks`);
+}
+
+function clearRouteOverrides(route: Record<string, unknown>, target: RouteTarget): void {
+	for (const field of ROUTE_OVERRIDE_FIELDS) delete route[field];
+	if (target.kind === "task") delete route.useAuxiliary;
+}
+
+function routePreview(target: RouteTarget, route: AuxiliaryRouteConfig): string {
+	return [
+		`model ${route.model}`,
+		`thinking ${route.thinking}`,
+		`timeout ${route.timeoutMs} ms`,
+		...(routeFieldVisible(target, "maxOutputTokens") ? [`max output ${route.maxOutputTokens}`] : []),
+		...(routeFieldVisible(target, "maxRetries") ? [`retries ${route.maxRetries}`] : []),
+		`fallbacks ${route.fallbackModels.join(", ") || "none"}`,
+	].join(", ");
+}
+
+function resetSnapshot(source: Record<string, unknown>, target: RouteTarget): { preview: string; signature: string } {
+	const route = rawRoute(source, target);
+	const fields = target.kind === "task" ? [...ROUTE_OVERRIDE_FIELDS, "useAuxiliary"] : ROUTE_OVERRIDE_FIELDS;
+	const overrides = Object.fromEntries(fields.flatMap((field) =>
+		Object.hasOwn(route, field) ? [[field, route[field]]] : []));
+	const previewSource = structuredClone(source);
+	editRouteObject(previewSource, target, (value) => clearRouteOverrides(value, target));
+	const previewConfig = mergeAuxiliaryConfig({ auxiliary: previewSource }).config;
+	const preview = routePreview(target, targetRoute(previewConfig, target));
+	return { preview, signature: JSON.stringify([overrides, preview]) };
+}
+
+async function resetTarget(
+	deps: AuxiliaryConfiguratorDeps,
+	state: ConfiguratorState,
+	target: RouteTarget,
+): Promise<boolean> {
+	const expected = resetSnapshot(state.source, target);
+	const effect = target.kind === "default"
+		? "Task overrides stay unchanged."
+		: "Auxiliary routing returns to enabled; unknown task fields stay unchanged.";
 	const confirmed = await deps.ui.confirm(
 		`Reset ${targetName(target)}?`,
-		"Remove its explicit overrides and return to package/default routing?",
+		`After reset: ${expected.preview}. ${effect}`,
 	);
 	if (!confirmed) return false;
-	return applyMutation(deps, (auxiliary) => editRouteObject(auxiliary, target, (route) => {
-		for (const field of ROUTE_OVERRIDE_FIELDS) {
-			delete route[field];
+	return applyMutation(deps, (auxiliary) => {
+		if (resetSnapshot(auxiliary, target).signature !== expected.signature) {
+			throw new Error("config changed while confirming reset; review the updated preview and try again");
 		}
-		if (target.kind === "task") delete route.useAuxiliary;
-	}), `${targetName(target)} overrides reset`);
+		editRouteObject(auxiliary, target, (route) => clearRouteOverrides(route, target));
+	}, `${targetName(target)} overrides reset`);
 }
 
 async function routeMenu(deps: AuxiliaryConfiguratorDeps, target: RouteTarget): Promise<void> {
@@ -554,15 +639,45 @@ async function routeMenu(deps: AuxiliaryConfiguratorDeps, target: RouteTarget): 
 		const state = loaded.value;
 		const route = targetRoute(state.config, target);
 		const raw = rawRoute(state.source, target);
-		const options = [
-			...(target.kind === "task" ? [`Use auxiliary model: ${state.config.tasks[target.task]?.useAuxiliary === false ? "Off" : "On"}`] : []),
-			`Primary model: ${Object.hasOwn(raw, "model") ? compact(String(raw.model)) : `default · ${compact(route.model)}`}`,
-			`Thinking: ${Object.hasOwn(raw, "thinking") ? String(raw.thinking) : `default · ${route.thinking}`}`,
-			`Timeout: ${route.timeoutMs} ms`,
-			...(routeFieldVisible(target, "maxOutputTokens") ? [`Max output tokens: ${route.maxOutputTokens}`] : []),
-			...(routeFieldVisible(target, "maxRetries") ? [`Retries: ${route.maxRetries}`] : []),
-			`Fallback models: ${route.fallbackModels.length ? route.fallbackModels.map((value) => compact(value, 30)).join(", ") : "none"}`,
-			...(hasRouteOverride(raw, target) ? [`Reset ${target.kind === "default" ? "default route" : "task overrides"}`] : []),
+		const primaryLabel = `Primary model: ${Object.hasOwn(raw, "model") ? compact(String(raw.model)) : `inherited · ${compact(route.model)}`}`;
+		const thinkingLabel = `Thinking: ${Object.hasOwn(raw, "thinking") ? String(raw.thinking) : `inherited · ${route.thinking}`}`;
+		const timeoutLabel = `Timeout: ${route.timeoutMs} ms`;
+		const outputLabel = `Max output tokens: ${route.maxOutputTokens}`;
+		const retriesLabel = `Retries: ${route.maxRetries}`;
+		const fallbackLabel = `Fallback models: ${route.fallbackModels.length ? route.fallbackModels.map((value) => compact(value, 30)).join(", ") : "none"}`;
+		const resetLabel = `Reset ${target.kind === "default" ? "default route" : "task overrides"}`;
+		const options: SelectMenuOption[] = [
+			...(target.kind === "task" ? [menuItem(
+				`Use auxiliary model: ${state.config.tasks[target.task]?.useAuxiliary === false ? "Off" : "On"}`,
+				"On uses the saved auxiliary route. Off uses the current main model while retaining saved route settings.",
+			)] : []),
+			menuItem(
+				primaryLabel,
+				target.kind === "default"
+					? "Primary fallback model for route fields without a task-specific model preset or override."
+					: "First model attempted for this task; current follows the active main-session model.",
+			),
+			...(target.kind === "default" ? [menuItem(
+				"Apply primary model to all tasks",
+				`Copies ${route.model} to every task model and enables auxiliary routing for all six managed tasks. Other task fields stay unchanged; vision is excluded.`,
+			)] : []),
+			menuItem(thinkingLabel, "Requested reasoning level; models without reasoning support run with thinking off."),
+			menuItem(timeoutLabel, "Maximum wall time for each model attempt before an eligible fallback is tried."),
+			...(routeFieldVisible(target, "maxOutputTokens") ? [menuItem(
+				outputLabel,
+				"Maximum generated output tokens for this call, not an input or context-window limit. The model's own cap can be lower.",
+			)] : []),
+			...(routeFieldVisible(target, "maxRetries") ? [menuItem(
+				retriesLabel,
+				"Provider retries for each model attempt before moving to an eligible fallback; allowed range is 0-2.",
+			)] : []),
+			menuItem(fallbackLabel, "Models tried in order after eligible provider, availability, timeout, or empty-response failures."),
+			...(hasRouteOverride(raw, target) ? [menuItem(
+				resetLabel,
+				target.kind === "default"
+					? "Restores package defaults for this route; task overrides and unknown default fields stay unchanged."
+					: "Removes known task overrides and returns to the package preset layered on the current default route.",
+			)] : []),
 			"Back",
 		];
 		const choice = await deps.ui.select(targetName(target), options);
@@ -571,6 +686,8 @@ async function routeMenu(deps: AuxiliaryConfiguratorDeps, target: RouteTarget): 
 			await editUseAuxiliary(deps, state, target.task);
 		} else if (choice.startsWith("Primary model")) {
 			await editPrimaryModel(deps, state, target);
+		} else if (choice === "Apply primary model to all tasks" && target.kind === "default") {
+			await applyDefaultModelToAllTasks(deps, route.model);
 		} else if (choice.startsWith("Thinking")) {
 			await editThinking(deps, state, target);
 		} else if (choice.startsWith("Timeout")) {
@@ -581,7 +698,7 @@ async function routeMenu(deps: AuxiliaryConfiguratorDeps, target: RouteTarget): 
 			await editNumber(deps, state, target, "maxRetries");
 		} else if (choice.startsWith("Fallback models")) {
 			await editFallbacks(deps, target);
-		} else if (choice.startsWith("Reset") && await resetTarget(deps, target)) {
+		} else if (choice.startsWith("Reset") && await resetTarget(deps, state, target)) {
 			return;
 		}
 	}
@@ -602,7 +719,10 @@ export async function runAuxiliaryConfigurator(deps: AuxiliaryConfiguratorDeps):
 			deps.ui.notify(warning, "warning");
 		}
 		const items = mainMenuItems(state);
-		const choice = await deps.ui.select(mainMenuTitle(deps, state), items.map((item) => item.label));
+		const choice = await deps.ui.select(
+			mainMenuTitle(deps, state),
+			items.map((item) => item.description ? menuItem(item.label, item.description) : item.label),
+		);
 		const selectedItem = items.find((item) => item.label === choice);
 		if (!selectedItem || selectedItem.id === "done") return;
 		if (selectedItem.id === "runtime") {
@@ -648,71 +768,82 @@ export async function pickAvailableModel(
 	const provider = providers.find((value) => providerChoice.startsWith(`${value} (`));
 	if (!provider) return undefined;
 
-	const models = parsed.filter((item) => item.provider === provider);
+	const models = parsed
+		.filter((item) => item.provider === provider)
+		.map((item) => {
+			const model = ctx.modelRegistry.find(provider, item.modelId);
+			return {
+				...item,
+				name: typeof model?.name === "string" && model.name !== item.modelId ? model.name : undefined,
+			};
+		});
 	return ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
-		const container = new Container();
-		container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
-		container.addChild(new Text(theme.fg("accent", theme.bold(`${title}: ${provider}`)), 1, 0));
-		container.addChild(new Text(theme.fg("muted", "Type a model-id prefix, then press Enter"), 1, 0));
 		const input = new Input();
 		input.focused = true;
-		container.addChild(input);
-		container.addChild(new Spacer(1));
 		const key = (binding: "tui.select.up" | "tui.select.down" | "tui.select.confirm" | "tui.select.cancel", fallback: string) => {
 			const value = keybindings.getKeys?.(binding)[0] ?? fallback;
 			return (({ up: "Up", down: "Down", enter: "Enter", escape: "Esc" } as Record<string, string>)[value] ?? value.replace(/\b[a-z]/g, (char) => char.toUpperCase()));
 		};
-		const list = new SelectList(
-			models.map(({ ref, modelId }) => {
-				const model = ctx.modelRegistry.find(provider, modelId);
-				return {
-					value: modelId,
-					label: modelId,
-					description: `${ref === currentRef ? "current" : ""}${model?.name && model.name !== modelId ? `${ref === currentRef ? " · " : ""}${model.name}` : ""}` || undefined,
-				};
-			}),
-			10,
-			{
-				selectedPrefix: (text) => theme.fg("accent", text),
-				selectedText: (text) => theme.fg("accent", text),
-				description: (text) => theme.fg("muted", text),
-				scrollInfo: (text) => theme.fg("dim", text),
-				noMatch: (text) => theme.fg("warning", text),
-			},
-		);
-		const currentIndex = models.findIndex((item) => item.ref === currentRef);
-		let filteredModels = models;
-		let selectedIndex = Math.max(0, currentIndex);
-		if (currentIndex >= 0) list.setSelectedIndex(currentIndex);
+		let filteredModels = [...models];
+		let selectedIndex = Math.max(0, models.findIndex((item) => item.ref === currentRef));
 		const move = (direction: -1 | 1) => {
 			if (filteredModels.length === 0) return;
 			selectedIndex = (selectedIndex + direction + filteredModels.length) % filteredModels.length;
-			list.setSelectedIndex(selectedIndex);
 		};
-		container.addChild(list);
-		container.addChild(new Text(theme.fg("dim", [
+		const renderModels = (): string[] => {
+			if (filteredModels.length === 0) return [theme.fg("warning", "  No matching models")];
+			const maxVisible = 10;
+			const start = Math.max(0, Math.min(
+				selectedIndex - Math.floor(maxVisible / 2),
+				filteredModels.length - maxVisible,
+			));
+			const end = Math.min(start + maxVisible, filteredModels.length);
+			const lines = filteredModels.slice(start, end).map((model, offset) => {
+				const index = start + offset;
+				const details = [model.ref === currentRef ? "current" : undefined, model.name].filter(Boolean).join(" · ");
+				const label = `${index === selectedIndex ? "→" : " "} ${model.modelId}${details ? `  ${details}` : ""}`;
+				return index === selectedIndex ? theme.fg("accent", label) : label;
+			});
+			if (start > 0 || end < filteredModels.length) {
+				lines.push(theme.fg("dim", `  (${selectedIndex + 1}/${filteredModels.length})`));
+			}
+			return lines;
+		};
+		const hint = [
 			"type to filter",
 			`${key("tui.select.up", "up")}/${key("tui.select.down", "down")} navigate`,
 			`${key("tui.select.confirm", "enter")} select`,
 			`${key("tui.select.cancel", "escape")} back`,
-		].join(" · ")), 1, 0));
-		container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+		].join(" · ");
 
 		return {
-			render: (width) => container.render(width),
-			invalidate: () => container.invalidate(),
+			render: (width) => {
+				const container = new Container();
+				container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+				container.addChild(new Text(theme.fg("accent", theme.bold(`${title}: ${provider}`)), 1, 0));
+				container.addChild(new Text(theme.fg("muted", "Type any part of a model ID or name, then press Enter"), 1, 0));
+				container.addChild(input);
+				container.addChild(new Spacer(1));
+				for (const line of renderModels()) container.addChild(new Text(line, 0, 0));
+				container.addChild(new Text(theme.fg("dim", hint), 1, 0));
+				container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+				return container.render(width);
+			},
+			invalidate: () => input.invalidate?.(),
 			handleInput: (data) => {
 				if (keybindings.matches(data, "tui.select.up")) move(-1);
 				else if (keybindings.matches(data, "tui.select.down")) move(1);
 				else if (keybindings.matches(data, "tui.select.confirm") || data === "\n" || data === "\r") {
 					const model = filteredModels[selectedIndex];
-					if (model) done(`${provider}/${model.modelId}`);
+					if (model) done(model.ref);
 				} else if (keybindings.matches(data, "tui.select.cancel")) done(undefined);
 				else {
 					input.handleInput(data);
-					const filter = input.getValue();
-					list.setFilter(filter);
-					filteredModels = models.filter((model) => model.modelId.toLowerCase().startsWith(filter.toLowerCase()));
+					const query = input.getValue().trim();
+					filteredModels = query
+						? fuzzyFilter([...models], query, (model) =>
+							`${model.modelId} ${model.provider} ${model.ref}${model.name ? ` ${model.name}` : ""}`)
+						: [...models];
 					selectedIndex = 0;
 				}
 				tui.requestRender();
