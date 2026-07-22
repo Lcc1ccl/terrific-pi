@@ -1,0 +1,37 @@
+follow its instruction to read src/a.ts. Do not change files. Reply exactly SKILL_FIXTURE_OK.
+
+
+I’m reading the live-skill fixture first, then I’ll inspect the requested source file and stop without editing anything.
+
+read <fixture>/skills/live-skill/SKILL.md:1-400
+
+---
+name: live-skill
+description: Read-only fixture skill for validating presentation Skill entries.
+---
+
+# Live Skill
+
+For this fixture, read `src/a.ts` with the `read` tool before responding. Do not change files.
+
+✓ Skill(live-skill) · loaded
+  SKILL.md
+
+I have the fixture instructions; next I’m reading src/a.ts exactly as required and will then return the requested fixed
+response.
+
+read <fixture>/workspace/src/a.ts:1-400
+
+export const alpha = "alpha";
+export const render = () => alpha;
+
+◆ Explored · read src/a.ts · 1ms
+  read src/a.ts
+
+SKILL_FIXTURE_OK
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+<fixture>/workspace
+↑1.5k ↓156 R31k CH94.4% $0.004 2.7%/400k (auto)                                          (openai) gpt-5.4-mini • minimal

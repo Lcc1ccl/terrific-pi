@@ -1,0 +1,21 @@
+its instruction to read src/a.ts. Do not change files. Reply exactly
+SKILL_FIXTURE_OK.
+
+
+I’m reading the live-skill fixture first, then I’ll inspect the requested source
+file and stop without editing anything.
+
+✓ Skill(live-skill) · loaded · ctrl+o to expand
+
+I have the fixture instructions; next I’m reading src/a.ts exactly as required
+and will then return the requested fixed response.
+
+◆ Explored · read src/a.ts · 1ms · ctrl+o to expand
+
+SKILL_FIXTURE_OK
+
+────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────
+<fixture>/workspace
+↑1.5k ↓156 R31k CH94.4% $0.004 2.7%/400k (auto)  (openai) gpt-5.4-mini • minimal

@@ -67,9 +67,17 @@ describe("auxiliary extension registration", () => {
 		assert.equal(entries[0]!.type, "terrific-pi:auxiliary-usage-v1");
 		assert.deepEqual((entries[0]!.data as { task: string; usage: { totalTokens: number } }).task, "vision");
 		assert.equal((entries[0]!.data as { usage: { totalTokens: number } }).usage.totalTokens, 12);
-		for (const event of ["session_start", "session_before_compact", "agent_settled", "session_shutdown"]) {
+		for (const event of ["session_start", "before_agent_start", "tool_call", "session_before_compact", "agent_settled", "session_shutdown"]) {
 			assert.equal(hooks.has(event), true, event);
 		}
+		const finalizeGate = hooks.get("tool_call")?.[0] as ((event: unknown, ctx: unknown) => Promise<unknown>) | undefined;
+		assert.deepEqual(await finalizeGate?.({ toolName: "git_finalize", toolCallId: "git-1" }, {
+			sessionManager: {
+				getBranch: () => [{
+					message: { role: "assistant", content: [{ type: "toolCall", id: "write-1" }, { type: "toolCall", id: "git-1" }] },
+				}],
+			},
+		}), { block: true, reason: "git_finalize must be the only tool call in its assistant response" });
 	});
 });
 

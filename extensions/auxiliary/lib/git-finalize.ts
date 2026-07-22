@@ -64,6 +64,50 @@ export interface GitFinalizeResult {
 	pushError?: string;
 }
 
+export interface GitFinalizeReceipt {
+	kind: "git_finalize";
+	version: 1;
+	status: GitFinalizeResult["status"];
+	commit: string;
+	requestedPush: boolean;
+	operationSatisfied: boolean;
+	upstream?: string;
+	pushError?: string;
+}
+
+export function createGitFinalizeReceipt(result: GitFinalizeResult, requestedPush: boolean): GitFinalizeReceipt {
+	return {
+		kind: "git_finalize",
+		version: 1,
+		status: result.status,
+		commit: result.commit,
+		requestedPush,
+		operationSatisfied: result.status !== "partial" && (!requestedPush || result.status === "pushed"),
+		...(result.upstream ? { upstream: result.upstream } : {}),
+		...(result.pushError ? { pushError: result.pushError } : {}),
+	};
+}
+
+/** The current assistant message is synchronized before tool_call handlers run. */
+export function hasSiblingToolCall(entries: readonly unknown[], toolCallId: string): boolean {
+	for (let index = entries.length - 1; index >= 0; index -= 1) {
+		const entry = entries[index];
+		if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+		const message = (entry as { message?: unknown }).message;
+		if (!message || typeof message !== "object" || Array.isArray(message)) continue;
+		const candidate = message as { role?: unknown; content?: unknown };
+		if (candidate.role !== "assistant" || !Array.isArray(candidate.content)) continue;
+		const ids = candidate.content.flatMap((item) => {
+			if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+			const call = item as { type?: unknown; id?: unknown };
+			return call.type === "toolCall" && typeof call.id === "string" ? [call.id] : [];
+		});
+		if (!ids.includes(toolCallId)) continue;
+		return ids.some((id) => id !== toolCallId);
+	}
+	return false;
+}
+
 interface FinalizeOptions {
 	exec: GitExec;
 	cwd: string;

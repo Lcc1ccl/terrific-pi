@@ -24,8 +24,6 @@ AGENT_WHITELIST=(
 	statusline.json
 	AGENTS.md
 	terrific.json
-	extensions/pi-tool-display/config.json
-	extensions/pi-compact-transcript/config.json
 )
 GENERATED_AGENT_FILES=(
 	auth.template.json

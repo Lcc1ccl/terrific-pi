@@ -120,6 +120,24 @@ for package in data["packages"]:
 PY
 }
 
+read_retired_external_packages() {
+	local root="$1"
+	local required="$root/agent/required-external-packages.json"
+	[[ -f "$required" ]] || return 0
+	python3 - "$required" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path, encoding="utf-8"))
+retired = data.get("retiredPackages", [])
+if not isinstance(retired, list):
+    raise SystemExit("retiredPackages must be an array when present")
+for package in retired:
+    if not isinstance(package, str) or not package.strip():
+        raise SystemExit("retired package entries must be non-empty strings")
+    print(package)
+PY
+}
+
 read_skills() {
 	local root="$1"
 	local -a from_manifest=()
@@ -139,6 +157,7 @@ merge_packages() {
 	shift
 	local -a local_packages=()
 	local -a external_packages=()
+	local -a retired_packages=()
 	local target="local"
 	local item
 	for item in "$@"; do
@@ -146,20 +165,29 @@ merge_packages() {
 			target="external"
 			continue
 		fi
-		if [[ "$target" == "local" ]]; then local_packages+=("$item"); else external_packages+=("$item"); fi
+		if [[ "$item" == "--retired" ]]; then
+			target="retired"
+			continue
+		fi
+		if [[ "$target" == "local" ]]; then local_packages+=("$item")
+		elif [[ "$target" == "external" ]]; then external_packages+=("$item")
+		else retired_packages+=("$item")
+		fi
 	done
 	mkdir -p "$(dirname "$settings")"
 	if [[ ! -f "$settings" ]]; then
 		printf '%s\n' '{' '  "packages": []' '}' >"$settings"
 	fi
-	python3 - "$settings" "${local_packages[@]}" --external "${external_packages[@]}" <<'PY'
+	python3 - "$settings" "${local_packages[@]}" --external "${external_packages[@]}" --retired "${retired_packages[@]}" <<'PY'
 import json, sys
 from pathlib import Path
 path = Path(sys.argv[1])
 args = sys.argv[2:]
-separator = args.index("--external")
-local_packages = args[:separator]
-external_packages = args[separator + 1:]
+external_separator = args.index("--external")
+retired_separator = args.index("--retired")
+local_packages = args[:external_separator]
+external_packages = args[external_separator + 1:retired_separator]
+retired_packages = args[retired_separator + 1:]
 data = json.loads(path.read_text(encoding="utf-8"))
 if not isinstance(data, dict):
     raise SystemExit("settings.json must be an object")
@@ -176,7 +204,7 @@ def external_identity(value: str) -> str:
         return value
     return value.rsplit("@", 1)[0] if "@" in value else value
 
-external_identities = {external_identity(value) for value in external_packages}
+external_identities = {external_identity(value) for value in [*external_packages, *retired_packages]}
 kept = []
 for item in pkgs:
     if not isinstance(item, str):
@@ -193,7 +221,7 @@ for item in [*local_packages, *external_packages]:
         kept.append(item)
 data["packages"] = kept
 path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-print(f"updated packages ({len(local_packages)} local, {len(external_packages)} external) -> {path}")
+print(f"updated packages ({len(local_packages)} local, {len(external_packages)} external, {len(retired_packages)} retired) -> {path}")
 PY
 }
 
@@ -356,6 +384,7 @@ main() {
 	mapfile -t PACKAGES < <(read_packages "$src")
 	[[ ${#PACKAGES[@]} -gt 0 ]] || die "no packages discovered in $src"
 	mapfile -t EXTERNAL_PACKAGES < <(read_external_packages "$src")
+	mapfile -t RETIRED_EXTERNAL_PACKAGES < <(read_retired_external_packages "$src")
 	mapfile -t SKILLS < <(read_skills "$src")
 
 	mkdir -p "$PI_HOME/vendor"
@@ -400,10 +429,10 @@ main() {
 	if [[ "$RESTORE" == "1" ]]; then
 		# Full agent snapshot restore first; then ensure terrific-pi packages still merged.
 		install_snapshot_agent "$src"
-		merge_packages "$AGENT_DIR/settings.json" "${PACKAGES[@]}" --external "${EXTERNAL_PACKAGES[@]}"
+		merge_packages "$AGENT_DIR/settings.json" "${PACKAGES[@]}" --external "${EXTERNAL_PACKAGES[@]}" --retired "${RETIRED_EXTERNAL_PACKAGES[@]}"
 	else
 		# Mild path: merge packages, seed templates + missing snapshot files only.
-		merge_packages "$AGENT_DIR/settings.json" "${PACKAGES[@]}" --external "${EXTERNAL_PACKAGES[@]}"
+		merge_packages "$AGENT_DIR/settings.json" "${PACKAGES[@]}" --external "${EXTERNAL_PACKAGES[@]}" --retired "${RETIRED_EXTERNAL_PACKAGES[@]}"
 		install_templates "$src"
 		install_snapshot_agent "$src"
 	fi

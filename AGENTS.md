@@ -1,20 +1,52 @@
 # terrific-pi AGENTS.md
 
-本文件约束在 **terrific-pi** 仓库内的插件开发、提交与离线打包行为。  
+本文件约束整个 **terrific-pi monorepo** 的开发、编排、迁移、提交与离线发布行为。
 优先级：本文件 > 全局 `~/.pi/agent/AGENTS.md` > 默认习惯。  
 默认语言：简体中文；代码、路径、命令、标识符用英文。
 
-## 仓库定位
+## 仓库定位与设计边界
 
-- 路径：通常为 `~/.pi/vendor/terrific-pi`（由 `settings.json` 相对路径引用）
-- 内容：
-  - 可公开 pi packages：`extensions/`
-  - 可迁移 skills：`skills/`（安装到 `~/.agents/skills`）
-  - 非密钥配置快照：`snapshot/agent/`
-  - 配置模板：`agent/`
-  - 离线脚本：`scripts/{snapshot,pack,install}.sh`
-- **禁止**入库：真实 `auth.json` 密钥、token、session 日志、本机私密路径硬编码
-- **允许**入库：经消毒的 `models.json` / `settings.json` / `statusline.json` / `AGENTS.md`，以及 **空 key** 的 `auth.template.json`（见 `snapshot/README.md`）
+terrific-pi 是**个性化 Pi 的增强组件 monorepo**：在一个 Git、治理、迁移和离线发布边界中，维护多个独立 pi package、agent/skill 资源、跨包 workflows 与无密钥配置。它不是单一运行时大包，也不是为了共享依赖而建立的 Node workspace。
+
+- 路径通常为 `~/.pi/vendor/terrific-pi`，由 `settings.json` 使用相对 package path 引用。
+- 每个 `extensions/<name>/` 独立加载、测试和发布；根仓只统一治理与打包，不制造跨插件隐式运行时耦合。
+- package 私有的 agents/chains/skills 跟随该 package；只有跨 package 编排才进入根 `workflows/`。
+- **禁止**入库或打包：真实 `auth.json`、token、session JSONL、trust、subagent 运行态、worktree、本机私密路径和任何密钥。
+- **允许**入库：手写公开模板、经消毒的 snapshot，以及 **空 key** 的 `auth.template.json`（见 `snapshot/README.md`）。
+
+### 真源优先级
+
+1. 运行行为：当前代码 + 测试。
+2. 仓库治理与目录边界：根 `AGENTS.md`。
+3. 当前能力清单与加载关系：`README.md` + `docs/CAPABILITIES.md`。
+4. 历史动机与防复发经验：`docs/SESSION_LESSONS.md`。
+5. `docs/plans/` 只代表相应日期的设计/实施上下文；未批准或已被后续需求覆盖的计划不是现行规格。
+
+### 目录契约
+
+| 目录 | 角色 | 自身约束 |
+|------|------|----------|
+| `extensions/` | 独立 pi packages | 一插件一目录；package manifest 只暴露本包资源；私有 agents/chains/skills 留在包内 |
+| `skills/` | 可迁移的全局 Agent Skills 源 | 一技能一目录且有 `SKILL.md`；同步到 `~/.agents/skills`；不提交 cache |
+| `agent/` | 手写、可公开的 agent 配置模板与外部 package 清单 | 不是 live `~/.pi/agent`；不得放真实凭据或机器绑定状态 |
+| `workflows/` | 跨 package workflow 契约与配方 | 不自动发现；必须说明加载入口、权限、状态机、产物、验收和恢复；单包 chain 不上移 |
+| `snapshot/agent/` | 经消毒的迁移 payload | 由白名单采集；`snapshot/agent/AGENTS.md` 是安装 payload，不是本目录治理文件 |
+| `docs/` | 能力地图、历史复盘与设计记录 | 不存原始 session/密钥；明确“现状、已批准计划、历史经验”的差别 |
+| `scripts/` | snapshot/pack/install/test 生命周期 | 默认安全、可重复、失败即停；只操作声明的路径，不把 `.gitignore` 当发布 allowlist |
+| `dist/` | 可再生成的离线归档 | gitignore；默认仅保留最新 5 个；不是源码或长期档案库 |
+| `.pi-subagents/` 等 | 本地运行态 | 永不入库、永不打包，不作为发布输入 |
+
+当前不为每个顶层目录复制 `AGENTS.md`；目录约束集中在本表和下文，避免漂移。只有某目录出现确实不同且稳定的安全/发布流程时，才新增更具体的嵌套规则。
+
+### 历史会话固化的全局契约
+
+- **真实运行态优先**：HUD、badge 和文本从真实请求/事件/完成状态派生，不能用 UI toggle 冒充执行事实。
+- **单一所有权**：同一配置只保留一个真源；同一运行事实只保留一个主 renderer，其他层只做摘要或下钻。
+- **完整交付**：大改按用户要求先确认方案；获批后用原始编号做 acceptance checklist，不能只完成最显眼子项。
+- **交互一致**：全局菜单循环选择，二级 Esc 返回上级，长列表可筛选，tips 必要但低噪音，80/120/160 列纳入验收。
+- **review 与发布分离**：实现、review/fix、commit、push 是不同 checkpoint；commit 和 push 均需用户明确授权。
+
+完整证据、演进与踩坑见 `docs/SESSION_LESSONS.md`。
 
 ## 开发前：先扫再写（强制）
 
@@ -166,15 +198,16 @@ chore(scripts): ...
 
 ## 自动打包规范
 
-离线包是仓库的发布物之一；**内容以当前工作树 + extensions + skills + snapshot 为准**。
+离线包是仓库的发布物之一；内容来自当前工作树中声明的公开 monorepo payload，不读取 Git/runtime 私有状态。
 
 ### 脚本
 
 | 脚本 | 作用 |
 |------|------|
 | `scripts/snapshot.sh` | 从本机采集 agent 快照并刷新 `skills/` 源 |
-| `scripts/pack.sh` | 打包 `extensions`/`skills`/`snapshot`，生成 `dist/terrific-pi-<utc>-<sha>.tar.gz` + `MANIFEST.txt` |
+| `scripts/pack.sh` | 按 allowlist 打包 monorepo payload，生成归档与 `MANIFEST.txt`，成功后执行保留策略 |
 | `scripts/install.sh` | 离线安装 vendor + skills；`RESTORE=1` 时 1:1 还原 agent 快照 |
+| `scripts/test-install.sh` | 在临时 PI_HOME 做归档安全、保留策略与安装冒烟 |
 
 ### 何时打包
 
@@ -186,12 +219,20 @@ chore(scripts): ...
 
 默认 **不把 `dist/*.tar.gz` 提交进 git**（已 gitignore）。需要分发时拷贝文件即可。
 
+### dist 保留与清理
+
+- `./scripts/pack.sh` 仅在新归档 self-check 成功后清理，默认 `DIST_KEEP=5`。
+- 只删除同一输出目录下匹配 `terrific-pi-*.tar.gz` 的普通旧文件；本次新包与无关文件不删除。
+- `DIST_KEEP=N` 可调整数量；`DIST_KEEP=0` 仅用于一次性禁用清理。
+- 不另设 cron/systemd：`dist` 只在 pack 时增长，在成功 pack 后清理即是最小可靠周期。
+
 ### 打包要求
 
-- pack 必须发现：全部合法插件、`skills/*/SKILL.md`、`snapshot/agent/*`
-- `MANIFEST.txt` 含 `packages<<`、`skills<<`、`snapshot_agent<<` 三段
+- pack 顶层 allowlist 固定为：`.gitignore`、`AGENTS.md`、`README.md`、`agent/`、`docs/`、`extensions/`、`scripts/`、`skills/`、`snapshot/`、`workflows/`
+- pack 必须发现：全部合法插件、`skills/*/SKILL.md`、`snapshot/agent/*`，并包含根级 workflows 源
+- `MANIFEST.txt` 含 `packages<<`、`skills<<`、`workflows<<`、`snapshot_agent<<` 四段
 - 包内必须有根级 `install.sh` 与 `scripts/*.sh`
-- 排除：`.git`、`node_modules`、`dist`、`__pycache__`、密钥类文件
+- 归档 self-check 必须拒绝：`.git`、`.pi-subagents`、`node_modules`、`sessions`、`__pycache__`、`.env*`、真实 `auth.json`、`*.jsonl`、`*.pem`、`*.key` 等本地/敏感成员
 - install 必须：
   - 可无网运行（`npm:`/`git:` 包本身仍可能需网）
   - 合并而非盲写 `packages`（保留 npm:/git: 等外部项；`RESTORE=1` 先还原 snapshot 再合并 terrific-pi 项）
@@ -236,4 +277,5 @@ chore(scripts): ...
 
 - 不在本仓维护 pi 本体或第三方大包（ponytail、npm 全局依赖等）的离线镜像，除非用户另行要求
 - 不把真实密钥、sessions、trust 等私密/机器绑定运行态同步进 git（仅允许空 key 的 auth 模板）
+- 不把逻辑 monorepo 升级成根 Node workspace；只有出现真实共享构建/依赖需求时再引入根 `package.json`
 - 不为“完美架构”拆公共 monorepo 库；重复极小时代码可复制，重复变大再抽

@@ -114,6 +114,15 @@
     "enabled": true
   },
   "processView": {
-    "activityMode": "task"
+    "activityMode": "full"
+  },
+  "presentation": {
+    "enabled": true,
+    "workspace": true,
+    "systemEvents": true,
+    "artifacts": true,
+    "userMessageBox": true,
+    "compactTools": true,
+    "maxExpandedArtifacts": 16
   }
 }

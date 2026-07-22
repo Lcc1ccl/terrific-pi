@@ -1,0 +1,17 @@
+
+Use write to create fixture-output.txt with exactly one line: status=before. Then use edit to change it to exactly: status=after. Do not use other tools. After
+the tool calls, reply exactly EDIT_WRITE_FIXTURE_OK.
+
+
+
+Files 1 changed +1/-1 · M fixture-output.txt +1/-1
+
+Files 1 changed +1/-1 · M fixture-output.txt +1/-1
+
+EDIT_WRITE_FIXTURE_OK
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+<fixture>/workspace
+↑5.9k ↓75 R10k CH93.9% $0.006 1.4%/400k (auto)                                                                                   (openai) gpt-5.4-mini • minimal

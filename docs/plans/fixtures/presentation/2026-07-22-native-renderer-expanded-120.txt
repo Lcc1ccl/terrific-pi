@@ -1,0 +1,20 @@
+Pi 0.81.1 isolated TUI capture, 120 columns, Ctrl+O expanded
+
+● Model · openai/gpt-5.6-terra · thinking max · this message must stay on one collapsed line
+1970-01-01T00:00:00.001Z
+
+◆ Explored · read very/long/workspace/path/src/renderer.ts · searched 1 pattern · listed 1 directory · 3s
+  read src/renderer.ts
+  grep "render" src
+  ls tests
+
+Files 16 · git reconciled
+M very/long/workspace/path/src/feature-0.typescript +12/-3 · git
+M very/long/workspace/path/src/feature-1.typescript +12/-3 · git
+M very/long/workspace/path/src/feature-2.typescript +12/-3 · git
+M very/long/workspace/path/src/feature-3.typescript +12/-3 · git
+M very/long/workspace/path/src/feature-4.typescript +12/-3 · git
+M very/long/workspace/path/src/feature-5.typescript +12/-3 · git
+M very/long/workspace/path/src/feature-6.typescript +12/-3 · git
+M very/long/workspace/path/src/feature-7.typescript +12/-3 · git
++8 more

@@ -2,7 +2,7 @@
 
 Structured task milestones and task-scoped HUD for [pi](https://pi.dev).
 
-Process View keeps multi-step work inspectable without duplicating compact transcript tool rows:
+Process View keeps multi-step work inspectable while `presentation` owns collapsed tool history:
 
 - a compact editor-above HUD for the goal, task progress, current-step time, and blocker
 - a live task panel when Pi's native tool expansion is enabled (default `Ctrl+O`)
@@ -33,6 +33,7 @@ The extension registers one model-facing tool, `process_update`. The model uses 
 Snapshots support:
 
 - `running`, `waiting`, `blocked`, and `completed`
+- deterministic completion from a verified terminal `git_finalize` receipt: only when every prior step is done and the sole active final step is ready to commit
 - one to five outcome-oriented steps
 - a concise update, blocker, verification, and up to five artifacts
 - branch-aware restoration through `process-view-state-v1` custom entries
@@ -46,8 +47,8 @@ The Widget key is `terrific-pi:process-view` and uses Pi theme tokens. Its compa
 
 `processView.activityMode` controls runtime activity independently from task state:
 
-- `full` (default): show sanitized runtime activity in collapsed and expanded task views.
-- `task` (recommended with compact transcript): hide passive and collapsed runtime activity; expanded task panels still show it for inspection.
+- `full` (default): show aggregate runtime activity in compact task views and detailed sanitized activity in expanded task views. Compact mode intentionally shows counts/outcomes rather than duplicating native tool-row labels.
+- `task`: hide passive and collapsed runtime activity; expanded task panels still show it for inspection. Use it only when another stable activity surface is enabled.
 - `off`: hide runtime activity entirely while retaining task state.
 
 When Pi's native tool expansion is enabled, compact mode switches to a live panel with:
@@ -81,7 +82,7 @@ Outside TUI mode, bare `/process` prints the current summary and `/process clear
 - A new user request writes a tombstone before starting, so old Waiting or Blocked state cannot reappear if the new request never calls `process_update`.
 - Unfinished state from the previous request or a compaction is injected into the next provider context once, as a bounded hidden `process-view-context` message.
 - The reminder contains only title, status, steps, and blocker. It is not written to the session and may not appear as a separate item in `/context` accounting.
-- A running snapshot becomes Waiting after `agent_settled`, shutdown/reload, or recovery of a stale running entry; the extension never claims completion automatically.
+- A running snapshot becomes Waiting after `agent_settled`, shutdown/reload, or recovery of a stale running entry. The only automatic completion path is a validated `git_finalize` receipt for an eligible final process step; a partial requested push marks that step failed and keeps the task Waiting.
 - Active-step timing pauses in Waiting, Blocked, or Interrupted state, so offline time is not counted; a one-second UI tick runs only while a timed Widget is visible.
 - Finalized assistant messages add their real provider/model usage to extension-owned task telemetry; telemetry never relies on model-authored values.
 - `aborted` or `error` becomes Interrupted only if still final at `agent_settled`. Automatic retry clears the pending interruption.
@@ -92,7 +93,7 @@ Tree navigation and resume reconstruct only the selected branch. Active tool tel
 ## Integration
 
 - `statusline`: recommended configuration omits `toolActivity`; Waiting/blocked process state is still published on the `process` status key so footer `state` shows Waiting.
-- `presentation`: its file ledger owns ordinary successful file-change receipts; `process_update.artifacts` remains for tests, screenshots, URLs, commits, and reports.
+- `presentation`: its display-only native renderer owns collapsed tool rows and its file ledger projects ordinary successful file-change receipts onto one native tool row; `process_update.artifacts` remains for tests, screenshots, URLs, commits, and reports.
 - `mode`: ask/plan may remove the custom tool. Process View does not widen permissions.
 - `fast`: no provider request or header changes.
 - `context`: only the bounded one-shot lifecycle reminder described above.

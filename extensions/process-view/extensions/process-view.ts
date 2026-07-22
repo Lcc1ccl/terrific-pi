@@ -18,6 +18,7 @@ import {
 	normalizeProcessUpdate,
 	recordAssistantUsage,
 	restoreProcessState,
+	sanitizeProcessText,
 	settleSnapshot,
 	syncProcessTelemetry,
 } from "../lib/state.ts";
@@ -62,6 +63,73 @@ function processSummary(state: PersistedProcessState): string {
 	if (!snapshot) return `Process view: ${state.viewMode} · no active task`;
 	const done = snapshot.steps.filter((step) => step.status === "done").length;
 	return `Process view: ${state.viewMode} · ${snapshot.status} ${done}/${snapshot.steps.length} · ${snapshot.title}`;
+}
+
+const COMMIT_HASH = /^[0-9a-f]{7,64}$/i;
+
+interface GitFinalizeReceipt {
+	kind: "git_finalize";
+	version: 1;
+	status: "committed" | "pushed" | "partial";
+	commit: string;
+	requestedPush: boolean;
+	operationSatisfied: boolean;
+	pushError?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isGitFinalizeReceipt(value: unknown): value is GitFinalizeReceipt {
+	if (!isRecord(value)
+		|| value.kind !== "git_finalize"
+		|| value.version !== 1
+		|| (value.status !== "committed" && value.status !== "pushed" && value.status !== "partial")
+		|| typeof value.commit !== "string"
+		|| !COMMIT_HASH.test(value.commit)
+		|| typeof value.requestedPush !== "boolean"
+		|| typeof value.operationSatisfied !== "boolean") return false;
+	if (value.status === "partial") return value.operationSatisfied === false;
+	return value.operationSatisfied === true;
+}
+
+function gitFinalizeEligible(snapshot: ProcessSnapshot | undefined): snapshot is ProcessSnapshot {
+	if (!snapshot || snapshot.status !== "running") return false;
+	const active = snapshot.steps.findIndex((step) => step.status === "active");
+	return active === snapshot.steps.length - 1 && snapshot.steps.slice(0, -1).every((step) => step.status === "done");
+}
+
+function gitArtifact(snapshot: ProcessSnapshot, commit: string) {
+	const short = commit.slice(0, 12);
+	const existing = snapshot.artifacts.filter((artifact) => artifact.kind !== "commit" || artifact.ref !== commit);
+	return [...existing, { kind: "commit" as const, label: `Committed ${short}`, ref: commit }].slice(-5);
+}
+
+function completeFromGit(snapshot: ProcessSnapshot, receipt: GitFinalizeReceipt, now: number): ProcessSnapshot {
+	const short = receipt.commit.slice(0, 12);
+	return {
+		...snapshot,
+		status: "completed",
+		steps: snapshot.steps.map((step) => ({ ...step, status: "done" as const })),
+		update: `Committed ${short}`,
+		artifacts: gitArtifact(snapshot, receipt.commit),
+		updatedAt: now,
+	};
+}
+
+function partialFromGit(snapshot: ProcessSnapshot, receipt: GitFinalizeReceipt, now: number): ProcessSnapshot {
+	const short = receipt.commit.slice(0, 12);
+	const pushError = receipt.pushError ? sanitizeProcessText(receipt.pushError).slice(0, 160) : "";
+	const active = snapshot.steps.findIndex((step) => step.status === "active");
+	return {
+		...snapshot,
+		status: "waiting",
+		steps: snapshot.steps.map((step, index) => index === active ? { ...step, status: "failed" as const } : { ...step }),
+		update: `Committed ${short}; push failed${pushError ? `: ${pushError}` : ""}`,
+		artifacts: gitArtifact(snapshot, receipt.commit),
+		updatedAt: now,
+	};
 }
 
 export default function processView(pi: ExtensionAPI) {
@@ -462,6 +530,30 @@ export default function processView(pi: ExtensionAPI) {
 			recordAssistantUsage(telemetry, state.snapshot, event.message),
 		);
 		telemetryDirty = true;
+		refreshWidget(ctx);
+	});
+
+	pi.on("tool_call", async (event) => {
+		if (event.toolName !== "git_finalize" || !state.snapshot || state.snapshot.status !== "running") return;
+		if (!gitFinalizeEligible(state.snapshot)) {
+			return { block: true, reason: "git_finalize can complete Process View only when its final active step is ready to commit" };
+		}
+	});
+
+	pi.on("tool_result", async (event, ctx) => {
+		if (event.toolName !== "git_finalize" || event.isError || !isGitFinalizeReceipt(event.details)) return;
+		const snapshot = state.snapshot;
+		if (!gitFinalizeEligible(snapshot)) return;
+		const now = Date.now();
+		const nextSnapshot = event.details.status === "partial"
+			? partialFromGit(snapshot, event.details, now)
+			: completeFromGit(snapshot, event.details, now);
+		const next = createPersistedState(
+			nextSnapshot,
+			state.viewMode,
+			syncProcessTelemetry(snapshot, state.telemetry, nextSnapshot, now),
+		);
+		if (!appendSystemState(next, ctx)) state = next;
 		refreshWidget(ctx);
 	});
 

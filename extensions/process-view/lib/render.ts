@@ -74,13 +74,11 @@ function formatOutcome(outcome: RecentToolOutcome): string {
 
 function formatActivity(activity: ActivitySnapshot): { text?: string; active: boolean } {
 	if (activity.activeTools.length > 0) {
-		const shown = activity.activeTools.slice(0, 2).map(formatTool);
-		const remaining = activity.activeTools.length - shown.length;
-		if (remaining > 0) shown.push(`+${remaining} tool${remaining === 1 ? "" : "s"}`);
-		return { text: shown.join(" · "), active: true };
+		const count = activity.activeTools.length;
+		return { text: `Running ${count} tool${count === 1 ? "" : "s"}`, active: true };
 	}
 	return {
-		...(activity.recentOutcome ? { text: formatOutcome(activity.recentOutcome) } : {}),
+		...(activity.recentOutcome ? { text: activity.recentOutcome.isError ? "Latest tool failed" : "Latest tool finished" } : {}),
 		active: false,
 	};
 }

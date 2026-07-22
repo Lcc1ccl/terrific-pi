@@ -4,14 +4,10 @@
     "fast",
     "path",
     "branch",
-    "branchDiff",
     "contextBar",
-    "tokens",
     "cost",
     "cache",
-    "session",
     "mode",
-    "environment",
     "progress",
     "state",
     "duration"
@@ -22,8 +18,5 @@
   "contextBarWidth": 8,
   "minimal": false,
   "separator": "dot",
-  "spacing": 1,
-  "widgetGroups": {
-    "progress": "environment"
-  }
+  "spacing": 1
 }

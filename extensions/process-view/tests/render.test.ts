@@ -135,7 +135,8 @@ describe("formatProcessLines", () => {
 		const lines = formatProcessLines(state(), 120, plainTheme);
 		assert.match(lines[0] ?? "", /Update reward configuration.*1\/4.*Apply changes.*1m05s/);
 		assert.doesNotMatch(lines.join("\n"), /✓ Inspect naming.*○ Validate workbook/);
-		assert.match(lines[1] ?? "", /edit Bonus_Config\.xlsx.*bash.*\+1 tool/);
+		assert.match(lines[1] ?? "", /Running 3 tools/);
+		assert.doesNotMatch(lines[1] ?? "", /Bonus_Config\.xlsx|\bbash\b/);
 		assert.match(lines[2] ?? "", /Update: Located the conflicting configuration/);
 	});
 
@@ -218,7 +219,7 @@ describe("formatProcessLines", () => {
 				recentOutcome: { toolName: "edit", label: "a.ts", isError: false, finishedAt: 1 },
 			},
 		}), 100, plainTheme).join("\n");
-		assert.match(success, /✓ edit a\.ts/);
+		assert.match(success, /Latest tool finished/);
 
 		const failure = formatProcessLines(state({
 			activity: {
@@ -227,7 +228,7 @@ describe("formatProcessLines", () => {
 				recentOutcome: { toolName: "bash", label: "bash", isError: true, finishedAt: 1 },
 			},
 		}), 72, plainTheme).join("\n");
-		assert.match(failure, /! bash/);
+		assert.match(failure, /Latest tool failed/);
 	});
 
 	it("pins the detail panel in full mode", () => {

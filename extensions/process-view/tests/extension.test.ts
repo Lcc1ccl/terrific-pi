@@ -287,6 +287,84 @@ describe("process-view registration and tool", () => {
 		assert.deepEqual(harness.entries, []);
 	});
 
+	it("completes an eligible final step from a verified git finalize receipt", async () => {
+		const harness = createHarness();
+		await execute(harness, {
+			title: "Release presentation",
+			status: "running",
+			steps: [
+				{ text: "Implement", status: "done" },
+				{ text: "Verify", status: "done" },
+				{ text: "Commit", status: "active" },
+			],
+			update: "Ready to commit",
+		});
+		assert.equal(await harness.emit("tool_call", { toolName: "git_finalize", toolCallId: "git-1", input: {} }), undefined);
+		await harness.emit("tool_result", {
+			toolName: "git_finalize",
+			toolCallId: "git-1",
+			input: {},
+			content: [{ type: "text", text: "Committed abcdef123456" }],
+			isError: false,
+			details: {
+				kind: "git_finalize",
+				version: 1,
+				status: "committed",
+				commit: "abcdef123456",
+				requestedPush: false,
+				operationSatisfied: true,
+			},
+		});
+		const snapshot = latestSnapshot(harness.entries)!;
+		assert.equal(snapshot.status, "completed");
+		assert.deepEqual(snapshot.steps.map((step) => step.status), ["done", "done", "done"]);
+		assert.match(snapshot.update ?? "", /Committed abcdef123456/);
+		assert.deepEqual(snapshot.artifacts, [{ kind: "commit", label: "Committed abcdef123456", ref: "abcdef123456" }]);
+	});
+
+	it("keeps the task waiting when a requested push only partially succeeds", async () => {
+		const harness = createHarness();
+		await execute(harness, {
+			title: "Release presentation",
+			status: "running",
+			steps: [
+				{ text: "Implement", status: "done" },
+				{ text: "Verify", status: "done" },
+				{ text: "Push", status: "active" },
+			],
+			update: "Ready to push",
+		});
+		await harness.emit("tool_result", {
+			toolName: "git_finalize",
+			toolCallId: "git-1",
+			input: {},
+			content: [{ type: "text", text: "Committed abcdef123456; push failed" }],
+			isError: false,
+			details: {
+				kind: "git_finalize",
+				version: 1,
+				status: "partial",
+				commit: "abcdef123456",
+				requestedPush: true,
+				operationSatisfied: false,
+				pushError: "offline",
+			},
+		});
+		const snapshot = latestSnapshot(harness.entries)!;
+		assert.equal(snapshot.status, "waiting");
+		assert.equal(snapshot.steps.at(-1)?.status, "failed");
+		assert.match(snapshot.update ?? "", /push failed: offline/);
+	});
+
+	it("blocks git finalize before the final process step is ready", async () => {
+		const harness = createHarness();
+		await execute(harness);
+		assert.deepEqual(
+			await harness.emit("tool_call", { toolName: "git_finalize", toolCallId: "git-1", input: {} }),
+			{ block: true, reason: "git_finalize can complete Process View only when its final active step is ready to commit" },
+		);
+	});
+
 	it("returns a tool result even when Widget rendering fails", async () => {
 		const harness = createHarness({ throwWidget: true });
 		const result = await execute(harness);
@@ -607,9 +685,9 @@ describe("commands and passive telemetry", () => {
 		await harness.emit("message_update", { assistantMessageEvent: { type: "thinking_delta", delta: "private" } });
 		await harness.emit("tool_execution_start", { toolCallId: "read-1", toolName: "read", args: { path: "a.ts" } });
 		assert.ok(harness.renderRequests > before);
-		assert.match(harness.currentWidget.render(100).join("\n"), /read a\.ts/);
+		assert.match(harness.currentWidget.render(100).join("\n"), /Running 1 tool/);
 		await harness.emit("tool_execution_end", { toolCallId: "read-1", toolName: "read", isError: false, result: { secret: true } });
-		assert.match(harness.currentWidget.render(100).join("\n"), /✓ read a\.ts/);
+		assert.match(harness.currentWidget.render(100).join("\n"), /Latest tool finished/);
 	});
 
 	it("pauses running telemetry and cleans UI state on shutdown", async () => {

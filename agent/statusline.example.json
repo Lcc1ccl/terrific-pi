@@ -4,12 +4,10 @@
     "model",
     "fast",
     "mode",
-    "tokens",
     "cache",
     "cost",
     "contextBar",
     "branch",
-    "branchDiff",
     "progress",
     "state",
     "duration"

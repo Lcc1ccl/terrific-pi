@@ -105,8 +105,10 @@ Most routes expose `maxOutputTokens` and `maxRetries`. Compression and BTW do no
 4. Confirms the exact branch, message, and push action.
 5. Rechecks a SHA-256 fingerprint over full staged blob IDs before commit.
 6. Uses normal `git push --porcelain` only when an upstream already exists.
+7. Must be the only tool call in its assistant response. A successful local commit locks further tool calls for that turn but permits the final assistant result.
+8. Returns a versioned `git_finalize@1` receipt so Process View can complete only an eligible terminal commit step.
 
-It never stages files, creates an upstream, force pushes, pushes tags, or rebases. A successful local commit is retained and reported if push fails.
+It never stages files, creates an upstream, force pushes, pushes tags, or rebases. A successful local commit is retained and reported if push fails; a requested push failure remains a partial operation, not task completion.
 
 ## Usage And Visibility
 

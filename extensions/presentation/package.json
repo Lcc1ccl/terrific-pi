@@ -1,0 +1,27 @@
+{
+  "name": "presentation",
+  "version": "0.1.0",
+  "description": "Low-noise Pi transcript compatibility renderer and file receipts",
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "presentation", "transcript"],
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./extensions/presentation.ts"]
+  },
+  "scripts": {
+    "test": "node --test --experimental-strip-types tests/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "check": "npm run typecheck && npm test"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.81.1",
+    "@earendil-works/pi-tui": "0.81.1",
+    "@types/node": "^26.0.0",
+    "typescript": "^6.0.3"
+  },
+  "files": ["extensions", "lib", "package.json", "README.md", "tsconfig.json"]
+}

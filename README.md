@@ -1,6 +1,6 @@
 # terrific-pi
 
-个性化 [pi](https://pi.dev) agent 配置仓库：插件（extensions）、技能（skills）、配置快照（snapshot）与离线迁移包。
+个性化 [pi](https://pi.dev) 增强组件 monorepo：统一维护独立插件、package 内 agents/chains、可迁移 skills、agent 配置、跨包 workflows、无密钥快照与离线发布物。
 
 ## 目录结构
 
@@ -14,20 +14,30 @@ terrific-pi/
 │   ├── mode/            # /mode 工具权限模式
 │   ├── btw/             # /btw 旁路问答
 │   ├── process-view/    # 结构化任务里程碑与等待/阻塞 HUD
+│   ├── presentation/    # 受控原生渲染、系统条与文件变更回执
 │   ├── docsflow/        # 项目文档流水线 (/docsflow)
 │   └── model-profile/   # 常用 model+thinking 短列表 (/profile)
 ├── skills/              # Agent skills（安装到 ~/.agents/skills）
 │   └── pi-provider-sync # 自定义 provider /models 同步与 vision 字段补全
 ├── snapshot/            # 可迁移本机配置快照（无密钥）
 │   └── agent/           # -> ~/.pi/agent/
-├── agent/               # 可公开配置模板（勿提交密钥）
+├── agent/               # 可公开 agent 配置模板与外部 package 清单
+├── workflows/           # 跨 package workflow 契约与配方
+├── docs/                # 能力地图、历史复盘与已批准设计
 ├── scripts/
 │   ├── snapshot.sh      # 从本机采集 snapshot + 刷新 skills 源
-│   ├── pack.sh          # 打离线包（extensions + skills + snapshot）
-│   └── install.sh       # 离线安装 / 合并 packages / 还原技能与快照
-├── workflows/           # 工作流与自动化（待补充）
-└── dist/                # pack 产出（gitignore）
+│   ├── pack.sh          # allowlist 打包 + 成功后保留最新 5 个
+│   ├── install.sh       # 离线安装 / 合并 packages / 还原技能与快照
+│   └── test-install.sh  # 归档与安装冒烟
+└── dist/                # 可再生成的 pack 产出（gitignore）
 ```
+
+## Monorepo 边界
+
+- 根仓统一 Git、治理、迁移与离线发布；`extensions/<name>` 仍是独立可安装、可测试的 pi package。
+- 单个 package 自有的 `agents/`、`chains/`、`skills/` 留在包内并由 manifest 暴露；根 `workflows/` 只放跨 package 编排。
+- `agent/` 是公开模板，`snapshot/agent/` 是经消毒的迁移 payload，live `~/.pi/agent` 与 sessions 不属于仓库。
+- 根 `workflows/` 不会因存在于仓库而被 Pi 自动发现，加载入口见 [`workflows/README.md`](./workflows/README.md)。
 
 ## 已收录插件
 
@@ -40,6 +50,7 @@ terrific-pi/
 | mode | `extensions/mode` | `/mode ask\|plan\|edit\|auto\|config` 工具权限模式与全局默认管理；status key `mode` |
 | btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话）；`status`/`config` 与单次 `context=none` |
 | process-view | `extensions/process-view` | `process_update` 结构化任务里程碑、步骤计时、等待/阻塞与验证；`/process` 管理视图、展开、确认清除与新会话默认模式 |
+| presentation | `extensions/presentation` | 受控 native render compatibility、用户边框、运行中探索/Skill 身份、单一安全失败行、请求级文件回执与最终答案契约；`/presentation` 管理开关 |
 | docsflow | `extensions/docsflow` | 项目文档流水线：research→product→interface→delivery；裸命令管理器、阶段 model/thinking/timeout 覆盖；默认写 `./docsflow/`，可选 Obsidian vault |
 | model-profile | `extensions/model-profile` | 常用 3–5 套 model+thinking 短列表；`/profile` 快速应用、全局 CRUD、可信项目覆盖编辑、热键、冷启动短列表 |
 
@@ -62,7 +73,9 @@ cd ~/.pi/vendor/terrific-pi   # 或本仓库路径
 # -> dist/terrific-pi-<utc>-<sha>.tar.gz
 ```
 
-`MANIFEST.txt` 记录 `git_sha`；若打包时工作树尚有未提交修改，也会标记 `git_dirty=true`。
+`MANIFEST.txt` 记录 `git_sha`、packages、skills、workflows 与 snapshot；若打包时工作树尚有未提交修改，也会标记 `git_dirty=true`。
+
+成功打包后默认只保留同一输出目录最新 5 个 `terrific-pi-*.tar.gz`。可用 `DIST_KEEP=N` 调整，或用 `DIST_KEEP=0` 单次禁用清理；无关文件不会被删除。
 
 把 `dist/terrific-pi-*.tar.gz` 拷到目标机器。
 
@@ -78,12 +91,12 @@ FORCE=1 RESTORE=1 ./install.sh
 效果：
 - 安装/覆盖 `~/.pi/vendor/terrific-pi`
 - 同步技能到 `~/.agents/skills/<name>`
-- 用 `snapshot/agent/*` **覆盖**写入 `~/.pi/agent/`（models/settings/statusline/AGENTS、`terrific.json` 与 nested renderer config 等）
+- 用 `snapshot/agent/*` **覆盖**写入 `~/.pi/agent/`（models/settings/statusline/AGENTS、`terrific.json` 等无密钥配置）
 - 生成/合并 `~/.pi/agent/auth.json`：**只带 provider 结构，key 为空**（已有非空 key 绝不会被覆盖）
 
 迁移后只需：
 1. 编辑 `~/.pi/agent/auth.json`，把各 provider 的 `key` 填上
-2. 若 settings 含 `npm:` / `git:` 包，需联网由 pi 拉取一次；当前两个 renderer fork 为 private GitHub repo，目标机还需可用的 GitHub SSH 访问
+2. 若 settings 含其他 `npm:` / `git:` 包，首次启动仍可能需要联网拉取；presentation 本身不依赖外部 renderer fork
 3. 直接启动 pi（必要时 `/model` 确认模型）
 
 ### C. 目标机器：温和安装（不覆盖已有 agent 配置）
@@ -93,7 +106,7 @@ FORCE=1 RESTORE=1 ./install.sh
 # 或 FORCE=1 ./install.sh  # 仅强制替换 vendor 树
 ```
 
-- packages：合并进 `settings.json`（保留 npm:/git:）
+- packages：合并进 `settings.json`（保留无关 npm:/git:，并清理已废弃的 renderer fork pin）
 - skills：始终从包同步
 - snapshot agent 文件：仅 seed 缺失项
 
@@ -113,8 +126,6 @@ FORCE=1 RESTORE=1 ./install.sh
 "git:github.com/nicobailon/pi-subagents@bd32df2cc1a951b588f6f93f67f3b9adac406303" # detached runner TypeBox 修复
 "npm:pi-web-access@0.13.0"        # 可选：固定 web tools
 "npm:pi-vision-handoff@0.8.1"     # 可选：固定 vision handoff
-"git:git@github.com:Lcc1ccl/pi-tool-display@8dd8fcaa7a3307abac5ee05f735615d4eae394b1"
-"git:git@github.com:Lcc1ccl/pi-compact-transcript@1bad0d81c38ca0821710e466a8e76928bdc326ef"
 "../vendor/terrific-pi/extensions/statusline"
 "../vendor/terrific-pi/extensions/fast"
 "../vendor/terrific-pi/extensions/context"
@@ -122,6 +133,7 @@ FORCE=1 RESTORE=1 ./install.sh
 "../vendor/terrific-pi/extensions/mode"
 "../vendor/terrific-pi/extensions/btw"
 "../vendor/terrific-pi/extensions/process-view"
+"../vendor/terrific-pi/extensions/presentation"
 "../vendor/terrific-pi/extensions/docsflow"
 "../vendor/terrific-pi/extensions/model-profile"
 ```
@@ -137,8 +149,9 @@ FORCE=1 RESTORE=1 ./install.sh
 ## 能力全景与插件决策
 
 - 全盘能力、调用入口、协作关系、插件「为何新建」账本：[`docs/CAPABILITIES.md`](./docs/CAPABILITIES.md)
+- 62 个顶层 session 的历史复盘、踩坑和长期契约：[`docs/SESSION_LESSONS.md`](./docs/SESSION_LESSONS.md)
+- 跨 package workflow 归属与加载边界：[`workflows/README.md`](./workflows/README.md)
 - 单特性设计/实施计划：[`docs/plans/`](./docs/plans/)
-- model-profile 设计说明：[`docs/plans/2026-07-20-model-profile-plan.md`](./docs/plans/2026-07-20-model-profile-plan.md)
 
 ## 开发约定
 

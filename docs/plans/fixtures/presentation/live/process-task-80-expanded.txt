@@ -1,0 +1,24 @@
+
+● Running · 0/1 Live process fixture
+● Validate process presentation · 0s
+Update: Live process is active.
+Runtime: openai/gpt-5.4-mini · 1 turn · ↑5.3k ↓46 · R0 W0 · $0.004
+
+PROCESS_FIXTURE_OK
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Process View · Waiting · 0/1 · Live process fixture                          │
+│ Time: total 1s · current 1s                                                  │
+│ Current: Validate process presentation                                       │
+├─ Tasks ──────────────────────────────────────────────────────────────────────┤
+│ ● Validate process presentation                      2 turns · ↑5.6k ↓54 · 1s│
+├─ Runtime ────────────────────────────────────────────────────────────────────┤
+│ Runtime: openai/gpt-5.4-mini · 2 turns · ↑5.6k ↓54 · R5.1k W0 · $0.005       │
+│ Update: Live process is active.                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────
+<fixture>/workspace
+↑5.6k ↓54 R5.1k CH95.3% $0.005 1.3%/400k (auto)  (openai) gpt-5.4-mini • minimal
+waiting

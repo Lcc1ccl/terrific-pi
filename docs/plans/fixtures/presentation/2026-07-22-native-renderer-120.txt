@@ -1,0 +1,7 @@
+Pi 0.81.1 isolated TUI capture, 120 columns, collapsed
+
+● Model · openai/gpt-5.6-terra · thinking max · this message must stay on one collapsed line
+
+◆ Explored · read very/long/workspace/path/src/renderer.ts · searched 1 pattern · listed 1 directory · 3s
+
+Files 16 changed +192/-48 · M very/long/workspace/path/src/feature-0.typescript +12/-3 · M very/long/workspace/path/src…

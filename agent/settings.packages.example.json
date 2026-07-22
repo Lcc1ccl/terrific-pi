@@ -9,9 +9,8 @@
     "../vendor/terrific-pi/extensions/auxiliary",
     "../vendor/terrific-pi/extensions/mode",
     "../vendor/terrific-pi/extensions/btw",
-    "git:git@github.com:Lcc1ccl/pi-tool-display@8dd8fcaa7a3307abac5ee05f735615d4eae394b1",
-    "git:git@github.com:Lcc1ccl/pi-compact-transcript@1bad0d81c38ca0821710e466a8e76928bdc326ef",
     "../vendor/terrific-pi/extensions/process-view",
+    "../vendor/terrific-pi/extensions/presentation",
     "../vendor/terrific-pi/extensions/docsflow"
   ],
   "subagents": {

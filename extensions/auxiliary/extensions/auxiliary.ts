@@ -12,7 +12,7 @@ import { Type } from "typebox";
 import { loadAuxiliaryConfig, parseModelRef, resolveAuxiliaryConfigPath, resolveTaskRoute } from "../lib/config.ts";
 import { CONFIGURABLE_AUXILIARY_TASKS, runAuxiliaryConfigTui } from "../lib/configure.ts";
 import { buildResearchRequest, delegateResearch, validateResearchOutput } from "../lib/delegation.ts";
-import { finalizeGit, GitFinalizeError } from "../lib/git-finalize.ts";
+import { createGitFinalizeReceipt, finalizeGit, GitFinalizeError, hasSiblingToolCall } from "../lib/git-finalize.ts";
 import {
 	buildCommitMessages,
 	buildSummaryMessages,
@@ -151,9 +151,33 @@ export default function auxiliary(pi: ExtensionAPI) {
 	let latestContext: ExtensionContext | undefined;
 	let runtime: AuxiliaryRuntime | undefined;
 	let titleAttempted = false;
+	let postFinalizeLocked = false;
+	let toolsBeforeFinalize: string[] | undefined;
 	const warned = new Set<string>();
 	const lastErrors = new Map<string, string>();
 	const eventUnsubscribes: Array<() => void> = [];
+
+	const restoreFinalizedTools = (): void => {
+		if (!postFinalizeLocked) return;
+		postFinalizeLocked = false;
+		const tools = toolsBeforeFinalize;
+		toolsBeforeFinalize = undefined;
+		if (!tools) return;
+		try {
+			pi.setActiveTools(tools);
+		} catch {}
+	};
+
+	const lockAfterFinalize = (): void => {
+		if (postFinalizeLocked) return;
+		postFinalizeLocked = true;
+		try {
+			toolsBeforeFinalize = pi.getActiveTools();
+			pi.setActiveTools([]);
+		} catch {
+			toolsBeforeFinalize = undefined;
+		}
+	};
 
 	const appendUsage = (entry: AuxiliaryUsageEntryV1) => {
 		if (!isAuxiliaryUsageEntry(entry)) return;
@@ -395,7 +419,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 		promptSnippet: "Finalize already staged Git changes with deterministic checks and optional normal push",
 		promptGuidelines: [
 			"Use git_finalize only when the user explicitly asks to commit, finalize, or push already staged changes.",
-			"Call git_finalize as the final action; do not emit another assistant response after it succeeds.",
+			"After a successful git_finalize, provide only the final assistant result. Do not call more tools or make further changes.",
 			"Never use git_finalize to stage files, create an upstream, force push, push tags, rebase, or select untracked files.",
 		],
 		parameters: GitFinalizeParams,
@@ -449,7 +473,11 @@ export default function auxiliary(pi: ExtensionAPI) {
 					: result.status === "pushed"
 						? `Committed and pushed ${shortHash} to ${result.upstream}`
 						: `Committed ${shortHash}`;
-				return { content: [{ type: "text", text }], details: result, terminate: true };
+				lockAfterFinalize();
+				return {
+					content: [{ type: "text", text }],
+					details: { ...result, ...createGitFinalizeReceipt(result, params.push ?? false) },
+				};
 			} catch (error) {
 				if (error instanceof GitFinalizeError) throw new Error(`${error.code}: ${error.message}`);
 				throw error;
@@ -457,7 +485,9 @@ export default function auxiliary(pi: ExtensionAPI) {
 		},
 		renderResult(result, _options, theme) {
 			const text = result.content.find((item) => item.type === "text");
-			return new Text(theme.fg("success", text?.type === "text" ? text.text : "Git finalized"), 0, 0);
+			const details = result.details as { status?: unknown } | undefined;
+			const tone = details?.status === "partial" ? "warning" : "success";
+			return new Text(theme.fg(tone, text?.type === "text" ? text.text : "Git finalized"), 0, 0);
 		},
 	});
 
@@ -531,8 +561,20 @@ export default function auxiliary(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		restoreFinalizedTools();
 		latestContext = ctx;
 		titleAttempted = titleWasAttempted(ctx);
+	});
+
+	pi.on("before_agent_start", async () => {
+		restoreFinalizedTools();
+	});
+
+	pi.on("tool_call", async (event, ctx) => {
+		if (postFinalizeLocked) return { block: true, reason: "git_finalize already committed changes; only the final assistant response is allowed" };
+		if (event.toolName === "git_finalize" && hasSiblingToolCall(ctx.sessionManager.getBranch(), event.toolCallId)) {
+			return { block: true, reason: "git_finalize must be the only tool call in its assistant response" };
+		}
 	});
 
 	pi.on("session_before_compact", async (event, ctx) => {
@@ -553,6 +595,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_settled", async (_event, ctx) => {
+		restoreFinalizedTools();
 		if (titleAttempted || pi.getSessionName()) return;
 		const seed = extractTitleSeed(ctx.sessionManager.getBranch());
 		if (!seed) return;
@@ -610,6 +653,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 	}));
 
 	pi.on("session_shutdown", async () => {
+		restoreFinalizedTools();
 		runtime?.shutdown();
 		runtime = undefined;
 		latestContext?.ui.setStatus("auxiliary", undefined);

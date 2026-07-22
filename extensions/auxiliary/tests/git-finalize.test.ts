@@ -9,7 +9,9 @@ import { describe, test } from "node:test";
 
 import {
 	GitFinalizeError,
+	createGitFinalizeReceipt,
 	finalizeGit,
+	hasSiblingToolCall,
 	inspectStagedGit,
 	type GitExec,
 } from "../lib/git-finalize.ts";
@@ -61,6 +63,32 @@ describe("staged Git inspection", () => {
 	});
 });
 
+describe("git finalize receipt", () => {
+	test("rejects a finalize call that shares its assistant message with another tool", () => {
+		assert.equal(hasSiblingToolCall([{
+			message: { role: "assistant", content: [{ type: "toolCall", id: "git-1" }] },
+		}], "git-1"), false);
+		assert.equal(hasSiblingToolCall([{
+			message: {
+				role: "assistant",
+				content: [{ type: "toolCall", id: "edit-1" }, { type: "toolCall", id: "git-1" }],
+			},
+		}], "git-1"), true);
+	});
+
+	test("marks only fully satisfied requested operations as complete", () => {
+		assert.deepEqual(createGitFinalizeReceipt({ status: "committed", commit: "abc", message: "fix: test" }, false), {
+			kind: "git_finalize",
+			version: 1,
+			status: "committed",
+			commit: "abc",
+			requestedPush: false,
+			operationSatisfied: true,
+		});
+		assert.equal(createGitFinalizeReceipt({ status: "partial", commit: "abc", message: "fix: test", pushError: "offline" }, true).operationSatisfied, false);
+	});
+});
+
 describe("finalizeGit", () => {
 	test("does not call the model when nothing is staged", async () => {
 		const cwd = repo();
@@ -101,7 +129,7 @@ describe("finalizeGit", () => {
 		}), (error: unknown) => error instanceof GitFinalizeError && error.code === "staged_changed");
 	});
 
-	test("commits staged changes with argument arrays and returns a terminating receipt", async () => {
+	test("commits staged changes with argument arrays and returns a commit result", async () => {
 		const cwd = repo();
 		const calls: string[][] = [];
 		writeFileSync(join(cwd, "file.txt"), "changed\n", "utf8");
