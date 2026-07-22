@@ -18,6 +18,5 @@
   "contextBarWidth": 10,
   "minimal": false,
   "separator": "dot",
-  "spacing": 1,
-  "toolActivityMode": "compact"
+  "spacing": 1
 }

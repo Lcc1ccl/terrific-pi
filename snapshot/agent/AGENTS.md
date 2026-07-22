@@ -47,19 +47,19 @@ Complete the current task with minimal risk, based on verifiable facts, using th
 - When appropriate for normal user-facing replies, start with `主公！`.
 
 ## WSL2 Environment rules
-- **File System Boundary**: Always execute projects, install dependencies (`npm install`, `pip install`), and run builds inside the WSL2 native ext4 filesystem (e.g., `/home/lcc/...`). Never create or work on project directories located in `/mnt/` unless explicitly requested.
+- **File System Boundary**: Always execute projects, install dependencies (`npm install`, `pip install`), and run builds inside the WSL2 native ext4 filesystem (e.g., `~/...`). Never create or work on project directories located in `/mnt/` unless explicitly requested.
 - **Port and Host Binding**: When starting dev servers, bind to `127.0.0.1` or `0.0.0.0`. Rely on localhost forwarding rather than static WSL2 VM IPs, which change dynamically.
 - **Line Endings**: Force using `LF` line endings for all created and edited text/code files to prevent shell script executor syntax errors and git CRLF conflicts.
 - **File Watching (HMR)**: Avoid using file watch components under Windows paths (`/mnt/`), as `inotify` is not supported on DrvFs. Move the directory to native ext4 if watching is required.
 - **GUI and Browsers**: Do not invoke GUI apps or browsers directly from the terminal without verified X11/Wayland configuration. Print local server URLs so the user can open them in the Windows host browser manually.
 
 ## Global skill installation
-- When the user asks to install or create a global skill, install it under `~/.agents/skills` (`/home/lcc/.agents/skills`) by default.
+- When the user asks to install or create a global skill, install it under `~/.agents/skills` (`~/.agents/skills`) by default.
 - Do not install new global skills under `~/.codex/skills` unless the user explicitly requests that path.
 
 ## Document processing Python environment
-- For Excel, Word, PowerPoint, and PDF automation, use the existing virtual environment at `/home/lcc/doc_env`.
-- Activate it with `source /home/lcc/doc_env/bin/activate`, or run tools directly with `/home/lcc/doc_env/bin/python` and `/home/lcc/doc_env/bin/pip`.
+- For Excel, Word, PowerPoint, and PDF automation, use the existing virtual environment at `~/doc_env`.
+- Activate it with `source ~/doc_env/bin/activate`, or run tools directly with `~/doc_env/bin/python` and `~/doc_env/bin/pip`.
 - Available document libraries include `pandas`, `openpyxl`, `xlsxwriter`, `python-docx`, `python-pptx`, and `pypdf`; do not recreate or reinstall the environment unless a required package is missing or the user asks.
 
 ## Workspace Mode rules

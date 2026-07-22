@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "summaryScope": "tool-turn",
+  "showThoughtTicker": false,
+  "bashPreview": "name",
+  "pathMode": "workspace-relative",
+  "preserveTools": ["process_update"],
+  "excludeFromSummary": ["process_update"]
+}

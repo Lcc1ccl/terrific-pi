@@ -1,28 +1,29 @@
 {
-  "layout": "stacked",
-  "iconMode": "plain",
   "widgets": [
-    "path",
-    "session",
     "model",
+    "fast",
+    "path",
     "branch",
     "branchDiff",
-    "mode",
-    "fast",
     "contextBar",
     "tokens",
-    "cache",
     "cost",
-    "quota",
+    "cache",
+    "session",
+    "mode",
     "environment",
-    "toolActivity",
     "progress",
-    "duration",
-    "state"
+    "state",
+    "duration"
   ],
+  "layout": "stacked",
+  "iconMode": "emoji",
   "contextMode": "used",
-  "contextBarWidth": 10,
+  "contextBarWidth": 8,
   "minimal": false,
-  "separator": "bar",
-  "spacing": 1
+  "separator": "dot",
+  "spacing": 1,
+  "widgetGroups": {
+    "progress": "environment"
+  }
 }

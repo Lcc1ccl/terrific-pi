@@ -13,7 +13,7 @@ terrific-pi/
 │   ├── auxiliary/       # task-scoped 辅助模型 runtime
 │   ├── mode/            # /mode 工具权限模式
 │   ├── btw/             # /btw 旁路问答
-│   ├── process-view/    # 结构化任务进度与实时工具 HUD
+│   ├── process-view/    # 结构化任务里程碑与等待/阻塞 HUD
 │   ├── docsflow/        # 项目文档流水线 (/docsflow)
 │   └── model-profile/   # 常用 model+thinking 短列表 (/profile)
 ├── skills/              # Agent skills（安装到 ~/.agents/skills）
@@ -39,7 +39,7 @@ terrific-pi/
 | auxiliary | `extensions/auxiliary` | task-key 辅助模型 runtime：裸 `/aux` 管理器、`/aux status`、compression/title/summary/web research/Git finalize、独立 usage 与 HUD |
 | mode | `extensions/mode` | `/mode ask\|plan\|edit\|auto\|config` 工具权限模式与全局默认管理；status key `mode` |
 | btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话）；`status`/`config` 与单次 `context=none` |
-| process-view | `extensions/process-view` | `process_update` 结构化里程碑、步骤计时与任务级 usage；`/process` 管理视图、展开、确认清除与新会话默认模式 |
+| process-view | `extensions/process-view` | `process_update` 结构化任务里程碑、步骤计时、等待/阻塞与验证；`/process` 管理视图、展开、确认清除与新会话默认模式 |
 | docsflow | `extensions/docsflow` | 项目文档流水线：research→product→interface→delivery；裸命令管理器、阶段 model/thinking/timeout 覆盖；默认写 `./docsflow/`，可选 Obsidian vault |
 | model-profile | `extensions/model-profile` | 常用 3–5 套 model+thinking 短列表；`/profile` 快速应用、全局 CRUD、可信项目覆盖编辑、热键、冷启动短列表 |
 
@@ -62,6 +62,8 @@ cd ~/.pi/vendor/terrific-pi   # 或本仓库路径
 # -> dist/terrific-pi-<utc>-<sha>.tar.gz
 ```
 
+`MANIFEST.txt` 记录 `git_sha`；若打包时工作树尚有未提交修改，也会标记 `git_dirty=true`。
+
 把 `dist/terrific-pi-*.tar.gz` 拷到目标机器。
 
 ### B. 目标机器：一比一还原（推荐迁移）
@@ -76,12 +78,12 @@ FORCE=1 RESTORE=1 ./install.sh
 效果：
 - 安装/覆盖 `~/.pi/vendor/terrific-pi`
 - 同步技能到 `~/.agents/skills/<name>`
-- 用 `snapshot/agent/*` **覆盖**写入 `~/.pi/agent/`（models/settings/statusline/AGENTS 等）
+- 用 `snapshot/agent/*` **覆盖**写入 `~/.pi/agent/`（models/settings/statusline/AGENTS、`terrific.json` 与 nested renderer config 等）
 - 生成/合并 `~/.pi/agent/auth.json`：**只带 provider 结构，key 为空**（已有非空 key 绝不会被覆盖）
 
 迁移后只需：
 1. 编辑 `~/.pi/agent/auth.json`，把各 provider 的 `key` 填上
-2. 若 settings 含 `npm:` / `git:` 包，需联网由 pi 拉取一次
+2. 若 settings 含 `npm:` / `git:` 包，需联网由 pi 拉取一次；当前两个 renderer fork 为 private GitHub repo，目标机还需可用的 GitHub SSH 访问
 3. 直接启动 pi（必要时 `/model` 确认模型）
 
 ### C. 目标机器：温和安装（不覆盖已有 agent 配置）
@@ -111,6 +113,8 @@ FORCE=1 RESTORE=1 ./install.sh
 "npm:pi-subagents@0.35.1"          # 可选：固定 web researcher
 "npm:pi-web-access@0.13.0"        # 可选：固定 web tools
 "npm:pi-vision-handoff@0.8.1"     # 可选：固定 vision handoff
+"git:git@github.com:Lcc1ccl/pi-tool-display@8dd8fcaa7a3307abac5ee05f735615d4eae394b1"
+"git:git@github.com:Lcc1ccl/pi-compact-transcript@1bad0d81c38ca0821710e466a8e76928bdc326ef"
 "../vendor/terrific-pi/extensions/statusline"
 "../vendor/terrific-pi/extensions/fast"
 "../vendor/terrific-pi/extensions/context"

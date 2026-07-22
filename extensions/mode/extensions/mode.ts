@@ -21,6 +21,32 @@ interface ModeEntryData {
 	mode: ModeName;
 }
 
+const PRESENTATION_EVENT_NAME = "terrific-pi:presentation:event-v1";
+
+function emitModePresentationEvent(pi: ExtensionAPI, mode: ModeName): boolean {
+	const event: {
+		version: 1;
+		kind: "mode";
+		source: "user";
+		tone: "info";
+		label: "Mode";
+		message: string;
+		dedupeKey: string;
+		presentationHandled?: boolean;
+	} = {
+		version: 1,
+		kind: "mode",
+		source: "user",
+		tone: "info",
+		label: "Mode",
+		message: `${modeLabel(mode)} · ${mode === "ask" || mode === "plan" ? "read-only" : "write enabled"}`,
+		dedupeKey: `mode:${mode}`,
+	};
+	const events = (pi as ExtensionAPI & { events?: { emit(name: string, value: unknown): void } }).events;
+	events?.emit(PRESENTATION_EVENT_NAME, event);
+	return event.presentationHandled === true;
+}
+
 export default function (pi: ExtensionAPI) {
 	let currentMode: ModeName = "edit";
 	let baselineTools: string[] = [];
@@ -79,7 +105,7 @@ export default function (pi: ExtensionAPI) {
 		updateStatus(ctx);
 		persist(mode, options.persist);
 
-		if (options.notify) {
+		if (options.notify && !emitModePresentationEvent(pi, mode)) {
 			const tools = pi.getActiveTools().join(", ");
 			report(ctx, `Mode: ${modeLabel(mode)} (${tools})`);
 		}

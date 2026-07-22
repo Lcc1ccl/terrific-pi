@@ -8,8 +8,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT_DIR="${1:-"$ROOT/dist"}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 GIT_SHA="unknown"
+GIT_DIRTY="unknown"
 if command -v git >/dev/null 2>&1 && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 	GIT_SHA="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+	GIT_DIRTY="false"
+	if ! git -C "$ROOT" diff --quiet || ! git -C "$ROOT" diff --cached --quiet \
+		|| [[ -n "$(git -C "$ROOT" ls-files --others --exclude-standard)" ]]; then
+		GIT_DIRTY="true"
+	fi
 fi
 NAME="terrific-pi-${STAMP}-${GIT_SHA}"
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/terrific-pi-pack.XXXXXX")"
@@ -34,7 +40,7 @@ tar -C "$ROOT" \
 	echo "name=terrific-pi"
 	echo "packed_at_utc=$STAMP"
 	echo "git_sha=$GIT_SHA"
-	echo "source_root=$ROOT"
+	echo "git_dirty=$GIT_DIRTY"
 	echo "packages<<"
 	# One package per extensions/<name>/package.json that declares pi.extensions
 	find "$STAGE/$NAME/extensions" -mindepth 2 -maxdepth 2 -name package.json 2>/dev/null | sort | while read -r pkg; do
@@ -47,6 +53,21 @@ tar -C "$ROOT" \
 		echo "../vendor/terrific-pi/extensions/$base"
 	done
 	echo ">>"
+	echo "external_packages<<"
+	if [[ -f "$STAGE/$NAME/agent/required-external-packages.json" ]]; then
+		python3 - "$STAGE/$NAME/agent/required-external-packages.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path, encoding="utf-8"))
+if not isinstance(data, dict) or not isinstance(data.get("packages"), list):
+    raise SystemExit("required-external-packages.json must contain a packages array")
+for package in data["packages"]:
+    if not isinstance(package, str) or not package.strip():
+        raise SystemExit("external package entries must be non-empty strings")
+    print(package)
+PY
+	fi
+	echo ">>"
 	echo "skills<<"
 	find "$STAGE/$NAME/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | while read -r d; do
 		base="$(basename "$d")"
@@ -58,7 +79,11 @@ tar -C "$ROOT" \
 	echo "snapshot_agent<<"
 	if [[ -d "$STAGE/$NAME/snapshot/agent" ]]; then
 		find "$STAGE/$NAME/snapshot/agent" -type f ! -name '.gitkeep' | sort | while read -r f; do
-			echo "agent/$(basename "$f")"
+			relative="${f#"$STAGE/$NAME/snapshot/agent/"}"
+			case "$relative" in
+				""|/*|./*|../*|*/../*|*/..|*//*) echo "unsafe snapshot path: $relative" >&2; exit 1 ;;
+			esac
+			echo "agent/$relative"
 		done
 	fi
 	echo ">>"

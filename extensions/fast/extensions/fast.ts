@@ -31,6 +31,7 @@ import { formatFastStatus } from "../lib/status.ts";
 const FAST_APIS = new Set(["openai-responses", "openai-codex-responses", "azure-openai-responses"]);
 const FAST_STATUS = "";
 const FAST_ENTRY_TYPE = "fast-state";
+const PRESENTATION_EVENT_NAME = "terrific-pi:presentation:event-v1";
 
 /** Pure helper — inject service_tier into a provider payload object. */
 export function injectPriority(payload: unknown): unknown | undefined {
@@ -365,6 +366,27 @@ export default function (pi: ExtensionAPI) {
 		const current = currentModel(ctx);
 		const active = isFastActive(preferred, current.api, current.modelId);
 		applyStatus(ctx, active);
+		const presentationEvent: {
+			version: 1;
+			kind: "fast";
+			source: "user";
+			tone: "success" | "warning" | "muted";
+			label: "Fast";
+			message: string;
+			dedupeKey: string;
+			presentationHandled?: boolean;
+		} = {
+			version: 1,
+			kind: "fast",
+			source: "user",
+			tone: preferred && active ? "success" : preferred ? "warning" : "muted",
+			label: "Fast",
+			message: preferred ? `ON · ${active ? "active" : "waiting for compatible GPT model"}` : "OFF",
+			dedupeKey: `fast:${preferred ? "on" : "off"}:${active ? "active" : "inactive"}`,
+		};
+		const events = (pi as ExtensionAPI & { events?: { emit(name: string, value: unknown): void } }).events;
+		events?.emit(PRESENTATION_EVENT_NAME, presentationEvent);
+		if (presentationEvent.presentationHandled) return;
 
 		if (preferred && !active) {
 			ctx.ui.notify(

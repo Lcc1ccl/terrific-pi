@@ -11,7 +11,11 @@ snapshot/
     ├── models.json
     ├── settings.json
     ├── statusline.json
-    └── AGENTS.md
+    ├── terrific.json
+    ├── AGENTS.md
+    └── extensions/
+        ├── pi-tool-display/config.json
+        └── pi-compact-transcript/config.json
 ```
 
 配套技能在仓库根 `skills/`（安装到 `~/.agents/skills/`），不放在本目录。
@@ -22,8 +26,9 @@ snapshot/
 |------|----------------|
 | `models.json`（无 apiKey） | 真实 `auth.json` 密钥 |
 | `settings.json` | `sessions/` |
-| `statusline.json` | `models-store.json`（pi 运行时刷新） |
-| `AGENTS.md` | `trust.json`（路径/机器相关） |
+| `statusline.json`、`terrific.json` | `models-store.json`（pi 运行时刷新） |
+| `extensions/pi-tool-display/config.json`、`extensions/pi-compact-transcript/config.json` | `trust.json`（路径/机器相关） |
+| `AGENTS.md` | `sessions/` |
 | `auth.template.json`（provider 结构 + **空 key**） | `*.bak*`、日志、真实 token |
 
 迁移模型：**一键还原全部非密钥配置** → 目标机只打开 `~/.pi/agent/auth.json` 填 key → 直接投用。
@@ -39,7 +44,7 @@ snapshot/
 ```
 
 默认从：
-- `~/.pi/agent/` 采集白名单文件
+- `~/.pi/agent/` 采集白名单文件（nested renderer config 保留相对目录；机器绝对 `docsflow.vaultRoot` 会被移除，`AGENTS.md` 中 `/home/<user>`/`/Users/<user>` 会改写为 `~`）
 - `~/.agents/skills/<name>/` 同步到仓库 `skills/<name>/`（仅已在 `skills/` 登记的名称）
 
 ## 还原（目标机器）
@@ -70,5 +75,5 @@ skills **始终**从包内 `skills/` 同步到本机（与 RESTORE 无关），�
 ## 迁移后手工作业（仅此）
 
 1. 编辑 `~/.pi/agent/auth.json`，填写各 provider 的 `key`
-2. 若 `settings.json` 含 `npm:` / `git:` 包，首次启动需联网拉取
+2. 若 `settings.json` 含 `npm:` / `git:` 包，首次启动需联网拉取；当前两个 renderer fork 为 private GitHub repo，目标机还需 GitHub SSH 访问
 3. 启动 pi 即可；需要时 `/model` 确认模型

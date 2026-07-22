@@ -59,6 +59,7 @@ function snapshot(overrides: Partial<ProcessSnapshot> = {}): ProcessSnapshot {
 function state(overrides: Partial<ProcessRenderState> = {}): ProcessRenderState {
 	return {
 		viewMode: "compact",
+		activityMode: "full",
 		snapshot: snapshot(),
 		telemetry: telemetry(),
 		expanded: false,
@@ -93,6 +94,7 @@ describe("formatProcessLines", () => {
 	it("renders a passive stage without inventing a structured plan", () => {
 		const lines = formatProcessLines({
 			viewMode: "compact",
+			activityMode: "full",
 			activity: { stage: "analyzing", activeTools: [] },
 			expanded: false,
 			now: NOW,
@@ -100,10 +102,33 @@ describe("formatProcessLines", () => {
 		assert.deepEqual(lines, ["● Analyzing request"]);
 		assert.deepEqual(formatProcessLines({
 			viewMode: "compact",
+			activityMode: "full",
 			activity: { stage: "settled", activeTools: [] },
 			expanded: false,
 			now: NOW,
 		}, 80, plainTheme), []);
+	});
+
+	it("suppresses duplicate activity according to activity mode", () => {
+		const activity = {
+			stage: "running_tools" as const,
+			activeTools: [{ callId: "bash-1", toolName: "bash", label: "bash private command", startedAt: NOW }],
+		};
+		assert.deepEqual(formatProcessLines({
+			viewMode: "compact",
+			activityMode: "task",
+			activity: { stage: "analyzing", activeTools: [] },
+			expanded: false,
+			now: NOW,
+		}, 80, plainTheme), []);
+
+		const taskCollapsed = formatProcessLines(state({ activityMode: "task", activity }), 100, plainTheme).join("\n");
+		assert.doesNotMatch(taskCollapsed, /bash private command/);
+		const taskExpanded = formatProcessLines(state({ activityMode: "task", activity, expanded: true }), 100, plainTheme).join("\n");
+		assert.match(taskExpanded, /Active: bash private command/);
+
+		const offExpanded = formatProcessLines(state({ activityMode: "off", activity, expanded: true }), 100, plainTheme).join("\n");
+		assert.doesNotMatch(offExpanded, /bash private command/);
 	});
 
 	it("puts the goal, task progress, current task, and elapsed time on the first compact line", () => {

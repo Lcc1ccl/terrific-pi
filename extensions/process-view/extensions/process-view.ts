@@ -1,13 +1,12 @@
 import {
 	getAgentDir,
-	keyText,
 	type ExtensionAPI,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 
 import { ActivityTracker } from "../lib/activity.ts";
-import { loadProcessViewDefault, updateProcessViewConfig } from "../lib/config.ts";
+import { loadProcessViewActivityMode, loadProcessViewDefault, updateProcessViewConfig } from "../lib/config.ts";
 import { ProcessWidget, renderToolResult } from "../lib/render.ts";
 import { selectMenu } from "../lib/select-menu.ts";
 import {
@@ -15,6 +14,7 @@ import {
 	createPersistedState,
 	createTombstone,
 	interruptSnapshot,
+	isProcessSnapshot,
 	normalizeProcessUpdate,
 	recordAssistantUsage,
 	restoreProcessState,
@@ -28,6 +28,7 @@ import {
 	PROCESS_WIDGET_KEY,
 	ProcessUpdateParams,
 	type PersistedProcessState,
+	type ProcessActivityMode,
 	type ProcessRenderState,
 	type ProcessSnapshot,
 	type ProcessTelemetry,
@@ -40,10 +41,16 @@ const PROMPT_GUIDELINES = [
 	"Call process_update only when the task starts, a step changes, work blocks, or the task completes; never use it to narrate private reasoning.",
 	"Keep process_update to at most five outcome-oriented steps and mark completed only after requested verification is actually run.",
 	"In process_update, use status waiting when paused for a subagent or external process; use blocked when user input is required.",
+	"When the presentation file ledger is active, do not repeat ordinary file artifacts in process_update; keep tests, screenshots, URLs, commits, and reports when useful.",
 ];
 
 function cloneSnapshot(snapshot: ProcessSnapshot): ProcessSnapshot {
 	return createPersistedState(snapshot, "compact").snapshot!;
+}
+
+function snapshotFingerprint(snapshot: ProcessSnapshot): string {
+	const { version, title, status, steps, update, blocker, verification, artifacts, startedAt, updatedAt } = snapshot;
+	return JSON.stringify({ version, title, status, steps, update, blocker, verification, artifacts, startedAt, updatedAt });
 }
 
 function isUnfinished(snapshot: ProcessSnapshot | undefined): snapshot is ProcessSnapshot {
@@ -57,16 +64,9 @@ function processSummary(state: PersistedProcessState): string {
 	return `Process view: ${state.viewMode} · ${snapshot.status} ${done}/${snapshot.steps.length} · ${snapshot.title}`;
 }
 
-function hiddenThinkingLabel(): string {
-	let binding = "";
-	try {
-		binding = keyText("app.thinking.toggle");
-	} catch {}
-	return binding ? `Reasoning hidden · ${binding} to inspect` : "Reasoning hidden · thinking toggle to inspect";
-}
-
 export default function processView(pi: ExtensionAPI) {
 	let state: PersistedProcessState = createPersistedState(undefined, "compact");
+	let activityMode: ProcessActivityMode = "full";
 	let control: RuntimeControlState = { requestStarted: false };
 	const activity = new ActivityTracker();
 	let widgetMounted = false;
@@ -85,6 +85,7 @@ export default function processView(pi: ExtensionAPI) {
 		} catch {}
 		return {
 			viewMode: state.viewMode,
+			activityMode,
 			...(state.snapshot ? { snapshot: state.snapshot } : {}),
 			...(state.telemetry ? { telemetry: state.telemetry } : {}),
 			activity: activity.getSnapshot(),
@@ -100,7 +101,7 @@ export default function processView(pi: ExtensionAPI) {
 				|| control.requestStarted
 				|| activity.getSnapshot().stage !== "settled";
 		}
-		return activity.getSnapshot().stage !== "settled";
+		return activityMode === "full" && activity.getSnapshot().stage !== "settled";
 	};
 
 	const notifyUiFailure = (ctx: ExtensionContext, error: unknown) => {
@@ -188,6 +189,11 @@ export default function processView(pi: ExtensionAPI) {
 		telemetryDirty = false;
 	};
 
+	const isCurrentWidgetSnapshot = (details: unknown): boolean => widgetMounted
+		&& Boolean(state.snapshot)
+		&& isProcessSnapshot(details)
+		&& snapshotFingerprint(details) === snapshotFingerprint(state.snapshot!);
+
 	const appendSystemState = (next: PersistedProcessState, ctx: ExtensionContext): boolean => {
 		try {
 			appendState(next);
@@ -200,7 +206,9 @@ export default function processView(pi: ExtensionAPI) {
 	};
 
 	const restore = (ctx: ExtensionContext) => {
-		const restored = restoreProcessState(ctx.sessionManager.getBranch(), loadProcessViewDefault(getAgentDir()));
+		const agentDir = getAgentDir();
+		activityMode = loadProcessViewActivityMode(agentDir);
+		const restored = restoreProcessState(ctx.sessionManager.getBranch(), loadProcessViewDefault(agentDir));
 		state = restored.state;
 		control = { requestStarted: false };
 		activity.reset();
@@ -269,7 +277,12 @@ export default function processView(pi: ExtensionAPI) {
 		},
 
 		renderResult(result, { expanded }, theme, context) {
-			return renderToolResult(result, expanded, context.isError, theme);
+			const rendered = renderToolResult(result, expanded, context.isError, theme);
+			if (expanded || context.isError) return rendered;
+			return {
+				render: (width: number) => isCurrentWidgetSnapshot(result.details) ? [] : rendered.render(width),
+				invalidate: () => rendered.invalidate(),
+			};
 		},
 	});
 
@@ -388,16 +401,7 @@ export default function processView(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.on("session_start", async (_event, ctx) => {
-		restore(ctx);
-		if (ctx.mode === "tui") {
-			try {
-				ctx.ui.setHiddenThinkingLabel(hiddenThinkingLabel());
-			} catch (error) {
-				notifyUiFailure(ctx, error);
-			}
-		}
-	});
+	pi.on("session_start", async (_event, ctx) => restore(ctx));
 
 	pi.on("session_tree", async (_event, ctx) => restore(ctx));
 
@@ -535,10 +539,7 @@ export default function processView(pi: ExtensionAPI) {
 		if (ctx.hasUI) {
 			try {
 				ctx.ui.setStatus(PROCESS_STATUS_KEY, undefined);
-				if (ctx.mode === "tui") {
-					if (widgetMounted) ctx.ui.setWidget(PROCESS_WIDGET_KEY, undefined);
-					ctx.ui.setHiddenThinkingLabel();
-				}
+				if (ctx.mode === "tui" && widgetMounted) ctx.ui.setWidget(PROCESS_WIDGET_KEY, undefined);
 			} catch {}
 		}
 		widgetMounted = false;

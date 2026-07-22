@@ -24,12 +24,55 @@ AGENT_WHITELIST=(
 	statusline.json
 	AGENTS.md
 	terrific.json
+	extensions/pi-tool-display/config.json
+	extensions/pi-compact-transcript/config.json
 )
 GENERATED_AGENT_FILES=(
 	auth.template.json
 )
 
 die() { echo "error: $*" >&2; exit 1; }
+
+is_safe_relative_path() {
+	local path="$1"
+	case "$path" in
+		""|/*|./*|../*|*/../*|*/..|*//*) return 1 ;;
+	esac
+	return 0
+}
+
+sanitize_portable_terrific_config() {
+	local path="$1"
+	python3 - "$path" <<'PY'
+import json, re, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+data = json.loads(path.read_text(encoding="utf-8"))
+if not isinstance(data, dict):
+    raise SystemExit(f"terrific.json must be an object: {path}")
+docsflow = data.get("docsflow")
+if isinstance(docsflow, dict):
+    vault = docsflow.get("vaultRoot")
+    if isinstance(vault, str) and (vault.startswith("/") or re.match(r"^[A-Za-z]:[\\/]", vault)):
+        docsflow.pop("vaultRoot")
+        print(f"removed machine-local docsflow.vaultRoot from {path}")
+path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+PY
+}
+
+sanitize_portable_agent_instructions() {
+	local path="$1"
+	python3 - "$path" <<'PY'
+import re, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+portable = re.sub(r"/(?:home|Users)/[A-Za-z0-9._-]+", "~", text)
+if portable != text:
+    path.write_text(portable, encoding="utf-8")
+    print(f"rewrote machine-local home paths in {path}")
+PY
+}
 
 sanitize_check() {
 	local path="$1"
@@ -92,7 +135,9 @@ snapshot_agent() {
 	mkdir -p "$AGENT_DST"
 	local f
 	for f in "${AGENT_WHITELIST[@]}"; do
+		is_safe_relative_path "$f" || die "unsafe agent whitelist path: $f"
 		if [[ -f "$AGENT_SRC/$f" ]]; then
+			mkdir -p "$(dirname "$AGENT_DST/$f")"
 			cp -a "$AGENT_SRC/$f" "$AGENT_DST/$f"
 			# Normalize LF
 			if command -v python3 >/dev/null 2>&1; then
@@ -101,20 +146,28 @@ from pathlib import Path
 import sys
 p = Path(sys.argv[1])
 data = p.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+if data and not data.endswith(b"\n"):
+    data += b"\n"
 p.write_bytes(data)
 PY
+			fi
+			if [[ "$f" == "terrific.json" ]]; then
+				sanitize_portable_terrific_config "$AGENT_DST/$f"
+			elif [[ "$f" == "AGENTS.md" ]]; then
+				sanitize_portable_agent_instructions "$AGENT_DST/$f"
 			fi
 			sanitize_check "$AGENT_DST/$f"
 			echo "agent snapshot: $f"
 		fi
 	done
 	snapshot_auth_template
-	# Drop leftovers that are not on whitelist / generated set
+	# Drop leftovers that are not on whitelist / generated set, preserving approved nested paths.
 	find "$AGENT_DST" -type f ! -name '.gitkeep' | sort | while read -r path; do
-		base="$(basename "$path")"
+		relative="${path#"$AGENT_DST/"}"
+		is_safe_relative_path "$relative" || { rm -f "$path"; continue; }
 		keep=0
 		for f in "${AGENT_WHITELIST[@]}" "${GENERATED_AGENT_FILES[@]}"; do
-			[[ "$base" == "$f" ]] && keep=1 && break
+			[[ "$relative" == "$f" ]] && keep=1 && break
 		done
 		[[ "$keep" == "1" ]] || rm -f "$path"
 	done

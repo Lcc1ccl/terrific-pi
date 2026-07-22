@@ -23,6 +23,14 @@ RESTORE="${RESTORE:-0}"
 
 die() { echo "error: $*" >&2; exit 1; }
 
+is_safe_relative_path() {
+	local path="$1"
+	case "$path" in
+		""|/*|./*|../*|*/../*|*/..|*//*) return 1 ;;
+	esac
+	return 0
+}
+
 resolve_source() {
 	local arg="${1:-}"
 	if [[ -n "$arg" ]]; then
@@ -89,6 +97,29 @@ read_packages() {
 	done
 }
 
+read_external_packages() {
+	local root="$1"
+	local -a from_manifest=()
+	mapfile -t from_manifest < <(read_manifest_block "$root" "external_packages" || true)
+	if [[ ${#from_manifest[@]} -gt 0 ]]; then
+		printf '%s\n' "${from_manifest[@]}"
+		return
+	fi
+	local required="$root/agent/required-external-packages.json"
+	[[ -f "$required" ]] || return 0
+	python3 - "$required" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path, encoding="utf-8"))
+if not isinstance(data, dict) or not isinstance(data.get("packages"), list):
+    raise SystemExit("required-external-packages.json must contain a packages array")
+for package in data["packages"]:
+    if not isinstance(package, str) or not package.strip():
+        raise SystemExit("external package entries must be non-empty strings")
+    print(package)
+PY
+}
+
 read_skills() {
 	local root="$1"
 	local -a from_manifest=()
@@ -106,37 +137,63 @@ read_skills() {
 merge_packages() {
 	local settings="$1"
 	shift
-	local -a pkgs=("$@")
+	local -a local_packages=()
+	local -a external_packages=()
+	local target="local"
+	local item
+	for item in "$@"; do
+		if [[ "$item" == "--external" ]]; then
+			target="external"
+			continue
+		fi
+		if [[ "$target" == "local" ]]; then local_packages+=("$item"); else external_packages+=("$item"); fi
+	done
 	mkdir -p "$(dirname "$settings")"
 	if [[ ! -f "$settings" ]]; then
 		printf '%s\n' '{' '  "packages": []' '}' >"$settings"
 	fi
-	python3 - "$settings" "${pkgs[@]}" <<'PY'
+	python3 - "$settings" "${local_packages[@]}" --external "${external_packages[@]}" <<'PY'
 import json, sys
 from pathlib import Path
 path = Path(sys.argv[1])
-wanted = sys.argv[2:]
+args = sys.argv[2:]
+separator = args.index("--external")
+local_packages = args[:separator]
+external_packages = args[separator + 1:]
 data = json.loads(path.read_text(encoding="utf-8"))
 if not isinstance(data, dict):
     raise SystemExit("settings.json must be an object")
 pkgs = data.get("packages")
 if not isinstance(pkgs, list):
     pkgs = []
-# Drop stale absolute/relative terrific-pi extension entries, keep everything else.
+
+def external_identity(value: str) -> str:
+    if not value.startswith("git:"):
+        return value
+    # SSH shorthand has one @ in git@host even without a ref; only strip a
+    # second/final @ when a pinned ref is present.
+    if value.startswith("git:git@") and value.count("@") == 1:
+        return value
+    return value.rsplit("@", 1)[0] if "@" in value else value
+
+external_identities = {external_identity(value) for value in external_packages}
 kept = []
 for item in pkgs:
     if not isinstance(item, str):
         kept.append(item)
         continue
-    if "terrific-pi/extensions/" in item.replace("\\", "/"):
+    normalized = item.replace("\\", "/")
+    if "terrific-pi/extensions/" in normalized:
+        continue
+    if any(item == identity or item.startswith(identity + "@") for identity in external_identities):
         continue
     kept.append(item)
-for item in wanted:
+for item in [*local_packages, *external_packages]:
     if item not in kept:
         kept.append(item)
 data["packages"] = kept
 path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-print(f"updated packages ({len(wanted)} terrific-pi entries) -> {path}")
+print(f"updated packages ({len(local_packages)} local, {len(external_packages)} external) -> {path}")
 PY
 }
 
@@ -262,23 +319,28 @@ install_snapshot_agent() {
 	[[ -d "$snap" ]] || { echo "no snapshot/agent in package"; return 0; }
 	mkdir -p "$AGENT_DIR"
 
-	local f base
+	local f base relative dest
 	while IFS= read -r f; do
-		base="$(basename "$f")"
+		relative="${f#"$snap/"}"
+		is_safe_relative_path "$relative" || die "unsafe snapshot path: $relative"
+		base="$(basename "$relative")"
 		# Never install secrets or the template as a literal live auth.json filename.
 		case "$base" in
-			auth.json|*.pem|*.key) die "refusing to install secret file from snapshot: $base" ;;
+			auth.json|*.pem|*.key) die "refusing to install secret file from snapshot: $relative" ;;
 			auth.template.json) continue ;;
 		esac
+		dest="$AGENT_DIR/$relative"
 		if [[ "$RESTORE" == "1" ]]; then
-			cp -a "$f" "$AGENT_DIR/$base"
-			echo "restored $AGENT_DIR/$base"
+			mkdir -p "$(dirname "$dest")"
+			cp -a "$f" "$dest"
+			echo "restored $dest"
 		else
-			if [[ ! -f "$AGENT_DIR/$base" ]]; then
-				cp -a "$f" "$AGENT_DIR/$base"
-				echo "seeded $AGENT_DIR/$base"
+			if [[ ! -f "$dest" ]]; then
+				mkdir -p "$(dirname "$dest")"
+				cp -a "$f" "$dest"
+				echo "seeded $dest"
 			else
-				echo "keep existing $AGENT_DIR/$base (set RESTORE=1 to overwrite)"
+				echo "keep existing $dest (set RESTORE=1 to overwrite)"
 			fi
 		fi
 	done < <(find "$snap" -type f ! -name '.gitkeep' | sort)
@@ -293,6 +355,7 @@ main() {
 
 	mapfile -t PACKAGES < <(read_packages "$src")
 	[[ ${#PACKAGES[@]} -gt 0 ]] || die "no packages discovered in $src"
+	mapfile -t EXTERNAL_PACKAGES < <(read_external_packages "$src")
 	mapfile -t SKILLS < <(read_skills "$src")
 
 	mkdir -p "$PI_HOME/vendor"
@@ -337,10 +400,10 @@ main() {
 	if [[ "$RESTORE" == "1" ]]; then
 		# Full agent snapshot restore first; then ensure terrific-pi packages still merged.
 		install_snapshot_agent "$src"
-		merge_packages "$AGENT_DIR/settings.json" "${PACKAGES[@]}"
+		merge_packages "$AGENT_DIR/settings.json" "${PACKAGES[@]}" --external "${EXTERNAL_PACKAGES[@]}"
 	else
 		# Mild path: merge packages, seed templates + missing snapshot files only.
-		merge_packages "$AGENT_DIR/settings.json" "${PACKAGES[@]}"
+		merge_packages "$AGENT_DIR/settings.json" "${PACKAGES[@]}" --external "${EXTERNAL_PACKAGES[@]}"
 		install_templates "$src"
 		install_snapshot_agent "$src"
 	fi
@@ -348,6 +411,10 @@ main() {
 	echo "installed: $TARGET"
 	echo "packages:"
 	printf '  %s\n' "${PACKAGES[@]}"
+	if [[ ${#EXTERNAL_PACKAGES[@]} -gt 0 ]]; then
+		echo "external packages:"
+		printf '  %s\n' "${EXTERNAL_PACKAGES[@]}"
+	fi
 	if [[ ${#SKILLS[@]} -gt 0 ]]; then
 		echo "skills -> $SKILLS_DIR:"
 		printf '  %s\n' "${SKILLS[@]}"

@@ -2,9 +2,11 @@
   "lastChangelogVersion": "0.80.10",
   "theme": "dark",
   "defaultProvider": "openai",
-  "defaultModel": "gpt-5.6-sol",
+  "defaultModel": "gpt-5.6-terra",
   "defaultThinkingLevel": "max",
   "hideThinkingBlock": true,
+  "quietStartup": true,
+  "outputPad": 0,
   "packages": [
     "npm:cc-safety-net@1.0.6",
     "npm:@ayulab/pi-rewind@0.4.6",
@@ -14,6 +16,31 @@
     "../vendor/terrific-pi/extensions/context",
     "../vendor/terrific-pi/extensions/mode",
     "../vendor/terrific-pi/extensions/btw",
-    "../vendor/terrific-pi/extensions/process-view"
-  ]
+    "git:git@github.com:Lcc1ccl/pi-tool-display@8dd8fcaa7a3307abac5ee05f735615d4eae394b1",
+    "git:git@github.com:Lcc1ccl/pi-compact-transcript@1bad0d81c38ca0821710e466a8e76928bdc326ef",
+    "../vendor/terrific-pi/extensions/process-view",
+    "npm:pi-subagents@0.35.1",
+    "../vendor/terrific-pi/extensions/auxiliary",
+    "npm:pi-web-access@0.13.0",
+    "npm:pi-vision-handoff@0.8.1",
+    "../vendor/terrific-pi/extensions/docsflow",
+    "../vendor/terrific-pi/extensions/model-profile"
+  ],
+  "subagents": {
+    "agentOverrides": {
+      "researcher": {
+        "model": "grok/grok-4.5",
+        "thinking": "low",
+        "defaultContext": "fresh",
+        "inheritProjectContext": false,
+        "inheritSkills": false,
+        "tools": [
+          "web_search",
+          "fetch_content",
+          "get_search_content",
+          "read"
+        ]
+      }
+    }
+  }
 }

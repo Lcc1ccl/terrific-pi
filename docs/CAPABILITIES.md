@@ -64,7 +64,7 @@ terrific-pi/
 | 上下文拆解 | `extensions/context` | `/context [summary\|details\|config]`；`c` 复制、`x` 确认压缩 | 不调模型查看占用；压缩为显式动作 | **本仓实现** |
 | 旁路问答 | `extensions/btw` | `/btw …`、`status`、`config`、`context=none` | 独立内存会话问答，不污染主 session | **本仓实现**；模型可走 auxiliary 路由 |
 | 辅助模型 runtime | `extensions/auxiliary` | 裸 `/aux` 管理器、`/aux status`；工具 `aux_summarize`/`web_research`/`git_finalize`；compact/title 钩子 | 任务级旁路模型，不改主会话模型 | **本仓实现**；研究/视觉 **委托外部 pin** |
-| 任务进度 HUD | `extensions/process-view` | 模型调 `process_update`；`/process` 管理、`default <mode>`；`Ctrl+O` 展开 | 多步任务里程碑与工具活动 | **本仓实现** |
+| 任务进度 HUD | `extensions/process-view` | 模型调 `process_update`；`/process` 管理、`default <mode>`；`Ctrl+O` 展开 | 多步任务里程碑、等待/阻塞与验证；推荐不重复工具活动 | **本仓实现** |
 | 文档流水线 | `extensions/docsflow` | 裸 `/docsflow` 管理器、`settings`、阶段 override | research→product→interface→delivery | **本仓编排**；执行靠 `pi-subagents` |
 | 模型常用配置 | `extensions/model-profile` | `/profile` 管理/快速应用、可信项目 overrides、`list/status/startup`、`<id\|alias>`、`alt+N`、冷启动/`/new`；见 [计划](./plans/2026-07-20-model-profile-plan.md) | 3–5 套 model+thinking；全局/project 来源；session/global；启动 | **本仓薄封装**；配置 `terrific.json` |
 
@@ -125,8 +125,8 @@ terrific-pi/
 
 | 层 | 谁负责 | 内容 |
 |----|--------|------|
-| Footer 常驻 | **statusline** | path、model+thinking、tokens、cache、cost、mode、fast、state… |
-| 任务 HUD | **process-view** | 多步任务目标、步骤、blocker、工具活动 |
+| Footer 常驻 | **statusline** | path、model+thinking、tokens、cache、cost、mode、fast、state…（推荐不启用 `toolActivity`） |
+| 任务 HUD | **process-view** | 多步任务目标、步骤、blocker、等待/阻塞与验证；`activityMode: task` 不重复 collapsed 工具行 |
 | 扩展 status key | 各插件 `setStatus` | mode / fast / process / auxiliary 等；statusline 对部分 key **排除重复展示**（见 `EXCLUDED_PROGRESS_KEYS`） |
 
 约定：
@@ -174,7 +174,7 @@ terrific-pi/
 | context | 已收录 | 需要可解释上下文占用 | `/context` 拆解 | 本仓实现 | 不压缩、不调模型 |
 | btw | 已收录 | 主会话外快速问一句 | 旁路内存 session | 本仓实现 | 不写主历史、不加载工具 |
 | auxiliary | 已收录 | Hermes 式任务槽 | compact/title/summary/research/git | 本仓 runtime + 外部 pin | 不做万能 agent 框架 |
-| process-view | 已收录 | 多步任务可见性 | `process_update` + HUD | 本仓实现 | 不为每句回复建任务 |
+| process-view | 已收录 | 多步任务可见性 | `process_update` + HUD | 本仓实现 | 不为每句回复建任务或重复 compact transcript 工具行 |
 | docsflow | 已收录 | 文档流水线要可迁移 | 四阶段 + 落盘 | 本仓编排 + pi-subagents | 不自研 subagent runtime |
 | **model-profile** | **已收录** | 社区单包无法一次满足 6 点 | 短列表 model+thinking；session restore；全局；startup/`new`；热键；status | **本仓薄封装**；模式来自 preset / presets-plus / startup-picker | 不重写全量选择器；官方 `/model` 仍改全局默认（pi 核心） |
 | pi-provider-sync (skill) | 已收录 | 自定义 provider 模型易过期 | `/models` 同步与字段补全 | skill 而非 extension | 不在 skill 里藏密钥 |

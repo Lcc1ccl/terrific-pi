@@ -173,11 +173,13 @@ function compactSummary(state: ProcessRenderState, width: number, theme: Process
 function compactLines(state: ProcessRenderState, width: number, theme: ProcessTheme): string[] {
 	const snapshot = state.snapshot!;
 	const lines = [compactSummary(state, width, theme)];
-	const activity = formatActivity(state.activity);
-	if (activity.text) lines.push(`  ${activity.active ? "↳ " : ""}${activity.text}`);
-	else {
-		const stage = STAGE_LABELS[state.activity.stage];
-		if (stage) lines.push(`  ${stage}`);
+	if (state.activityMode === "full") {
+		const activity = formatActivity(state.activity);
+		if (activity.text) lines.push(`  ${activity.active ? "↳ " : ""}${activity.text}`);
+		else {
+			const stage = STAGE_LABELS[state.activity.stage];
+			if (stage) lines.push(`  ${stage}`);
+		}
 	}
 	const detail = detailLine(snapshot);
 	if (detail) lines.push(`  ${detail}`);
@@ -279,7 +281,7 @@ function detailPanelLines(state: ProcessRenderState, width: number, theme: Proce
 	}
 	lines.push(boxBorder("section", width, theme, "Runtime"));
 	lines.push(boxRow(` ${runtimeLine(state.telemetry)}`, width, theme));
-	const activity = detailedActivity(state);
+	const activity = state.activityMode === "off" ? undefined : detailedActivity(state);
 	if (activity) lines.push(boxRow(` ${activity}`, width, theme));
 	const latest = detailLine(snapshot);
 	if (latest) lines.push(boxRow(` ${latest}`, width, theme));
@@ -293,7 +295,7 @@ export function formatProcessLines(
 	theme: ProcessTheme,
 ): string[] {
 	if (state.viewMode === "off") return [];
-	if (!state.snapshot) return fit(passiveLines(state, theme), width);
+	if (!state.snapshot) return state.activityMode === "full" ? fit(passiveLines(state, theme), width) : [];
 	return state.viewMode === "full" || state.expanded
 		? detailPanelLines(state, width, theme)
 		: fit(compactLines(state, width, theme), width);

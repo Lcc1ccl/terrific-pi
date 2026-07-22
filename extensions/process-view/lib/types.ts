@@ -11,6 +11,7 @@ export type ProcessStatus = "running" | "waiting" | "blocked" | "completed" | "i
 export type StepStatus = "pending" | "active" | "done" | "failed";
 export type ArtifactKind = "file" | "test" | "screenshot" | "url" | "commit" | "report";
 export type ProcessViewMode = "compact" | "full" | "off";
+export type ProcessActivityMode = "full" | "task" | "off";
 
 export interface ProcessStep {
 	text: string;
@@ -105,6 +106,7 @@ export interface RuntimeControlState {
 
 export interface ProcessRenderState {
 	viewMode: ProcessViewMode;
+	activityMode: ProcessActivityMode;
 	snapshot?: ProcessSnapshot;
 	telemetry?: ProcessTelemetry;
 	activity: ActivitySnapshot;

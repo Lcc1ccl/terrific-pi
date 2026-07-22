@@ -15,9 +15,10 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import type { ProcessViewMode } from "./types.ts";
+import type { ProcessActivityMode, ProcessViewMode } from "./types.ts";
 
 const MODES = new Set<ProcessViewMode>(["compact", "full", "off"]);
+const ACTIVITY_MODES = new Set<ProcessActivityMode>(["full", "task", "off"]);
 const BASENAME = "terrific.json";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -40,6 +41,23 @@ export function loadProcessViewDefault(
 		return typeof value === "string" && MODES.has(value as ProcessViewMode) ? value as ProcessViewMode : "compact";
 	} catch {
 		return "compact";
+	}
+}
+
+export function loadProcessViewActivityMode(
+	agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
+): ProcessActivityMode {
+	try {
+		const path = configPath(agentDir);
+		if (!existsSync(path)) return "full";
+		const root: unknown = JSON.parse(readFileSync(path, "utf8"));
+		if (!isRecord(root) || !isRecord(root.processView)) return "full";
+		const value = root.processView.activityMode;
+		return typeof value === "string" && ACTIVITY_MODES.has(value as ProcessActivityMode)
+			? value as ProcessActivityMode
+			: "full";
+	} catch {
+		return "full";
 	}
 }
 

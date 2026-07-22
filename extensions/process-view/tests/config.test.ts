@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 
-import { loadProcessViewDefault, updateProcessViewConfig } from "../lib/config.ts";
+import { loadProcessViewActivityMode, loadProcessViewDefault, updateProcessViewConfig } from "../lib/config.ts";
 
 describe("process-view global default", () => {
 	it("defaults to compact and persists only processView.defaultViewMode", () => {
@@ -19,6 +19,16 @@ describe("process-view global default", () => {
 			fast: { enabled: true },
 			processView: { future: "keep", defaultViewMode: "off" },
 		});
+	});
+
+	it("defaults activity mode to full and accepts only supported values", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "process-config-activity-"));
+		const path = join(agentDir, "terrific.json");
+		assert.equal(loadProcessViewActivityMode(agentDir), "full");
+		writeFileSync(path, JSON.stringify({ processView: { activityMode: "task" } }));
+		assert.equal(loadProcessViewActivityMode(agentDir), "task");
+		writeFileSync(path, JSON.stringify({ processView: { activityMode: "unexpected" } }));
+		assert.equal(loadProcessViewActivityMode(agentDir), "full");
 	});
 
 	it("refuses malformed config without overwriting it", () => {

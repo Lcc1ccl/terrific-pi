@@ -6,5 +6,9 @@
   "grok": {
     "type": "api_key",
     "key": ""
+  },
+  "anthropic": {
+    "type": "api_key",
+    "key": ""
   }
 }

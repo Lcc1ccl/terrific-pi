@@ -1,0 +1,119 @@
+{
+  "auxiliary": {
+    "enabled": true,
+    "default": {
+      "model": "openai/gpt-5.6-luna",
+      "thinking": "high",
+      "timeoutMs": 60000,
+      "maxOutputTokens": 2048,
+      "maxRetries": 1,
+      "fallbackModels": []
+    },
+    "tasks": {
+      "compression": {
+        "thinking": "low",
+        "timeoutMs": 120000,
+        "maxOutputTokens": 12000,
+        "maxRetries": 0,
+        "model": "openai/gpt-5.6-luna"
+      },
+      "title_generation": {
+        "maxOutputTokens": 96,
+        "timeoutMs": 30000,
+        "model": "openai/gpt-5.6-luna"
+      },
+      "text_summary": {
+        "maxOutputTokens": 3000,
+        "fallbackModels": [
+          "openai/gpt-5.6-luna"
+        ],
+        "model": "openai/gpt-5.6-luna"
+      },
+      "commit_message": {
+        "maxOutputTokens": 256,
+        "timeoutMs": 30000,
+        "model": "openai/gpt-5.6-luna"
+      },
+      "btw": {
+        "model": "openai/gpt-5.6-luna",
+        "thinking": "low",
+        "maxOutputTokens": 2000
+      },
+      "web_research": {
+        "model": "openai/gpt-5.6-luna",
+        "thinking": "low",
+        "timeoutMs": 300000,
+        "fallbackModels": [
+          "openai/gpt-5.4-mini"
+        ]
+      }
+    },
+    "git": {
+      "confirm": false,
+      "allowHeadless": false,
+      "allowPush": true
+    }
+  },
+  "context": {
+    "topEntries": 10
+  },
+  "mode": {
+    "default": "edit",
+    "persistPerSession": true
+  },
+  "btw": {
+    "thinking": "minimal",
+    "maxContextTokens": 80000,
+    "maxOutputTokens": 2000
+  },
+  "docsflow": {
+    "vaultEnabled": false,
+    "projectBase": "2_Career/01-INDIE/开发",
+    "configReminder": false
+  },
+  "modelProfile": {
+    "startup": true,
+    "startupScope": "session",
+    "openHotkey": "ctrl+alt+l",
+    "profiles": [
+      {
+        "id": "1",
+        "alias": "lunamax",
+        "provider": "openai",
+        "model": "gpt-5.6-luna",
+        "thinking": "max",
+        "hotkey": "alt+1"
+      },
+      {
+        "id": "2",
+        "alias": "terramax",
+        "provider": "openai",
+        "model": "gpt-5.6-terra",
+        "thinking": "max",
+        "hotkey": "alt+2"
+      },
+      {
+        "id": "3",
+        "alias": "solmax",
+        "provider": "openai",
+        "model": "gpt-5.6-sol",
+        "thinking": "max",
+        "hotkey": "alt+3"
+      },
+      {
+        "id": "4",
+        "alias": "grok",
+        "provider": "grok",
+        "model": "grok-4.5",
+        "thinking": "high",
+        "hotkey": "alt+4"
+      }
+    ]
+  },
+  "fast": {
+    "enabled": true
+  },
+  "processView": {
+    "activityMode": "task"
+  }
+}

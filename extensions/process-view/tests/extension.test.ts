@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 
 import processView from "../extensions/process-view.ts";
@@ -292,14 +295,34 @@ describe("process-view registration and tool", () => {
 		assert.match(harness.notifications[0]?.message ?? "", /Process View UI/i);
 	});
 
-	it("uses an empty call renderer and stable collapsed/expanded result renderers", async () => {
+	it("shows the current progress only in the HUD while retaining historical and final receipts", async () => {
 		const harness = createHarness();
-		const result = await execute(harness, completedInput());
+		const running = await execute(harness);
 		assert.deepEqual(harness.tool.renderCall(runningInput(), theme, {}).render(100), []);
-		const collapsed = harness.tool.renderResult(result, { expanded: false }, theme, { isError: false }).render(120);
-		const expanded = harness.tool.renderResult(result, { expanded: true }, theme, { isError: false }).render(120);
-		assert.match(collapsed.join("\n"), /Process done 3\/3/);
-		assert.match(expanded.join("\n"), /Verification: All checks passed/);
+		const runningCollapsed = harness.tool.renderResult(
+			running,
+			{ expanded: false },
+			theme,
+			{ isError: false },
+		);
+		assert.deepEqual(runningCollapsed.render(120), []);
+		assert.match(
+			harness.tool.renderResult(running, { expanded: true }, theme, { isError: false }).render(120).join("\n"),
+			/Implement process view/,
+		);
+
+		const completed = await execute(harness, completedInput());
+		assert.match(runningCollapsed.render(120).join("\n"), /Process 1\/3/);
+		const completedCollapsed = harness.tool.renderResult(
+			completed,
+			{ expanded: false },
+			theme,
+			{ isError: false },
+		);
+		assert.deepEqual(completedCollapsed.render(120), []);
+		await harness.emit("agent_settled");
+		assert.match(completedCollapsed.render(120).join("\n"), /Process done 3\/3/);
+
 		const error = harness.tool.renderResult(
 			{ content: [{ type: "text", text: "Invalid update" }] },
 			{ expanded: false },
@@ -335,7 +358,7 @@ describe("request, branch, and context lifecycle", () => {
 		const harness = createHarness({ branch: [{ type: "custom", customType: PROCESS_ENTRY_TYPE, data: stored }] });
 		await harness.emit("session_start", { reason: "resume" });
 		assert.equal(harness.widgetCalls[0]?.key, PROCESS_WIDGET_KEY);
-		assert.match(harness.hiddenLabels[0] ?? "", /Reasoning hidden.*to inspect/);
+		assert.deepEqual(harness.hiddenLabels, []);
 
 		const print = createHarness({ mode: "print", branch: [{ type: "custom", customType: PROCESS_ENTRY_TYPE, data: stored }] });
 		await print.emit("session_start", { reason: "resume" });
@@ -444,6 +467,33 @@ describe("request, branch, and context lifecycle", () => {
 
 		await harness.emit("session_shutdown", { reason: "quit" });
 		assert.deepEqual(harness.statusCalls.at(-1), { key: PROCESS_STATUS_KEY, value: undefined });
+	});
+});
+
+describe("presentation activity integration", () => {
+	it("hides passive and compact tool activity in task mode while keeping expanded runtime activity", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "process-view-task-mode-"));
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({ processView: { activityMode: "task" } }));
+		try {
+			process.env.PI_CODING_AGENT_DIR = agentDir;
+			const harness = createHarness();
+			await harness.emit("session_start", { reason: "startup" });
+			await harness.emit("before_agent_start", { prompt: "implement" });
+			assert.equal(harness.currentWidget, undefined);
+
+			await execute(harness);
+			await harness.emit("tool_execution_start", { toolCallId: "read-1", toolName: "read", args: { path: "src/a.ts" } });
+			const widget = harness.currentWidget as { render(width: number): string[] } | undefined;
+			assert.ok(widget);
+			assert.doesNotMatch(widget.render(100).join("\n"), /read src\/a\.ts/);
+			harness.setToolsExpanded(true);
+			assert.match(widget.render(100).join("\n"), /Active: read src\/a\.ts/);
+		} finally {
+			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+			rmSync(agentDir, { recursive: true, force: true });
+		}
 	});
 });
 
