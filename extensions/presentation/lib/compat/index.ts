@@ -27,6 +27,7 @@ export interface PresentationCompatibilityOptions {
 export interface PresentationCompatibilityHandle {
 	toolStart(input: ToolLifecycleStart): void;
 	toolEnd(input: ToolLifecycleEnd): void;
+	hydrate(entries: readonly unknown[], cwd: string): void;
 	toolBoundary(): void;
 	setArtifact(state: PresentationArtifactState): void;
 	uninstall(): void;
@@ -86,6 +87,9 @@ export function installPresentationCompatibility(
 		},
 		toolEnd(input) {
 			toolController.end(input);
+		},
+		hydrate(entries, cwd) {
+			toolController.hydrate(entries, cwd);
 		},
 		toolBoundary() {
 			toolController.boundary();

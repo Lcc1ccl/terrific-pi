@@ -28,6 +28,10 @@ export interface GitFileState {
 	fingerprint?: string;
 	additions?: number;
 	deletions?: number;
+	/** True only when Git reports a content diff, not a mode/index-only record. */
+	contentChanged?: boolean;
+	/** Retained when a base-to-worktree diff replaces status-relative tracked entries. */
+	untracked?: boolean;
 }
 
 export interface GitSnapshot {
@@ -112,6 +116,23 @@ export function sanitizeArtifactPath(rawPath: unknown, cwd: string): SafeArtifac
 	return safe;
 }
 
+/** Git paths name index entries, so preserve a final symlink instead of following its target. */
+function resolveGitArtifactPath(rawPath: string, cwd: string, repositoryRoot: string): ResolvedArtifactPath {
+	const workspaceRoot = resolveExistingPath(resolve(cwd));
+	const repositoryPath = resolve(resolveExistingPath(resolve(repositoryRoot)), rawPath);
+	const absolutePath = join(resolveExistingPath(dirname(repositoryPath)), basename(repositoryPath));
+	if (!isInside(workspaceRoot, absolutePath)) {
+		return { path: sanitizeArtifactLabel(basename(absolutePath)), identity: "", insideWorkspace: false };
+	}
+	const identity = relative(workspaceRoot, absolutePath) || basename(absolutePath) || "file";
+	return {
+		path: sanitizeArtifactLabel(identity),
+		identity,
+		insideWorkspace: true,
+		absolutePath,
+	};
+}
+
 function splitLines(value: string): string[] {
 	if (!value) return [];
 	const lines = value.replace(/\r\n/g, "\n").split("\n");
@@ -166,40 +187,68 @@ function operationForStatus(status: string): FileArtifact["operation"] {
 
 function parseNumstat(output: string): Map<string, { additions?: number; deletions?: number }> {
 	const stats = new Map<string, { additions?: number; deletions?: number }>();
-	for (const record of output.split("\0")) {
-		const match = /^(\d+|-)\t(\d+|-)\t([\s\S]+)$/.exec(record);
+	const records = output.split("\0");
+	for (let index = 0; index < records.length; index += 1) {
+		const match = /^(\d+|-)\t(\d+|-)\t([\s\S]*)$/.exec(records[index] ?? "");
 		if (!match) continue;
+		let path = match[3] ?? "";
+		if (!path) {
+			index += 1; // old rename/copy path
+			path = records[++index] ?? "";
+		}
+		if (!path) continue;
 		const additions = match[1] === "-" ? undefined : Number(match[1]);
 		const deletions = match[2] === "-" ? undefined : Number(match[2]);
-		stats.set(match[3]!, { ...(additions !== undefined ? { additions } : {}), ...(deletions !== undefined ? { deletions } : {}) });
+		stats.set(path, { ...(additions !== undefined ? { additions } : {}), ...(deletions !== undefined ? { deletions } : {}) });
 	}
 	return stats;
 }
 
-function parseNameStatus(output: string, cwd: string, stats: Map<string, { additions?: number; deletions?: number }>): Map<string, GitFileState> {
+function hasContentDiff(stat: { additions?: number; deletions?: number } | undefined): boolean {
+	return stat !== undefined && (
+		stat.additions === undefined
+		|| stat.deletions === undefined
+		|| stat.additions > 0
+		|| stat.deletions > 0
+	);
+}
+
+function parseNameStatus(
+	output: string,
+	cwd: string,
+	repositoryRoot: string,
+	stats: Map<string, { additions?: number; deletions?: number }>,
+): Map<string, GitFileState> {
 	const files = new Map<string, GitFileState>();
 	const parts = output.split("\0").filter(Boolean);
 	for (let index = 0; index < parts.length;) {
 		const status = parts[index++]!;
 		const rawPath = parts[index++];
 		if (!rawPath) break;
-		const safe = resolveArtifactPath(rawPath, cwd);
-		if (!safe.insideWorkspace) continue;
-		const operation = operationForStatus(status);
-		files.set(safe.identity, {
-			path: safe.path,
-			operation,
-			...(stats.get(rawPath) ?? stats.get(safe.identity) ?? {}),
-		});
-		if (/^[RC]/.test(status)) {
-			const renamedPath = parts[index++];
-			if (!renamedPath) continue;
-			const renamed = resolveArtifactPath(renamedPath, cwd);
-			if (renamed.insideWorkspace) {
-				files.set(renamed.identity, {
-					path: renamed.path,
+		const pairedPath = /^[RC]/.test(status) ? parts[index++] : undefined;
+		if (status.startsWith("R")) {
+			const source = resolveGitArtifactPath(rawPath, cwd, repositoryRoot);
+			if (source.insideWorkspace) files.set(source.identity, { path: source.path, operation: "deleted" });
+		} else if (!status.startsWith("C")) {
+			const safe = resolveGitArtifactPath(rawPath, cwd, repositoryRoot);
+			if (safe.insideWorkspace) {
+				const stat = stats.get(rawPath) ?? stats.get(safe.identity);
+				files.set(safe.identity, {
+					path: safe.path,
+					operation: operationForStatus(status),
+					...(stat ?? {}),
+					...(hasContentDiff(stat) ? { contentChanged: true } : {}),
+				});
+			}
+		}
+		if (pairedPath) {
+			const target = resolveGitArtifactPath(pairedPath, cwd, repositoryRoot);
+			if (target.insideWorkspace) {
+				const stat = stats.get(pairedPath) ?? stats.get(target.identity);
+				files.set(target.identity, {
+					path: target.path,
 					operation: "added",
-					...(stats.get(renamedPath) ?? stats.get(renamed.identity) ?? {}),
+					...(hasContentDiff(stat) ? { ...stat, contentChanged: true } : {}),
 				});
 			}
 		}
@@ -207,7 +256,12 @@ function parseNameStatus(output: string, cwd: string, stats: Map<string, { addit
 	return files;
 }
 
-async function parseGitStatus(output: string, cwd: string, numstat: Map<string, { additions?: number; deletions?: number }>): Promise<GitSnapshot> {
+async function parseGitStatus(
+	output: string,
+	cwd: string,
+	repositoryRoot: string,
+	numstat: Map<string, { additions?: number; deletions?: number }>,
+): Promise<GitSnapshot> {
 	const files = new Map<string, GitFileState>();
 	const records = output.split("\0");
 	for (let index = 0; index < records.length; index += 1) {
@@ -226,19 +280,42 @@ async function parseGitStatus(output: string, cwd: string, numstat: Map<string, 
 			const parts = record.split(" ");
 			status = parts[1] ?? "";
 			rawPath = parts.slice(9).join(" ");
-			index += 1;
+			const originalPath = records[++index] ?? "";
+			const target = resolveGitArtifactPath(rawPath, cwd, repositoryRoot);
+			if (target.insideWorkspace) {
+				const stat = numstat.get(rawPath) ?? numstat.get(target.identity);
+				files.set(target.identity, {
+					path: target.path,
+					operation: "added",
+					...(hasContentDiff(stat) ? { ...stat, contentChanged: true } : {}),
+				});
+			}
+			if (status.includes("R")) {
+				const original = resolveGitArtifactPath(originalPath, cwd, repositoryRoot);
+				if (original.insideWorkspace) files.set(original.identity, { path: original.path, operation: "deleted" });
+			}
+			continue;
+		} else if (record.startsWith("u ")) {
+			const parts = record.split(" ");
+			status = parts[1] ?? "";
+			rawPath = parts.slice(10).join(" ");
 		} else {
 			continue;
 		}
-		const safe = resolveArtifactPath(rawPath, cwd);
+		const safe = resolveGitArtifactPath(rawPath, cwd, repositoryRoot);
 		if (!safe.insideWorkspace || !safe.absolutePath) continue;
 		const current = snapshotPath(safe.absolutePath);
 		const stat = numstat.get(rawPath) ?? numstat.get(safe.identity);
+		const operation = record.startsWith("u ")
+			? current.kind === "absent" ? "deleted" : status.includes("A") ? "added" : "modified"
+			: operationForStatus(status);
 		files.set(safe.identity, {
 			path: safe.path,
-			operation: operationForStatus(status),
+			operation,
 			...(current.fingerprint ? { fingerprint: current.fingerprint } : {}),
 			...(stat ?? {}),
+			...(hasContentDiff(stat) ? { contentChanged: true } : {}),
+			...(status === "?" ? { untracked: true } : {}),
 		});
 	}
 	return { files };
@@ -248,16 +325,30 @@ export async function captureGitSnapshot(runGit: GitRunner, cwd: string, baseHea
 	try {
 		const status = await runGit(["status", "--porcelain=v2", "-z", "--untracked-files=all"]);
 		if (status.code !== 0) return undefined;
-		const numstat = await runGit(["diff", "--numstat", "-z"]);
-		const snapshot = await parseGitStatus(status.stdout, cwd, numstat.code === 0 ? parseNumstat(numstat.stdout) : new Map());
-		const head = await runGit(["rev-parse", "HEAD"]);
-		if (head.code === 0 && head.stdout.trim()) snapshot.head = head.stdout.trim();
+		const [head, root] = await Promise.all([
+			runGit(["rev-parse", "HEAD"]),
+			runGit(["rev-parse", "--show-toplevel"]),
+		]);
+		const headRef = head.code === 0 && head.stdout.trim() ? head.stdout.trim() : undefined;
+		const repositoryRoot = root.code === 0 && root.stdout.trim() ? resolve(root.stdout.trim()) : resolve(cwd);
+		// Comparing the worktree to HEAD includes both staged and unstaged content,
+		// while a mode-only index change remains a 0/0 numstat record.
+		const numstat = await runGit(headRef
+			? ["diff", "--numstat", "-z", "--no-ext-diff", "--no-textconv", headRef]
+			: ["diff", "--numstat", "-z", "--no-ext-diff", "--no-textconv"]);
+		const snapshot = await parseGitStatus(status.stdout, cwd, repositoryRoot, numstat.code === 0 ? parseNumstat(numstat.stdout) : new Map());
+		if (headRef) snapshot.head = headRef;
 		if (baseHead && snapshot.head && snapshot.head !== baseHead) {
 			const [names, stats] = await Promise.all([
-				runGit(["diff", "--name-status", "-z", baseHead, snapshot.head]),
-				runGit(["diff", "--numstat", "-z", baseHead, snapshot.head]),
+				runGit(["diff", "--name-status", "-z", "--no-ext-diff", "--no-textconv", baseHead]),
+				runGit(["diff", "--numstat", "-z", "--no-ext-diff", "--no-textconv", baseHead]),
 			]);
-			if (names.code === 0) snapshot.headChanges = parseNameStatus(names.stdout, cwd, stats.code === 0 ? parseNumstat(stats.stdout) : new Map());
+			if (names.code === 0) {
+				const netChanges = parseNameStatus(names.stdout, cwd, repositoryRoot, stats.code === 0 ? parseNumstat(stats.stdout) : new Map());
+				const untracked = [...snapshot.files].filter(([, state]) => state.untracked);
+				snapshot.files = new Map([...netChanges, ...untracked]);
+				snapshot.headChanges = netChanges;
+			}
 		}
 		return snapshot;
 	} catch {
@@ -343,8 +434,8 @@ function artifactFromGit(state: GitFileState, sources: string[], preExisting: bo
 	};
 }
 
-function artifactDigest(files: FileArtifact[], gitReconciled: boolean): string {
-	return JSON.stringify({ files, gitReconciled });
+function artifactDigest(files: FileArtifact[], gitReconciled: boolean, fingerprints: string[]): string {
+	return JSON.stringify({ files, gitReconciled, fingerprints });
 }
 
 function sortArtifacts(files: FileArtifact[]): FileArtifact[] {
@@ -397,6 +488,7 @@ export class ArtifactJournal {
 	}
 
 	async startTool(toolCallId: string, toolName: string, args: unknown): Promise<void> {
+		if (toolName === "bash") this.lastRelevantToolCallId = toolCallId;
 		if (toolName !== "edit" && toolName !== "write") return;
 		const input = inputForTool(args, this.cwd);
 		if (!input.path.insideWorkspace || !input.path.identity || !input.path.absolutePath) return;
@@ -435,6 +527,8 @@ export class ArtifactJournal {
 			}
 		}
 		const files: FileArtifact[] = [];
+		const fingerprints: string[] = [];
+		const changedIdentities = new Set<string>();
 		for (const [identity, sourceSet] of this.sources) {
 			const gitState = gitCandidates.get(identity);
 			const path = gitState?.path ?? sanitizeArtifactLabel(identity);
@@ -443,16 +537,36 @@ export class ArtifactJournal {
 			const sources = [...sourceSet];
 			const preExisting = this.initialDirty.has(identity);
 			const exact = before ? artifactFromSnapshots(path, before, after, sources, preExisting) : undefined;
-			if (exact) files.push(exact);
-			else if (!before && gitState) files.push(artifactFromGit(gitState, sources, preExisting));
+			if (exact) {
+				files.push(exact);
+				changedIdentities.add(identity);
+				fingerprints.push(`${identity}\0${after.kind}\0${after.fingerprint ?? ""}`);
+			} else if (!before && gitState && (gitState.operation !== "modified" || gitState.contentChanged)) {
+				files.push(artifactFromGit(gitState, sources, preExisting));
+				changedIdentities.add(identity);
+				fingerprints.push(`${identity}\0${after.kind}\0${after.fingerprint ?? ""}`);
+			}
 		}
 		const ordered = sortArtifacts(files);
-		const digest = artifactDigest(ordered, gitReconciled);
-		const anchorFromTurn = [...toolResults]
-			.reverse()
-			.map((result) => result.toolName !== "process_update" && typeof result.toolCallId === "string" ? result.toolCallId : undefined)
-			.find((toolCallId): toolCallId is string => typeof toolCallId === "string");
-		const anchor = anchorFromTurn ?? this.lastRelevantToolCallId;
+		const digest = artifactDigest(ordered, gitReconciled, fingerprints.sort());
+		const reversedResults = [...toolResults].reverse();
+		const explicitAnchor = reversedResults.find((result) => {
+			if (typeof result.toolCallId !== "string" || (result.toolName !== "edit" && result.toolName !== "write")) return false;
+			const pending = this.pending.get(result.toolCallId);
+			return this.successful.has(result.toolCallId)
+				&& Boolean(pending && (ordered.length === 0 || changedIdentities.has(pending.path.identity)));
+		})?.toolCallId;
+		const bashAnchor = reversedResults.find((result) =>
+			result.toolName === "bash" && typeof result.toolCallId === "string",
+		)?.toolCallId;
+		const fallbackAnchor = reversedResults.find((result) =>
+			result.toolName !== "process_update" && typeof result.toolCallId === "string",
+		)?.toolCallId;
+		const anchor = typeof explicitAnchor === "string"
+			? explicitAnchor
+			: typeof bashAnchor === "string"
+				? bashAnchor
+				: typeof fallbackAnchor === "string" ? fallbackAnchor : this.lastRelevantToolCallId;
 		if (!anchor) return undefined;
 		if (digest === this.previousDigest) return undefined;
 		if (ordered.length === 0 && !this.hadVisibleFiles) return undefined;

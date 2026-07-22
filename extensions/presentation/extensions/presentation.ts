@@ -99,17 +99,6 @@ export default function presentation(pi: ExtensionAPI): void {
 		deduper.hydrate(entries);
 	};
 
-	const hydrateArtifacts = (ctx: ExtensionContext): void => {
-		const latestByRequest = new Map<string, PresentationArtifactState>();
-		for (const entry of ctx.sessionManager.getBranch()) {
-			if (entry.type !== "custom" || entry.customType !== PRESENTATION_ARTIFACT_STATE_ENTRY_TYPE) continue;
-			const data = entry.data as Partial<PresentationArtifactState> | undefined;
-			if (!data || data.version !== 2 || typeof data.requestId !== "string" || typeof data.revision !== "number" || typeof data.anchorToolCallId !== "string" || !Array.isArray(data.files)) continue;
-			const current = latestByRequest.get(data.requestId);
-			if (!current || current.revision < data.revision) latestByRequest.set(data.requestId, data as PresentationArtifactState);
-		}
-		for (const state of latestByRequest.values()) compatibility.setArtifact(state);
-	};
 
 	const statusReport = (): string => {
 		const commands = pi.getCommands();
@@ -290,16 +279,14 @@ export default function presentation(pi: ExtensionAPI): void {
 		latestContext = ctx;
 		reloadConfig(ctx);
 		hydrateDeduper(ctx);
-		compatibility.toolBoundary();
-		hydrateArtifacts(ctx);
+		compatibility.hydrate(ctx.sessionManager.getBranch(), ctx.cwd);
 		await journal.begin(ctx.cwd);
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
 		latestContext = ctx;
 		hydrateDeduper(ctx);
-		compatibility.toolBoundary();
-		hydrateArtifacts(ctx);
+		compatibility.hydrate(ctx.sessionManager.getBranch(), ctx.cwd);
 		await journal.begin(ctx.cwd);
 	});
 

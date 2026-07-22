@@ -1,11 +1,15 @@
 type Method = (this: unknown, ...args: any[]) => any;
 
+interface PatchOwner {
+	token: object;
+	wrapper: Method;
+}
+
 interface PatchState {
 	version: number;
 	originalDescriptor: PropertyDescriptor | undefined;
 	original: Method;
-	wrapper: Method;
-	owners: Set<object>;
+	owners: PatchOwner[];
 }
 
 export interface PrototypePatchHandle {
@@ -24,49 +28,49 @@ export function patchPrototypeMethod(
 	if (typeof current !== "function") return undefined;
 
 	let state = target[stateKey] as PatchState | undefined;
-	if (state && state.version === version && current === state.wrapper) {
-		// A reload can install a new extension closure before an older handle is
-		// released. Rebind to the newest closure while retaining the real native
-		// method as the only restoration target.
-		state.wrapper = build(state.original);
-		Object.defineProperty(prototype, key, {
-			...(state.originalDescriptor ?? {}),
-			value: state.wrapper,
-			writable: true,
-			configurable: true,
-		});
-	} else if (!state || state.version !== version || current !== state.wrapper) {
+	const currentOwner = state?.owners.at(-1);
+	if (!state || state.version !== version || current !== currentOwner?.wrapper) {
 		const original = current as Method;
 		state = {
 			version,
 			originalDescriptor: Object.getOwnPropertyDescriptor(prototype, key),
 			original,
-			wrapper: build(original),
-			owners: new Set(),
+			owners: [],
 		};
-		Object.defineProperty(prototype, key, {
-			...(state.originalDescriptor ?? {}),
-			value: state.wrapper,
-			writable: true,
-			configurable: true,
-		});
 		target[stateKey] = state;
 	}
 
-	const owner = {};
-	state.owners.add(owner);
+	const owner: PatchOwner = { token: {}, wrapper: build(state.original) };
+	state.owners.push(owner);
+	Object.defineProperty(prototype, key, {
+		...(state.originalDescriptor ?? {}),
+		value: owner.wrapper,
+		writable: true,
+		configurable: true,
+	});
 	let active = true;
 	return {
 		uninstall() {
 			if (!active) return;
 			active = false;
-			state!.owners.delete(owner);
-			if (state!.owners.size > 0 || target[stateKey] !== state) return;
-			if (target[key] === state!.wrapper) {
+			const ownerIndex = state!.owners.findIndex((candidate) => candidate.token === owner.token);
+			if (ownerIndex < 0) return;
+			const ownsCurrentMethod = target[key] === owner.wrapper;
+			state!.owners.splice(ownerIndex, 1);
+			if (target[stateKey] !== state) return;
+			const previousOwner = state!.owners.at(-1);
+			if (ownsCurrentMethod && previousOwner) {
+				Object.defineProperty(prototype, key, {
+					...(state!.originalDescriptor ?? {}),
+					value: previousOwner.wrapper,
+					writable: true,
+					configurable: true,
+				});
+			} else if (ownsCurrentMethod) {
 				if (state!.originalDescriptor) Object.defineProperty(prototype, key, state!.originalDescriptor);
 				else target[key] = state!.original;
 			}
-			delete target[stateKey];
+			if (!previousOwner) delete target[stateKey];
 		},
 	};
 }

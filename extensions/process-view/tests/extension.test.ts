@@ -298,6 +298,10 @@ describe("process-view registration and tool", () => {
 				{ text: "Commit", status: "active" },
 			],
 			update: "Ready to commit",
+			artifacts: [
+				{ kind: "commit", label: "Old commit", ref: "1111111" },
+				{ kind: "test", label: "Package checks" },
+			],
 		});
 		assert.equal(await harness.emit("tool_call", { toolName: "git_finalize", toolCallId: "git-1", input: {} }), undefined);
 		await harness.emit("tool_result", {
@@ -319,7 +323,39 @@ describe("process-view registration and tool", () => {
 		assert.equal(snapshot.status, "completed");
 		assert.deepEqual(snapshot.steps.map((step) => step.status), ["done", "done", "done"]);
 		assert.match(snapshot.update ?? "", /Committed abcdef123456/);
-		assert.deepEqual(snapshot.artifacts, [{ kind: "commit", label: "Committed abcdef123456", ref: "abcdef123456" }]);
+		assert.deepEqual(snapshot.artifacts, [
+			{ kind: "test", label: "Package checks" },
+			{ kind: "commit", label: "Committed abcdef123456", ref: "abcdef123456" },
+		]);
+	});
+
+	it("ignores a malformed git finalize receipt", async () => {
+		const harness = createHarness();
+		await execute(harness, {
+			title: "Release presentation",
+			status: "running",
+			steps: [
+				{ text: "Implement", status: "done" },
+				{ text: "Commit", status: "active" },
+			],
+			update: "Ready to commit",
+		});
+		await harness.emit("tool_result", {
+			toolName: "git_finalize",
+			toolCallId: "git-1",
+			input: {},
+			content: [{ type: "text", text: "Committed not-a-hash" }],
+			isError: false,
+			details: {
+				kind: "git_finalize",
+				version: 1,
+				status: "committed",
+				commit: "not-a-hash",
+				requestedPush: false,
+				operationSatisfied: true,
+			},
+		});
+		assert.equal(latestSnapshot(harness.entries)?.status, "running");
 	});
 
 	it("keeps the task waiting when a requested push only partially succeeds", async () => {

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
 
+import { visibleWidth } from "@earendil-works/pi-tui";
+
 import {
 	createBashToolDefinition,
 	initTheme,
@@ -42,9 +44,14 @@ test("bash collapsed rendering preserves running success error and native expans
 	try {
 		const success = component("bash-success", "printf super-secret-command");
 		success.markExecutionStarted();
-		let output = plain(success.render(100));
-		assert.match(output, /Running · Bash/);
-		assert.doesNotMatch(output, /super-secret-command/);
+		let output = "";
+		for (const width of [80, 120, 160]) {
+			const lines = success.render(width);
+			assert.ok(lines.every((line) => visibleWidth(line) <= width));
+			output = plain(lines);
+			assert.match(output, /Running · Bash/);
+			assert.doesNotMatch(output, /super-secret-command/);
+		}
 
 		now = 3_400;
 		success.updateResult({
@@ -52,10 +59,14 @@ test("bash collapsed rendering preserves running success error and native expans
 			details: { exitCode: 0 },
 			isError: false,
 		}, false);
-		output = plain(success.render(100));
-		assert.match(output, /Bash · completed · 2 lines · 2s/);
-		assert.match(output, /<success>/);
-		assert.doesNotMatch(output, /super-secret-command/);
+		for (const width of [80, 120, 160]) {
+			const lines = success.render(width);
+			assert.ok(lines.every((line) => visibleWidth(line) <= width));
+			output = plain(lines);
+			assert.match(output, /Bash · completed · 2 lines · 2s/);
+			assert.match(output, /<success>/);
+			assert.doesNotMatch(output, /super-secret-command/);
+		}
 
 		success.setExpanded(true);
 		output = plain(success.render(100));
@@ -70,10 +81,15 @@ test("bash collapsed rendering preserves running success error and native expans
 			details: { exitCode: 7 },
 			isError: true,
 		}, false);
-		output = plain(failure.render(100));
-		assert.match(output, /Bash · failed · exit 7/);
-		assert.match(output, /<error>/);
-		assert.doesNotMatch(output, /another-secret/);
+		for (const width of [80, 120, 160]) {
+			const lines = failure.render(width);
+			assert.ok(lines.every((line) => visibleWidth(line) <= width));
+			output = plain(lines);
+			assert.match(output, /Bash · failed · exit 7 · permission denied/);
+			assert.match(output, /<error>/);
+			assert.doesNotMatch(output, /to expand/);
+			assert.doesNotMatch(output, /another-secret/);
+		}
 	} finally {
 		handle.uninstall();
 	}

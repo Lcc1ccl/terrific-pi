@@ -12,7 +12,7 @@ import { Type } from "typebox";
 import { loadAuxiliaryConfig, parseModelRef, resolveAuxiliaryConfigPath, resolveTaskRoute } from "../lib/config.ts";
 import { CONFIGURABLE_AUXILIARY_TASKS, runAuxiliaryConfigTui } from "../lib/configure.ts";
 import { buildResearchRequest, delegateResearch, validateResearchOutput } from "../lib/delegation.ts";
-import { createGitFinalizeReceipt, finalizeGit, GitFinalizeError, hasSiblingToolCall } from "../lib/git-finalize.ts";
+import { createFinalizationToolLock, createGitFinalizeReceipt, finalizeGit, GitFinalizeError, hasSiblingToolCall } from "../lib/git-finalize.ts";
 import {
 	buildCommitMessages,
 	buildSummaryMessages,
@@ -151,33 +151,16 @@ export default function auxiliary(pi: ExtensionAPI) {
 	let latestContext: ExtensionContext | undefined;
 	let runtime: AuxiliaryRuntime | undefined;
 	let titleAttempted = false;
-	let postFinalizeLocked = false;
-	let toolsBeforeFinalize: string[] | undefined;
+	const finalizationLock = createFinalizationToolLock(
+		() => pi.getActiveTools(),
+		(tools) => pi.setActiveTools([...tools]),
+	);
 	const warned = new Set<string>();
 	const lastErrors = new Map<string, string>();
 	const eventUnsubscribes: Array<() => void> = [];
 
-	const restoreFinalizedTools = (): void => {
-		if (!postFinalizeLocked) return;
-		postFinalizeLocked = false;
-		const tools = toolsBeforeFinalize;
-		toolsBeforeFinalize = undefined;
-		if (!tools) return;
-		try {
-			pi.setActiveTools(tools);
-		} catch {}
-	};
-
-	const lockAfterFinalize = (): void => {
-		if (postFinalizeLocked) return;
-		postFinalizeLocked = true;
-		try {
-			toolsBeforeFinalize = pi.getActiveTools();
-			pi.setActiveTools([]);
-		} catch {
-			toolsBeforeFinalize = undefined;
-		}
-	};
+	const restoreFinalizedTools = (): void => finalizationLock.restore();
+	const lockAfterFinalize = (): void => { finalizationLock.lock(); };
 
 	const appendUsage = (entry: AuxiliaryUsageEntryV1) => {
 		if (!isAuxiliaryUsageEntry(entry)) return;
@@ -571,7 +554,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
-		if (postFinalizeLocked) return { block: true, reason: "git_finalize already committed changes; only the final assistant response is allowed" };
+		if (finalizationLock.isLocked()) return { block: true, reason: "git_finalize already committed changes; only the final assistant response is allowed" };
 		if (event.toolName === "git_finalize" && hasSiblingToolCall(ctx.sessionManager.getBranch(), event.toolCallId)) {
 			return { block: true, reason: "git_finalize must be the only tool call in its assistant response" };
 		}

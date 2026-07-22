@@ -18,6 +18,54 @@ function occurrences(lines: string[], marker: string): number {
 	return lines.join("").split(marker).length - 1;
 }
 
+test("new compatibility ownership survives an older reload handle unloading", () => {
+	initTheme("dark", false);
+	const original = UserMessageComponent.prototype.render;
+	const options = {
+		isUserMessageBoxEnabled: () => true,
+		isCompactToolsEnabled: () => false,
+		getTheme: () => ({
+			fg(_color: string, text: string) { return text; },
+			bg(_color: string, text: string) { return text; },
+			bold(text: string) { return text; },
+		}),
+	};
+	const first = installPresentationCompatibility(options as never);
+	const second = installPresentationCompatibility(options as never);
+	try {
+		first.uninstall();
+		const message = new UserMessageComponent("reload keeps the frame", undefined, 0);
+		assert.match(message.render(40).map(stripVTControlCharacters).join("\n"), /╭ user ─+╮/);
+	} finally {
+		second.uninstall();
+	}
+	assert.equal(UserMessageComponent.prototype.render, original);
+});
+
+test("unloading the newest compatibility handle reactivates the previous live renderer", () => {
+	initTheme("dark", false);
+	const original = UserMessageComponent.prototype.render;
+	const shared = {
+		isCompactToolsEnabled: () => false,
+		getTheme: () => ({
+			fg(_color: string, text: string) { return text; },
+			bg(_color: string, text: string) { return text; },
+			bold(text: string) { return text; },
+		}),
+	};
+	const first = installPresentationCompatibility({ ...shared, isUserMessageBoxEnabled: () => true } as never);
+	const second = installPresentationCompatibility({ ...shared, isUserMessageBoxEnabled: () => false } as never);
+	try {
+		const message = new UserMessageComponent("owner stack", undefined, 0);
+		assert.doesNotMatch(message.render(40).map(stripVTControlCharacters).join("\n"), /╭ user /);
+		second.uninstall();
+		assert.match(message.render(40).map(stripVTControlCharacters).join("\n"), /╭ user ─+╮/);
+	} finally {
+		first.uninstall();
+	}
+	assert.equal(UserMessageComponent.prototype.render, original);
+});
+
 test("user message compatibility adds one semantic full-width box without rebuilding content", () => {
 	initTheme("dark", false);
 	const original = UserMessageComponent.prototype.render;

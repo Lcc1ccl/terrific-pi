@@ -9,10 +9,14 @@ const theme = {
 };
 
 function tool(id: string, requestId = "request-1") {
+	return historyTool(id, "edit", { path: "src/app.ts" }, requestId);
+}
+
+function historyTool(id: string, name: string, args: Record<string, unknown>, requestId = "request-1") {
 	return {
 		toolCallId: id,
-		toolName: "edit",
-		args: { path: "src/app.ts" },
+		toolName: name,
+		args,
 		cwd: "/workspace/project",
 		executionStarted: true,
 		isPartial: false,
@@ -22,6 +26,74 @@ function tool(id: string, requestId = "request-1") {
 		requestId,
 	};
 }
+
+function hydrate(controller: ReturnType<typeof createToolRenderController>, branch: unknown[]): void {
+	controller.hydrate(branch, "/workspace/project");
+}
+
+test("branch hydration restores one exploration episode without starting live timers", () => {
+	const controller = createToolRenderController({ isEnabled: () => true, getTheme: () => theme, now: () => 1_000 });
+	try {
+		hydrate(controller, [{
+			type: "message",
+			timestamp: "2026-07-22T00:00:00.000Z",
+			message: {
+				role: "assistant",
+				content: [
+					{ type: "toolCall", id: "read-1", name: "read", arguments: { path: "src/app.ts" } },
+					{ type: "toolCall", id: "grep-1", name: "grep", arguments: { path: "src", pattern: "render" } },
+				],
+			},
+		}, {
+			type: "message",
+			message: { role: "toolResult", toolCallId: "read-1", toolName: "read", content: [], isError: false },
+		}, {
+			type: "message",
+			message: { role: "toolResult", toolCallId: "grep-1", toolName: "grep", content: [], isError: false },
+		}]);
+		const read = historyTool("read-1", "read", { path: "src/app.ts" });
+		const grep = historyTool("grep-1", "grep", { path: "src", pattern: "render" });
+		assert.deepEqual(controller.render(read, 120, () => ["native read"]), []);
+		assert.match(controller.render(grep, 120, () => ["native grep"]).join("\n"), /Explored · read 1 file · searched 1 pattern/);
+	} finally {
+		controller.dispose();
+	}
+});
+
+test("branch hydration suppresses superseded artifact anchors after resume", () => {
+	const controller = createToolRenderController({ isEnabled: () => true, getTheme: () => theme, now: () => 1_000 });
+	const firstState = {
+		version: 2 as const,
+		receiptId: "receipt-1",
+		requestId: "request-1",
+		revision: 1,
+		anchorToolCallId: "edit-1",
+		files: [{ path: "src/app.ts", operation: "modified" as const, sources: ["edit"] }],
+		successfulWrites: 1,
+		failedWrites: 0,
+		gitReconciled: true,
+		startedAt: 1,
+		revisedAt: 2,
+	};
+	const secondState = {
+		...firstState,
+		receiptId: "receipt-2",
+		revision: 2,
+		supersedes: "receipt-1",
+		anchorToolCallId: "edit-2",
+		revisedAt: 3,
+	};
+	try {
+		hydrate(controller, [
+			{ type: "custom", customType: "presentation-artifact-state-v2", data: firstState },
+			{ type: "custom", customType: "presentation-artifact-state-v2", data: secondState },
+		]);
+		assert.deepEqual(controller.render(tool("edit-1"), 120, () => ["native first"]), []);
+		assert.match(controller.render(tool("edit-2"), 120, () => ["native second"]).join("\n"), /Files 1 changed/);
+	} finally {
+		controller.dispose();
+	}
+});
 
 test("artifact revisions project only the latest request snapshot onto its anchor tool", () => {
 	const controller = createToolRenderController({ isEnabled: () => true, getTheme: () => theme, now: () => 1_000 });

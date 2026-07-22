@@ -66,7 +66,7 @@ test("artifact renderers remove terminal control sequences from persisted paths"
 	assert.doesNotMatch(output, /\u001b/);
 });
 
-test("tool summaries use the active expand keybinding only when raw content is hidden", () => {
+test("tool summaries stay compact without a per-row expansion hint", () => {
 	const theme = {
 		fg(_color: string, text: string) { return text; },
 		bold(text: string) { return text; },
@@ -83,7 +83,7 @@ test("tool summaries use the active expand keybinding only when raw content is h
 	};
 	const line = renderToolEntry(entry, false, theme).render(160)[0] ?? "";
 	assert.match(line, /read src\/a\.ts/);
-	assert.match(line, /to expand/);
+	assert.doesNotMatch(line, /to expand/);
 	assert.match(line, /300ms/);
 	const expandedLine = renderToolEntry(entry, true, theme).render(160)[0] ?? "";
 	assert.doesNotMatch(expandedLine, /to expand/);
@@ -92,7 +92,7 @@ test("tool summaries use the active expand keybinding only when raw content is h
 		message: "read 2 files · searched 1 pattern · listed 1 directory · 300ms",
 	}, false, theme).render(80)[0] ?? "";
 	assert.match(narrowLine, /Explored/);
-	assert.match(narrowLine, /to expand/);
+	assert.doesNotMatch(narrowLine, /to expand/);
 });
 
 test("collapsed system and artifact entries occupy one rendered row at narrow widths", () => {

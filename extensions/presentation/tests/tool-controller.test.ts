@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { visibleWidth } from "@earendil-works/pi-tui";
+
 import { createToolRenderController } from "../lib/compat/tool-render.ts";
 
 const theme = {
@@ -102,6 +104,72 @@ test("file receipts remain attached to native rows when compact summaries are di
 		assert.match(output, /native edit/);
 		assert.match(output, /Files 1 changed/);
 		assert.match(output, /src\/app\.ts/);
+	} finally {
+		controller.dispose();
+	}
+});
+
+test("failed compact rows redact credential URLs and absolute paths before truncation", () => {
+	const controller = createToolRenderController({
+		isEnabled: () => true,
+		getTheme: () => ({
+			fg(_color: string, text: string) { return text; },
+			bold(text: string) { return text; },
+		}),
+		now: () => 1_000,
+	});
+	try {
+		const read = instance(
+			"read-error",
+			"read",
+			{ path: "/workspace/project/src/missing.ts" },
+			{
+				content: [{
+					type: "text",
+					text: "ENOENT: request https://alice:hunter2@example.invalid/private failed for '/home/alice/private/project/secret.txt' token=credential-value",
+				}],
+				isError: true,
+			},
+		);
+		for (const width of [80, 120, 160]) {
+			const lines = controller.render(read, width, () => ["native read"]);
+			const output = lines.join("\n");
+			assert.ok(lines.every((line) => visibleWidth(line) <= width));
+			assert.match(output, /Read · failed · ENOENT/);
+			assert.doesNotMatch(output, /alice|hunter2|credential-value|\/home\//);
+			assert.doesNotMatch(output, /to expand/);
+		}
+
+		const windows = instance("windows-error", "read", {}, {
+			content: [{ type: "text", text: String.raw`ENOENT: C:\Users\Alice Smith\private\secret.txt` }],
+			isError: true,
+		});
+		const windowsOutput = controller.render(windows, 160, () => ["native read"]).join("\n");
+		assert.match(windowsOutput, /secret\.txt/);
+		assert.doesNotMatch(windowsOutput, /C:\\Users|Alice Smith|private/);
+
+		const bracketed = instance("bracketed-error", "read", {}, {
+			content: [{ type: "text", text: "ENOENT: [/home/alice/private/secret.txt]" }],
+			isError: true,
+		});
+		const bracketedOutput = controller.render(bracketed, 160, () => ["native read"]).join("\n");
+		assert.match(bracketedOutput, /\[secret\.txt\]/);
+		assert.doesNotMatch(bracketedOutput, /\/home\/alice|private/);
+	} finally {
+		controller.dispose();
+	}
+});
+
+test("adjacent failures with the same safe reason collapse onto the latest row", () => {
+	const controller = createToolRenderController({ isEnabled: () => true, getTheme: () => theme, now: () => 1_000 });
+	const result = { content: [{ type: "text", text: "service unavailable" }], isError: true };
+	try {
+		controller.start({ toolCallId: "fetch-1", toolName: "fetch_content", args: {}, cwd: "/workspace/project" });
+		controller.start({ toolCallId: "fetch-2", toolName: "fetch_content", args: {}, cwd: "/workspace/project" });
+		controller.end({ toolCallId: "fetch-1", toolName: "fetch_content", result, isError: true });
+		controller.end({ toolCallId: "fetch-2", toolName: "fetch_content", result, isError: true });
+		assert.deepEqual(controller.render(instance("fetch-1", "fetch_content", {}, result), 120, () => ["native first"]), []);
+		assert.match(controller.render(instance("fetch-2", "fetch_content", {}, result), 120, () => ["native second"]).join("\n"), /failed · service unavailable.*×2/);
 	} finally {
 		controller.dispose();
 	}

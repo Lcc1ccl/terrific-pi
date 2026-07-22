@@ -9,6 +9,7 @@ import { describe, test } from "node:test";
 
 import {
 	GitFinalizeError,
+	createFinalizationToolLock,
 	createGitFinalizeReceipt,
 	finalizeGit,
 	hasSiblingToolCall,
@@ -60,6 +61,27 @@ describe("staged Git inspection", () => {
 		assert.notEqual(first.fingerprint, second.fingerprint);
 		assert.equal(first.nameStatus, second.nameStatus);
 		assert.equal(first.stat, second.stat);
+	});
+});
+
+describe("finalization tool lock", () => {
+	test("blocks further tools until the agent settles, then restores the original set", () => {
+		let active = ["read", "edit", "git_finalize"];
+		const writes: string[][] = [];
+		const lock = createFinalizationToolLock(
+			() => active,
+			(next) => { active = [...next]; writes.push([...next]); },
+		);
+		assert.equal(lock.isLocked(), false);
+		assert.equal(lock.lock(), true);
+		assert.equal(lock.isLocked(), true);
+		assert.deepEqual(active, []);
+		assert.equal(lock.lock(), false);
+		lock.restore();
+		assert.equal(lock.isLocked(), false);
+		assert.deepEqual(active, ["read", "edit", "git_finalize"]);
+		lock.restore();
+		assert.deepEqual(writes, [[], ["read", "edit", "git_finalize"]]);
 	});
 });
 

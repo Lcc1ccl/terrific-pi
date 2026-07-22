@@ -1,7 +1,6 @@
-import { basename, isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, relative, resolve, sep, win32 } from "node:path";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 
-import { expandHint } from "../expand-hint.ts";
 import { sanitizeSystemText } from "../system-events.ts";
 import type { FileArtifact, PresentationArtifactState } from "../types.ts";
 import type { CompatibilityTheme } from "./user-message.ts";
@@ -49,6 +48,7 @@ interface ToolState {
 	name: string;
 	args: unknown;
 	cwd: string;
+	turnId: number;
 	requestId?: string;
 	skillName?: string;
 	startedAt?: number;
@@ -75,6 +75,7 @@ export interface ToolRenderOptions {
 export interface ToolRenderController {
 	start(input: ToolLifecycleStart): void;
 	end(input: ToolLifecycleEnd): void;
+	hydrate(entries: readonly unknown[], cwd: string): void;
 	boundary(): void;
 	setArtifact(state: PresentationArtifactState): void;
 	render(instance: unknown, width: number, original: OriginalRender): string[];
@@ -86,6 +87,27 @@ const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isArtifactState(value: unknown): value is PresentationArtifactState {
+	if (!isRecord(value)
+		|| value.version !== 2
+		|| typeof value.receiptId !== "string"
+		|| typeof value.requestId !== "string"
+		|| typeof value.revision !== "number"
+		|| !Number.isInteger(value.revision)
+		|| typeof value.anchorToolCallId !== "string"
+		|| !Array.isArray(value.files)
+		|| typeof value.successfulWrites !== "number"
+		|| typeof value.failedWrites !== "number"
+		|| typeof value.gitReconciled !== "boolean"
+		|| typeof value.startedAt !== "number"
+		|| typeof value.revisedAt !== "number") return false;
+	return value.files.every((file) => isRecord(file)
+		&& typeof file.path === "string"
+		&& (file.operation === "added" || file.operation === "modified" || file.operation === "deleted" || file.operation === "unknown")
+		&& Array.isArray(file.sources)
+		&& file.sources.every((source) => typeof source === "string"));
 }
 
 function textOutput(result: ToolResultLike | undefined): string {
@@ -131,14 +153,25 @@ function color(theme: CompatibilityTheme | undefined, tone: string, value: strin
 	}
 }
 
+function collapseAbsolutePaths(value: string): string {
+	return value
+		.replace(/(['"])(\/[^'"\r\n]+)\1/g, (_match, quote: string, path: string) => `${quote}${basename(path)}${quote}`)
+		.replace(/\b[A-Za-z]:\\[^'"\r\n<>\[\](){},;:]+/g, (path) => win32.basename(path.trim()))
+		.replace(/(^|[\s(\[{:<=>])((?:\/[^/\s'"\]),;:}>]+)+)/g, (_match, prefix: string, path: string) => `${prefix}${basename(path)}`);
+}
+
 function safeError(result: ToolResultLike | undefined): string {
 	const code = exitCode(result);
-	if (code !== undefined) return `exit ${code}`;
 	const first = textOutput(result).split(/\r?\n/).map((line) => line.trim()).find(Boolean);
-	return sanitizeSystemText(first ?? "no error detail", 80)
-		.replace(/https?:\/\/\S+\?\S+/gi, "<url>")
+	let detail = sanitizeSystemText(first ?? "", 241)
+		.replace(/https?:\/\/[^\s'"<>]+/gi, "<url>")
 		.replace(/\b(Bearer)\s+\S+/gi, "$1 <redacted>")
-		.replace(/\b(api[_-]?key|token|secret|password)\s*[:=]\s*\S+/gi, "$1=<redacted>");
+		.replace(/\b(api[_-]?key|token|secret|password)\s*[:=]\s*\S+/gi, "$1=<redacted>")
+		.replace(/\b(?:sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{8,}|xox[baprs]-[A-Za-z0-9-]{8,})\b/gi, "<redacted>");
+	detail = collapseAbsolutePaths(detail);
+	if (/^(?:command )?exited with code \d+$/i.test(detail)) detail = "";
+	const summary = truncateToWidth(detail || "no error detail", 120, "…");
+	return code === undefined ? summary : detail ? `exit ${code} · ${summary}` : `exit ${code}`;
 }
 
 function insideWorkspace(path: string, cwd: string): boolean {
@@ -238,7 +271,7 @@ function terminalLine(state: ToolState, theme: CompatibilityTheme | undefined): 
 		? ` · ${formatDuration(state.endedAt - state.startedAt)}`
 		: "";
 	if (state.isError) {
-		return `${color(theme, "error", "✗")} ${strong(theme, label)} · failed · ${safeError(state.result)}${elapsed} · ${expandHint(theme as never)}`;
+		return `${color(theme, "error", "✗")} ${strong(theme, label)} · failed · ${safeError(state.result)}${elapsed}`;
 	}
 	return `${color(theme, "success", "◆")} ${strong(theme, label)} · ${state.skillName ? "loaded" : customSuccess(state)}${elapsed}`;
 }
@@ -254,7 +287,7 @@ function bashLine(state: ToolState, theme: CompatibilityTheme | undefined, now: 
 	const lines = outputLineCount(state.result);
 	const lineText = lines > 0 ? `${lines} line${lines === 1 ? "" : "s"}` : "no output";
 	if (state.isError) {
-		return `${color(theme, "error", "✗")} ${strong(theme, "Bash")} · failed · ${safeError(state.result)} · ${lineText}${elapsed} · ${expandHint(theme as never)}`;
+		return `${color(theme, "error", "✗")} ${strong(theme, "Bash")} · failed · ${safeError(state.result)} · ${lineText}${elapsed}`;
 	}
 	return `${color(theme, "success", "◆")} ${strong(theme, "Bash")} · completed · ${lineText}${elapsed}`;
 }
@@ -305,7 +338,21 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 	const supersededArtifactAnchors = new Set<string>();
 	let activeEpisode: ExplorationEpisode | undefined;
 	let nextEpisodeId = 0;
+	let currentTurnId = 0;
 	let timer: ReturnType<typeof setInterval> | undefined;
+
+	const resetState = (): void => {
+		if (timer) clearInterval(timer);
+		timer = undefined;
+		states.clear();
+		episodes.clear();
+		artifactsByRequest.clear();
+		artifactsByAnchor.clear();
+		supersededArtifactAnchors.clear();
+		activeEpisode = undefined;
+		currentTurnId = 0;
+		nextEpisodeId = 0;
+	};
 
 	const requestRender = (state: ToolState | undefined): void => state?.component?.ui?.requestRender?.();
 
@@ -334,6 +381,7 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 				name: instance.toolName,
 				args: instance.args ?? {},
 				cwd: typeof instance.cwd === "string" ? instance.cwd : process.cwd(),
+				turnId: currentTurnId,
 				isError: false,
 			};
 			states.set(state.id, state);
@@ -350,6 +398,39 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 		return state;
 	};
 
+	const applyArtifact = (artifact: PresentationArtifactState): void => {
+		const previous = artifactsByRequest.get(artifact.requestId);
+		if (previous && previous.revision >= artifact.revision) return;
+		if (previous && previous.anchorToolCallId !== artifact.anchorToolCallId) {
+			supersededArtifactAnchors.add(previous.anchorToolCallId);
+			artifactsByAnchor.delete(previous.anchorToolCallId);
+			requestRender(states.get(previous.anchorToolCallId));
+		}
+		artifactsByRequest.set(artifact.requestId, artifact);
+		artifactsByAnchor.set(artifact.anchorToolCallId, artifact);
+		supersededArtifactAnchors.delete(artifact.anchorToolCallId);
+		requestRender(states.get(artifact.anchorToolCallId));
+	};
+
+	const duplicateFailure = (state: ToolState): { representative: string; count: number } => {
+		const turn = [...states.values()].filter((candidate) => candidate.turnId === state.turnId);
+		const index = turn.findIndex((candidate) => candidate.id === state.id);
+		const key = `${state.name}\0${safeError(state.result)}`;
+		let first = index;
+		let last = index;
+		while (first > 0) {
+			const candidate = turn[first - 1]!;
+			if (!terminal(candidate) || !candidate.isError || `${candidate.name}\0${safeError(candidate.result)}` !== key) break;
+			first -= 1;
+		}
+		while (last + 1 < turn.length) {
+			const candidate = turn[last + 1]!;
+			if (!terminal(candidate) || !candidate.isError || `${candidate.name}\0${safeError(candidate.result)}` !== key) break;
+			last += 1;
+		}
+		return { representative: turn[last]?.id ?? state.id, count: last - first + 1 };
+	};
+
 	return {
 		start(input) {
 			const prior = states.get(input.toolCallId);
@@ -359,6 +440,7 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 				name: input.toolName,
 				args: input.args,
 				cwd: input.cwd,
+				turnId: prior?.turnId ?? currentTurnId,
 				...(input.requestId ? { requestId: input.requestId } : {}),
 				...(input.skillName ? { skillName: input.skillName } : {}),
 				startedAt: prior?.startedAt ?? input.timestamp ?? options.now(),
@@ -383,6 +465,7 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 				name: input.toolName,
 				args: {},
 				cwd: process.cwd(),
+				turnId: currentTurnId,
 				isError: false,
 			};
 			state.result = input.result as ToolResultLike;
@@ -394,22 +477,82 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 			if (state.groupId) {
 				for (const id of episodes.get(state.groupId)?.members ?? []) requestRender(states.get(id));
 			}
+			if (input.isError) {
+				for (const candidate of states.values()) {
+					if (candidate.turnId === state.turnId) requestRender(candidate);
+				}
+			}
 			refreshTimer();
+		},
+		hydrate(entries, cwd) {
+			resetState();
+			for (const entryValue of entries) {
+				if (!isRecord(entryValue)) continue;
+				if (entryValue.type === "custom" && entryValue.customType === "presentation-artifact-state-v2") {
+					if (isArtifactState(entryValue.data)) applyArtifact(entryValue.data);
+					continue;
+				}
+				if (entryValue.type !== "message" || !isRecord(entryValue.message)) continue;
+				const message = entryValue.message;
+				if (message.role === "assistant" && Array.isArray(message.content)) {
+					currentTurnId += 1;
+					activeEpisode = undefined;
+					for (const content of message.content) {
+						if (!isRecord(content)
+							|| content.type !== "toolCall"
+							|| typeof content.id !== "string"
+							|| typeof content.name !== "string") continue;
+						const args = content.arguments ?? {};
+						const skillName = content.name === "read" ? options.resolveSkillName?.(args, cwd) : undefined;
+						const state: ToolState = {
+							id: content.id,
+							name: content.name,
+							args,
+							cwd,
+							turnId: currentTurnId,
+							...(skillName ? { skillName } : {}),
+							isError: false,
+						};
+						if (EXPLORATION.has(state.name) && !skillName) {
+							activeEpisode ??= { id: ++nextEpisodeId, members: [] };
+							activeEpisode.members.push(state.id);
+							episodes.set(activeEpisode.id, activeEpisode);
+							state.groupId = activeEpisode.id;
+						} else {
+							activeEpisode = undefined;
+						}
+						states.set(state.id, state);
+					}
+					activeEpisode = undefined;
+				} else if (message.role === "toolResult" && typeof message.toolCallId === "string") {
+					const prior = states.get(message.toolCallId);
+					const name = typeof message.toolName === "string" ? message.toolName : prior?.name;
+					if (!name) continue;
+					const state: ToolState = prior ?? {
+						id: message.toolCallId,
+						name,
+						args: {},
+						cwd,
+						turnId: currentTurnId,
+						isError: false,
+					};
+					state.result = {
+						content: message.content,
+						details: message.details,
+						isError: message.isError === true,
+					};
+					state.isError = message.isError === true;
+					states.set(state.id, state);
+				}
+			}
+			activeEpisode = undefined;
 		},
 		boundary() {
 			activeEpisode = undefined;
+			currentTurnId += 1;
 		},
 		setArtifact(artifact) {
-			const previous = artifactsByRequest.get(artifact.requestId);
-			if (previous && previous.anchorToolCallId !== artifact.anchorToolCallId) {
-				supersededArtifactAnchors.add(previous.anchorToolCallId);
-				artifactsByAnchor.delete(previous.anchorToolCallId);
-				requestRender(states.get(previous.anchorToolCallId));
-			}
-			artifactsByRequest.set(artifact.requestId, artifact);
-			artifactsByAnchor.set(artifact.anchorToolCallId, artifact);
-			supersededArtifactAnchors.delete(artifact.anchorToolCallId);
-			requestRender(states.get(artifact.anchorToolCallId));
+			applyArtifact(artifact);
 		},
 		render(instanceValue, width, original) {
 			const instance = instanceValue as ToolComponentLike;
@@ -433,6 +576,8 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 			}
 			if (!state) return original.call(instanceValue, width);
 			try {
+				const duplicate = state.isError ? duplicateFailure(state) : undefined;
+				if (duplicate && duplicate.representative !== state.id) return [];
 				let line: string | undefined;
 				if (state.groupId) {
 					if (state.isError) line = terminalLine(state, options.getTheme());
@@ -457,6 +602,7 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 						? terminalLine(state, options.getTheme())
 						: runningLine(labelFor(state.name), state, options.getTheme(), options.now());
 				}
+				if (line && duplicate && duplicate.count > 1) line += color(options.getTheme(), "muted", ` · ×${duplicate.count}`);
 				refreshTimer();
 				return !line || width < 1 ? [] : ["", truncateToWidth(line, width, "…")];
 			} catch {
@@ -464,14 +610,7 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 			}
 		},
 		dispose() {
-			if (timer) clearInterval(timer);
-			timer = undefined;
-			states.clear();
-			episodes.clear();
-			artifactsByRequest.clear();
-			artifactsByAnchor.clear();
-			supersededArtifactAnchors.clear();
-			activeEpisode = undefined;
+			resetState();
 		},
 	};
 }

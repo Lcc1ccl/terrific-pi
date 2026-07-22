@@ -90,6 +90,8 @@ function isGitFinalizeReceipt(value: unknown): value is GitFinalizeReceipt {
 		|| !COMMIT_HASH.test(value.commit)
 		|| typeof value.requestedPush !== "boolean"
 		|| typeof value.operationSatisfied !== "boolean") return false;
+	if (!value.requestedPush && value.status !== "committed") return false;
+	if (value.requestedPush && value.status === "committed") return false;
 	if (value.status === "partial") return value.operationSatisfied === false;
 	return value.operationSatisfied === true;
 }
@@ -102,7 +104,7 @@ function gitFinalizeEligible(snapshot: ProcessSnapshot | undefined): snapshot is
 
 function gitArtifact(snapshot: ProcessSnapshot, commit: string) {
 	const short = commit.slice(0, 12);
-	const existing = snapshot.artifacts.filter((artifact) => artifact.kind !== "commit" || artifact.ref !== commit);
+	const existing = snapshot.artifacts.filter((artifact) => artifact.kind !== "commit");
 	return [...existing, { kind: "commit" as const, label: `Committed ${short}`, ref: commit }].slice(-5);
 }
 

@@ -1,7 +1,6 @@
-import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
+import { truncateToWidth, type Component } from "@earendil-works/pi-tui";
 
 import { sanitizeArtifactLabel } from "./artifacts.ts";
-import { expandHint } from "./expand-hint.ts";
 import { sanitizeSystemText } from "./system-events.ts";
 import type {
 	ArtifactReceipt,
@@ -175,19 +174,11 @@ function renderedToolMessage(entry: PresentationToolEntry, theme: PresentationTh
 	return `${primary}${supporting}`;
 }
 
-function fitWithTrailingHint(line: string, hint: string, width: number): string {
-	if (width < 1) return "";
-	const available = width - visibleWidth(hint);
-	if (available < 1) return truncateToWidth(hint, width, "…");
-	return `${truncateToWidth(line, available, "…")}${hint}`;
-}
-
 export function renderToolEntry(entry: PresentationToolEntry, expanded: boolean, theme: PresentationTheme): Component {
 	return new WidthBoundComponent((width) => {
 		const tone = toneColor(entry.tone);
 		const line = `${theme.fg(tone, toolMarker(entry))} ${bold(theme, sanitizeSystemText(entry.label, 80))}${theme.fg("muted", " · ")}${renderedToolMessage(entry, theme)}`;
-		const hint = entry.expandable && !expanded ? `${theme.fg("muted", " · ")}${expandHint(theme)}` : "";
-		const lines = [hint ? fitWithTrailingHint(line, hint, width) : line];
+		const lines = [line];
 		if (expanded && entry.detail) {
 			for (const detail of entry.detail.split("\n")) {
 				const clean = sanitizeSystemText(detail, 240);

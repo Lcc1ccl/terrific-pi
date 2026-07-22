@@ -64,6 +64,44 @@ export interface GitFinalizeResult {
 	pushError?: string;
 }
 
+export interface FinalizationToolLock {
+	isLocked(): boolean;
+	lock(): boolean;
+	restore(): void;
+}
+
+export function createFinalizationToolLock(
+	getActiveTools: () => readonly string[],
+	setActiveTools: (tools: readonly string[]) => void,
+): FinalizationToolLock {
+	let locked = false;
+	let saved: string[] | undefined;
+	return {
+		isLocked: () => locked,
+		lock() {
+			if (locked) return false;
+			locked = true;
+			try {
+				saved = [...getActiveTools()];
+				setActiveTools([]);
+			} catch {
+				saved = undefined;
+			}
+			return true;
+		},
+		restore() {
+			if (!locked) return;
+			locked = false;
+			const tools = saved;
+			saved = undefined;
+			if (!tools) return;
+			try {
+				setActiveTools(tools);
+			} catch {}
+		},
+	};
+}
+
 export interface GitFinalizeReceipt {
 	kind: "git_finalize";
 	version: 1;

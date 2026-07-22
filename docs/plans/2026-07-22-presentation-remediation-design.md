@@ -345,4 +345,4 @@ Pi `0.81.1` 已从根包导出两个目标组件。本轮私有依赖是实例 s
 
 权限结论：未使用 `sudo`、网络、新依赖、Pi core 修改、Git push/rebase/reset 或 session JSONL 迁移。
 
-验证状态：已完成 targeted RED -> GREEN 证据及 package typecheck/test；真实交互 TUI 验收仍需在重载后的 Pi 会话中覆盖 80/120/160 列、Bash 三态、user frame、Git 收尾和 reload/resume。
+验证状态：已完成 targeted RED -> GREEN 证据及三个 package typecheck/test。Pi `0.81.1` 已用 `PI_OFFLINE=1` 在 80/120/160 列启动，三个宽度均实际捕获 user frame；Bash 三态/展开、artifact Git 情形和 Git/process lifecycle 由真实 Pi component 与临时 Git repo 回归测试覆盖。仍建议在日常有模型的会话执行一次真实 commit/push 和 reload/resume 人工验收。
