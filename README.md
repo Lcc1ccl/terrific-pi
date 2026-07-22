@@ -110,7 +110,7 @@ FORCE=1 RESTORE=1 ./install.sh
 
 ```bash
 # settings.json packages（相对 ~/.pi/agent）
-"npm:pi-subagents@0.35.1"          # 可选：固定 web researcher
+"git:github.com/nicobailon/pi-subagents@bd32df2cc1a951b588f6f93f67f3b9adac406303" # detached runner TypeBox 修复
 "npm:pi-web-access@0.13.0"        # 可选：固定 web tools
 "npm:pi-vision-handoff@0.8.1"     # 可选：固定 vision handoff
 "git:git@github.com:Lcc1ccl/pi-tool-display@8dd8fcaa7a3307abac5ee05f735615d4eae394b1"

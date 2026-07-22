@@ -110,7 +110,7 @@ export function delegateDocsAgent(options: {
 		};
 
 		const availabilityTimer = setTimeout(() => {
-			finish(() => reject(new Error("Docsflow delegation unavailable (is npm:pi-subagents@0.35.1 loaded?)")));
+			finish(() => reject(new Error("Docsflow delegation unavailable (is pi-subagents loaded?)")));
 		}, options.availabilityTimeoutMs ?? 2_000);
 		const completionTimer = setTimeout(() => {
 			options.events.emit(DELEGATION_CANCEL_EVENT, { version: 1, requestId: options.request.requestId });

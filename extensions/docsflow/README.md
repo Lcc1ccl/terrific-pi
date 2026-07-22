@@ -82,7 +82,7 @@ Hermes/外部评审为可选附加，不阻断。只有 agent contract 返回 `c
 
 ```json
 "packages": [
-  "npm:pi-subagents@0.35.1",
+  "git:github.com/nicobailon/pi-subagents@bd32df2cc1a951b588f6f93f67f3b9adac406303",
   "../vendor/terrific-pi/extensions/docsflow"
 ]
 ```

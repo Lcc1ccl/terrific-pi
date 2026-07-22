@@ -14,7 +14,7 @@ SKILLS="$TMP/skills"
 ARCHIVE="$(find "$OUT" -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
 [[ -n "$ARCHIVE" ]] || { echo "missing archive" >&2; exit 1; }
 mkdir -p "$DEFAULT_PI_HOME/agent"
-printf '%s\n' '{"packages":["npm:keep-me","git:git@github.com:Lcc1ccl/pi-tool-display@stale"]}' >"$DEFAULT_PI_HOME/agent/settings.json"
+printf '%s\n' '{"packages":["npm:keep-me","npm:pi-subagents@0.35.1","git:git@github.com:Lcc1ccl/pi-tool-display@stale"]}' >"$DEFAULT_PI_HOME/agent/settings.json"
 FORCE=1 PI_HOME="$DEFAULT_PI_HOME" AGENTS_SKILLS_DIR="$SKILLS" "$ROOT/scripts/install.sh" "$ARCHIVE" >/dev/null
 FORCE=1 RESTORE=1 PI_HOME="$RESTORE_PI_HOME" AGENTS_SKILLS_DIR="$SKILLS" "$ROOT/scripts/install.sh" "$ARCHIVE" >/dev/null
 
@@ -26,10 +26,12 @@ pins = (
     "git:git@github.com:Lcc1ccl/pi-tool-display@8dd8fcaa7a3307abac5ee05f735615d4eae394b1",
     "git:git@github.com:Lcc1ccl/pi-compact-transcript@1bad0d81c38ca0821710e466a8e76928bdc326ef",
 )
+subagents_pin = "git:github.com/nicobailon/pi-subagents@bd32df2cc1a951b588f6f93f67f3b9adac406303"
 for agent in (default_agent, restore_agent):
     packages = json.loads((agent / "settings.json").read_text(encoding="utf-8"))["packages"]
     for package in pins:
         assert package in packages, f"missing package pin: {package}"
+    assert subagents_pin in packages, "fixed pi-subagents pin missing"
     assert not any(package.endswith("@stale") for package in packages), "stale pin survived merge"
     for relative in (
         "extensions/pi-tool-display/config.json",
@@ -45,6 +47,7 @@ with tarfile.open(archive, "r:gz") as tf:
     manifest = next(tf.extractfile(name).read().decode("utf-8") for name in tf.getnames() if name.endswith("/MANIFEST.txt"))
 assert "git_dirty=" in manifest, "manifest has no worktree provenance"
 assert "external_packages<<" in manifest, "manifest has no external package block"
+assert subagents_pin in manifest, "manifest has no fixed pi-subagents pin"
 assert "agent/extensions/pi-tool-display/config.json" in manifest, "manifest flattened nested path"
 assert "source_root=" not in manifest and "/home/" not in manifest, "manifest leaked a local source path"
 PY

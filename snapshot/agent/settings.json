@@ -19,7 +19,7 @@
     "git:git@github.com:Lcc1ccl/pi-tool-display@8dd8fcaa7a3307abac5ee05f735615d4eae394b1",
     "git:git@github.com:Lcc1ccl/pi-compact-transcript@1bad0d81c38ca0821710e466a8e76928bdc326ef",
     "../vendor/terrific-pi/extensions/process-view",
-    "npm:pi-subagents@0.35.1",
+    "git:github.com/nicobailon/pi-subagents@bd32df2cc1a951b588f6f93f67f3b9adac406303",
     "../vendor/terrific-pi/extensions/auxiliary",
     "npm:pi-web-access@0.13.0",
     "npm:pi-vision-handoff@0.8.1",

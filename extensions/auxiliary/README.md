@@ -53,7 +53,7 @@ Add the local package to `~/.pi/agent/settings.json`:
 For bounded web research and vision handoff, install the reviewed fixed versions separately:
 
 ```text
-npm:pi-subagents@0.35.1
+git:github.com/nicobailon/pi-subagents@bd32df2cc1a951b588f6f93f67f3b9adac406303
 npm:pi-web-access@0.13.0
 npm:pi-vision-handoff@0.8.1
 ```
