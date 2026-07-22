@@ -72,7 +72,7 @@ terrific-pi/
 
 | 能力 | 路径 | 怎么用 | 解决什么 | 实现性质 |
 |------|------|--------|----------|----------|
-| Provider 模型同步 | `skills/pi-provider-sync` | 对话触发 / 按 SKILL 指引 | 从 OpenAI 兼容 `/models` 刷 `models.json`、补字段 | **本仓 skill**（非 extension） |
+| Provider 模型同步 | `skills/pi-provider-sync` | 对话触发 / 按 SKILL 指引 | 从 OpenAI 兼容或 Anthropic Messages `/models` 刷 `models.json`、补 `input`/`reasoning`/`cost` 等字段 | **本仓 skill**（非 extension） |
 
 ### 2.3 本机常 pin 的外部包（不在本仓实现，但构成能力）
 

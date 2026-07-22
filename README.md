@@ -49,7 +49,7 @@ terrific-pi/
 
 | 技能 | 路径 | 安装到 | 说明 |
 |------|------|--------|------|
-| pi-provider-sync | `skills/pi-provider-sync` | `~/.agents/skills/pi-provider-sync` | 从 OpenAI-compatible `/models` 同步 `models.json`；补全 `input`/`reasoning`/`maxTokens` 等；支持 vision 修复 |
+| pi-provider-sync | `skills/pi-provider-sync` | `~/.agents/skills/pi-provider-sync` | 从 OpenAI-compatible 或 Anthropic Messages `/models` 同步 `models.json`；补全 `input`/`reasoning`/`maxTokens`/`cost` 等；支持 vision 修复 |
 
 ## 安装与迁移
 
