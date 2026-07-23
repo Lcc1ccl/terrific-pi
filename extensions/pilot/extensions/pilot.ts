@@ -137,6 +137,10 @@ export default function pilot(pi: ExtensionAPI): void {
 		handler: async (args, ctx) => {
 			const action = args.trim().toLowerCase();
 			if (action === "status") {
+				if (!toolsReady) {
+					report(ctx, "Pilot: unavailable · tool policy is not active", "warning");
+					return;
+				}
 				report(ctx, `Pilot: ${activationSource(state)} · mode ${effectiveModeStatus()}`);
 				return;
 			}

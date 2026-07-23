@@ -182,7 +182,7 @@ describe("Pilot input routing spike", () => {
 		harness.failNextToolSet();
 		await harness.commands.get("mode")!.handler("plan", harness.ctx);
 		await harness.commands.get("pilot")!.handler("status", harness.ctx);
-		assert.match(harness.notifications.at(-1) ?? "", /mode AUTO/);
+		assert.match(harness.notifications.at(-1) ?? "", /unavailable.*tool policy/i);
 		assert.deepEqual(harness.entries, []);
 	});
 
@@ -194,6 +194,8 @@ describe("Pilot input routing spike", () => {
 		assert.deepEqual(harness.getTools(), ["read", "grep", "find", "ls", "bash", "edit", "write", "aux_summarize"]);
 		assert.equal(harness.statuses.get("mode"), undefined);
 		assert.match(harness.notifications.at(-1) ?? "", /tool policy failed/i);
+		await harness.commands.get("pilot")!.handler("status", harness.ctx);
+		assert.match(harness.notifications.at(-1) ?? "", /unavailable.*tool policy/i);
 		assert.deepEqual(await emit(harness, "input", { source: "interactive", text: "Change the code" }), { action: "continue" });
 		assert.equal(harness.getRequests(), 0);
 	});
