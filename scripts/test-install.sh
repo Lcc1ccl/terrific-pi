@@ -72,7 +72,8 @@ for name in names:
 assert not forbidden, f"forbidden archive members: {forbidden[:10]}"
 PY
 mkdir -p "$DEFAULT_PI_HOME/agent"
-printf '%s\n' '{"packages":["npm:keep-me","npm:pi-subagents@0.35.1","git:git@github.com:Lcc1ccl/pi-tool-display@stale","git:git@github.com:Lcc1ccl/pi-compact-transcript@stale"]}' >"$DEFAULT_PI_HOME/agent/settings.json"
+printf '%s\n' '{"packages":["npm:keep-me","npm:pi-subagents@0.35.1","git:git@github.com:Lcc1ccl/pi-tool-display@stale","git:git@github.com:Lcc1ccl/pi-compact-transcript@stale","../vendor/terrific-pi/extensions/process-view"]}' >"$DEFAULT_PI_HOME/agent/settings.json"
+printf '%s\n' '{"processView":{"activityMode":"task","legacyOnly":true}}' >"$DEFAULT_PI_HOME/agent/terrific.json"
 FORCE=1 PI_HOME="$DEFAULT_PI_HOME" AGENTS_SKILLS_DIR="$SKILLS" "$ROOT/scripts/install.sh" "$ARCHIVE" >/dev/null
 FORCE=1 RESTORE=1 PI_HOME="$RESTORE_PI_HOME" AGENTS_SKILLS_DIR="$SKILLS" "$ROOT/scripts/install.sh" "$ARCHIVE" >/dev/null
 
@@ -89,6 +90,14 @@ retired = (
 for agent in (default_agent, restore_agent):
     packages = json.loads((agent / "settings.json").read_text(encoding="utf-8"))["packages"]
     assert "../vendor/terrific-pi/extensions/presentation" in packages, "presentation package missing"
+    assert "../vendor/terrific-pi/extensions/taskboard" in packages, "taskboard package missing"
+    assert "../vendor/terrific-pi/extensions/process-view" not in packages, "legacy process-view package survived migration"
+    config = json.loads((agent / "terrific.json").read_text(encoding="utf-8"))
+    if agent == default_agent:
+        assert config == {"processView": {"activityMode": "task", "legacyOnly": True}}, "default install overwrote legacy config"
+    else:
+        assert isinstance(config.get("taskboard"), dict), "restored taskboard config missing"
+        assert "processView" not in config, "legacy processView config survived restore"
     assert subagents_pin in packages, "fixed pi-subagents pin missing"
     assert not any(package.startswith(prefix + "@") for package in packages for prefix in retired), "retired package pin survived merge"
     for relative in (

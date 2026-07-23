@@ -1,12 +1,12 @@
 {
-  "name": "process-view",
+  "name": "taskboard",
   "version": "0.1.0",
-  "description": "Structured task progress and live tool activity HUD for pi",
+  "description": "Structured task board and live tool activity HUD for Pi",
   "type": "module",
-  "keywords": ["pi-package", "pi-extension", "progress", "hud"],
+  "keywords": ["pi-package", "pi-extension", "taskboard", "progress", "hud"],
   "license": "MIT",
   "pi": {
-    "extensions": ["./extensions/process-view.ts"]
+    "extensions": ["./extensions/taskboard.ts"]
   },
   "scripts": {
     "test": "node --test --experimental-strip-types tests/*.test.ts",

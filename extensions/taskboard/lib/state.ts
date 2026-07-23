@@ -1,9 +1,9 @@
 import { stripVTControlCharacters } from "node:util";
 
 import {
-	PROCESS_ENTRY_TYPE,
+	TASKBOARD_ENTRY_TYPE,
 	type ArtifactKind,
-	type PersistedProcessState,
+	type PersistedTaskboardState,
 	type ProcessArtifact,
 	type ProcessSnapshot,
 	type ProcessStatus,
@@ -12,14 +12,14 @@ import {
 	type ProcessTelemetry,
 	type ProcessUpdateInput,
 	type ProcessUsage,
-	type ProcessViewMode,
+	type TaskboardViewMode,
 	type StepStatus,
 } from "./types.ts";
 
 const PROCESS_STATUSES = new Set<ProcessStatus>(["running", "waiting", "blocked", "completed", "interrupted"]);
 const STEP_STATUSES = new Set<StepStatus>(["pending", "active", "done", "failed"]);
 const ARTIFACT_KINDS = new Set<ArtifactKind>(["file", "test", "screenshot", "url", "commit", "report"]);
-const VIEW_MODES = new Set<ProcessViewMode>(["compact", "full", "off"]);
+const VIEW_MODES = new Set<TaskboardViewMode>(["compact", "full", "off"]);
 const MAX_TRACKED_MODELS = 8;
 
 export class ProcessUpdateError extends Error {
@@ -376,11 +376,11 @@ export function isProcessSnapshot(value: unknown): value is ProcessSnapshot {
 	}
 }
 
-export function isPersistedProcessState(value: unknown): value is PersistedProcessState {
+export function isPersistedTaskboardState(value: unknown): value is PersistedTaskboardState {
 	if (!isRecord(value)
 		|| value.version !== 1
 		|| typeof value.viewMode !== "string"
-		|| !VIEW_MODES.has(value.viewMode as ProcessViewMode)
+		|| !VIEW_MODES.has(value.viewMode as TaskboardViewMode)
 		|| typeof value.cleared !== "boolean") {
 		return false;
 	}
@@ -392,9 +392,9 @@ export function isPersistedProcessState(value: unknown): value is PersistedProce
 
 export function createPersistedState(
 	snapshot: ProcessSnapshot | undefined,
-	viewMode: ProcessViewMode,
+	viewMode: TaskboardViewMode,
 	telemetry?: ProcessTelemetry,
-): PersistedProcessState {
+): PersistedTaskboardState {
 	return {
 		version: 1,
 		viewMode,
@@ -404,23 +404,23 @@ export function createPersistedState(
 	};
 }
 
-export function createTombstone(viewMode: ProcessViewMode): PersistedProcessState {
+export function createTombstone(viewMode: TaskboardViewMode): PersistedTaskboardState {
 	return { version: 1, viewMode, cleared: true };
 }
 
 export interface RestoreResult {
-	state: PersistedProcessState;
+	state: PersistedTaskboardState;
 	corrupted: boolean;
 }
 
 export function restoreProcessState(
 	entries: readonly unknown[],
-	defaultViewMode: ProcessViewMode = "compact",
+	defaultViewMode: TaskboardViewMode = "compact",
 ): RestoreResult {
 	for (let index = entries.length - 1; index >= 0; index -= 1) {
 		const entry = entries[index];
-		if (!isRecord(entry) || entry.type !== "custom" || entry.customType !== PROCESS_ENTRY_TYPE) continue;
-		if (!isPersistedProcessState(entry.data)) {
+		if (!isRecord(entry) || entry.type !== "custom" || entry.customType !== TASKBOARD_ENTRY_TYPE) continue;
+		if (!isPersistedTaskboardState(entry.data)) {
 			return { state: createTombstone("compact"), corrupted: true };
 		}
 		return {

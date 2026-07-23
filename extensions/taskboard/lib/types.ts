@@ -1,17 +1,18 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import { type Static, Type } from "typebox";
 
-export const PROCESS_ENTRY_TYPE = "process-view-state-v1";
-export const PROCESS_CONTEXT_TYPE = "process-view-context";
-export const PROCESS_WIDGET_KEY = "terrific-pi:process-view";
-/** Statusline key for waiting/blocked process state. */
-export const PROCESS_STATUS_KEY = "process";
+// Keep persisted type strings stable so existing session branches restore after the rename.
+export const TASKBOARD_ENTRY_TYPE = "process-view-state-v1";
+export const TASKBOARD_CONTEXT_TYPE = "process-view-context";
+export const TASKBOARD_WIDGET_KEY = "terrific-pi:taskboard";
+/** Statusline key for waiting/blocked Taskboard state. */
+export const TASKBOARD_STATUS_KEY = "taskboard";
 
 export type ProcessStatus = "running" | "waiting" | "blocked" | "completed" | "interrupted";
 export type StepStatus = "pending" | "active" | "done" | "failed";
 export type ArtifactKind = "file" | "test" | "screenshot" | "url" | "commit" | "report";
-export type ProcessViewMode = "compact" | "full" | "off";
-export type ProcessActivityMode = "full" | "task" | "off";
+export type TaskboardViewMode = "compact" | "full" | "off";
+export type TaskboardActivityMode = "full" | "task" | "off";
 
 export interface ProcessStep {
 	text: string;
@@ -90,9 +91,9 @@ export interface ActivitySnapshot {
 	recentOutcome?: RecentToolOutcome;
 }
 
-export interface PersistedProcessState {
+export interface PersistedTaskboardState {
 	version: 1;
-	viewMode: ProcessViewMode;
+	viewMode: TaskboardViewMode;
 	snapshot?: ProcessSnapshot;
 	telemetry?: ProcessTelemetry;
 	cleared: boolean;
@@ -104,9 +105,9 @@ export interface RuntimeControlState {
 	requestStarted: boolean;
 }
 
-export interface ProcessRenderState {
-	viewMode: ProcessViewMode;
-	activityMode: ProcessActivityMode;
+export interface TaskboardRenderState {
+	viewMode: TaskboardViewMode;
+	activityMode: TaskboardActivityMode;
 	snapshot?: ProcessSnapshot;
 	telemetry?: ProcessTelemetry;
 	activity: ActivitySnapshot;

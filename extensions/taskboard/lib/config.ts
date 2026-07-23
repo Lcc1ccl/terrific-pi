@@ -15,10 +15,10 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import type { ProcessActivityMode, ProcessViewMode } from "./types.ts";
+import type { TaskboardActivityMode, TaskboardViewMode } from "./types.ts";
 
-const MODES = new Set<ProcessViewMode>(["compact", "full", "off"]);
-const ACTIVITY_MODES = new Set<ProcessActivityMode>(["full", "task", "off"]);
+const MODES = new Set<TaskboardViewMode>(["compact", "full", "off"]);
+const ACTIVITY_MODES = new Set<TaskboardActivityMode>(["full", "task", "off"]);
 const BASENAME = "terrific.json";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -29,41 +29,46 @@ function configPath(agentDir: string): string {
 	return join(agentDir, BASENAME);
 }
 
-export function loadProcessViewDefault(
+function taskboardConfig(root: Record<string, unknown>): Record<string, unknown> | undefined {
+	if (Object.hasOwn(root, "taskboard")) return isRecord(root.taskboard) ? root.taskboard : undefined;
+	// Compatibility through 0.1.x; remove the processView fallback in 0.2.0.
+	return isRecord(root.processView) ? root.processView : undefined;
+}
+
+function loadTaskboardSection(agentDir: string): Record<string, unknown> | undefined {
+	const path = configPath(agentDir);
+	if (!existsSync(path)) return undefined;
+	const root: unknown = JSON.parse(readFileSync(path, "utf8"));
+	return isRecord(root) ? taskboardConfig(root) : undefined;
+}
+
+export function loadTaskboardDefault(
 	agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
-): ProcessViewMode {
+): TaskboardViewMode {
 	try {
-		const path = configPath(agentDir);
-		if (!existsSync(path)) return "compact";
-		const root: unknown = JSON.parse(readFileSync(path, "utf8"));
-		if (!isRecord(root) || !isRecord(root.processView)) return "compact";
-		const value = root.processView.defaultViewMode;
-		return typeof value === "string" && MODES.has(value as ProcessViewMode) ? value as ProcessViewMode : "compact";
+		const value = loadTaskboardSection(agentDir)?.defaultViewMode;
+		return typeof value === "string" && MODES.has(value as TaskboardViewMode) ? value as TaskboardViewMode : "compact";
 	} catch {
 		return "compact";
 	}
 }
 
-export function loadProcessViewActivityMode(
+export function loadTaskboardActivityMode(
 	agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
-): ProcessActivityMode {
+): TaskboardActivityMode {
 	try {
-		const path = configPath(agentDir);
-		if (!existsSync(path)) return "full";
-		const root: unknown = JSON.parse(readFileSync(path, "utf8"));
-		if (!isRecord(root) || !isRecord(root.processView)) return "full";
-		const value = root.processView.activityMode;
-		return typeof value === "string" && ACTIVITY_MODES.has(value as ProcessActivityMode)
-			? value as ProcessActivityMode
+		const value = loadTaskboardSection(agentDir)?.activityMode;
+		return typeof value === "string" && ACTIVITY_MODES.has(value as TaskboardActivityMode)
+			? value as TaskboardActivityMode
 			: "full";
 	} catch {
 		return "full";
 	}
 }
 
-export type ProcessViewConfigWriteResult = { ok: true; path: string } | { ok: false; path: string; error: string };
+export type TaskboardConfigWriteResult = { ok: true; path: string } | { ok: false; path: string; error: string };
 
-export function updateProcessViewConfig(agentDir: string, defaultViewMode: ProcessViewMode): ProcessViewConfigWriteResult {
+export function updateTaskboardConfig(agentDir: string, defaultViewMode: TaskboardViewMode): TaskboardConfigWriteResult {
 	const path = configPath(agentDir);
 	try {
 		mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
@@ -90,10 +95,16 @@ export function updateProcessViewConfig(agentDir: string, defaultViewMode: Proce
 			if (!isRecord(parsed)) return { ok: false, path, error: `${BASENAME} root must be an object` };
 			root = parsed;
 		}
-		if (Object.hasOwn(root, "processView") && !isRecord(root.processView)) {
+		if (Object.hasOwn(root, "taskboard") && !isRecord(root.taskboard)) {
+			return { ok: false, path, error: "taskboard must be a JSON object" };
+		}
+		if (!Object.hasOwn(root, "taskboard") && Object.hasOwn(root, "processView") && !isRecord(root.processView)) {
 			return { ok: false, path, error: "processView must be a JSON object" };
 		}
-		root.processView = { ...(isRecord(root.processView) ? root.processView : {}), defaultViewMode };
+		const legacy = isRecord(root.processView) ? root.processView : {};
+		const canonical = isRecord(root.taskboard) ? root.taskboard : {};
+		root.taskboard = { ...legacy, ...canonical, defaultViewMode };
+		delete root.processView;
 		const descriptor = openSync(temporary, "wx", 0o600);
 		try {
 			writeFileSync(descriptor, `${JSON.stringify(root, null, 2)}\n`, "utf8");

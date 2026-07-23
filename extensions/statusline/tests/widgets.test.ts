@@ -8,6 +8,7 @@ import {
 	EXCLUDED_TOOL_ACTIVITY_NAMES,
 	joinExtensionProgress,
 	PROCESS_STATUS_KEY,
+	TASKBOARD_STATUS_KEY,
 	resolveRunState,
 	runStateForAssistantEvent,
 	shouldTrackToolActivity,
@@ -387,11 +388,16 @@ describe("runStateForAssistantEvent", () => {
 		assert.equal(runStateForAssistantEvent("done"), undefined);
 	});
 
-	it("promotes Ready to Waiting while process-view is waiting or blocked", () => {
-		assert.equal(resolveRunState("Ready", new Map([[PROCESS_STATUS_KEY, "waiting"]])), "Waiting");
+	it("uses taskboard waiting state with process compatibility fallback", () => {
+		assert.equal(resolveRunState("Ready", new Map([[TASKBOARD_STATUS_KEY, "waiting"]])), "Waiting");
 		assert.equal(resolveRunState("Ready", new Map([[PROCESS_STATUS_KEY, "blocked"]])), "Waiting");
-		assert.equal(resolveRunState("Thinking", new Map([[PROCESS_STATUS_KEY, "waiting"]])), "Thinking");
-		assert.equal(resolveRunState("Ready", new Map([[PROCESS_STATUS_KEY, "running"]])), "Ready");
+		assert.equal(resolveRunState("Thinking", new Map([[TASKBOARD_STATUS_KEY, "waiting"]])), "Thinking");
+		assert.equal(resolveRunState("Ready", new Map([[TASKBOARD_STATUS_KEY, "running"]])), "Ready");
+		assert.equal(
+			resolveRunState("Ready", new Map([[PROCESS_STATUS_KEY, "waiting"], [TASKBOARD_STATUS_KEY, "running"]])),
+			"Ready",
+		);
+		assert.ok(EXCLUDED_PROGRESS_KEYS.has(TASKBOARD_STATUS_KEY));
 		assert.ok(EXCLUDED_PROGRESS_KEYS.has(PROCESS_STATUS_KEY));
 	});
 });

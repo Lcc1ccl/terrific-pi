@@ -66,7 +66,7 @@ terrific-pi/
 | 上下文拆解 | `extensions/context` | `/context [summary\|details\|config]`；`c` 复制、`x` 确认压缩 | 不调模型查看占用；压缩为显式动作 | **本仓实现** |
 | 旁路问答 | `extensions/btw` | `/btw …`、`status`、`config`、`context=none` | 独立内存会话问答，不污染主 session | **本仓实现**；模型可走 auxiliary 路由 |
 | 辅助模型 runtime | `extensions/auxiliary` | 裸 `/aux` 管理器、`/aux status`；工具 `aux_summarize`/`web_research`/`git_finalize`；compact/title 钩子 | 任务级旁路模型，不改主会话模型 | **本仓实现**；研究/视觉 **委托外部 pin** |
-| 任务进度 HUD | `extensions/process-view` | 模型调 `process_update`；`/process` 管理、`default <mode>`；`Ctrl+O` 展开 | 多步任务里程碑、等待/阻塞与验证；可提供稳定的运行中活动行 | **本仓实现** |
+| 任务进度 HUD | `extensions/taskboard` | 模型调 `process_update`；`/taskboard` 管理、`default <mode>`；`/process` 兼容别名；`Ctrl+O` 展开 | 多步任务里程碑、等待/阻塞与验证；可提供稳定的运行中活动行 | **本仓实现** |
 | 低噪音过程流 | `extensions/presentation` | 自动；`/presentation` 管理；`Ctrl+O` 下钻 | 受控兼容 renderer、探索/失败摘要、Skill 身份、系统条和文件回执 | **本仓实现**；不依赖外部 renderer fork |
 | 文档流水线 | `extensions/docsflow` | 裸 `/docsflow` 管理器、`settings`、阶段 override | research→product→interface→delivery | **本仓编排**；执行靠 `pi-subagents` |
 | 模型常用配置 | `extensions/model-profile` | `/profile` 管理/快速应用、可信项目 overrides、`list/status/startup`、`<id\|alias>`、`alt+N`、冷启动/`/new`；见 [计划](./plans/2026-07-20-model-profile-plan.md) | 3–5 套 model+thinking；全局/project 来源；session/global；启动 | **本仓薄封装**；配置 `terrific.json` |
@@ -111,7 +111,7 @@ terrific-pi/
  用户输入 ─────────►│ model / thinking / tools       │
                     │ mode 限制工具集                 │
                     │ fast 注入 Priority（若开启）    │
-                    │ process_update → process-view   │
+                    │ process_update → taskboard      │
                     │ docsflow 编排（父）              │
                     └───────────┬────────────────────┘
                                 │
@@ -129,9 +129,9 @@ terrific-pi/
 | 层 | 谁负责 | 内容 |
 |----|--------|------|
 | Footer 常驻 | **statusline** | path、branch、model+thinking、cache、cost、mode、fast、progress/state/duration；默认不启用 `toolActivity`、tokens、session、branchDiff |
-| 任务 HUD | **process-view** | 多步任务目标、步骤、blocker、等待/阻塞与验证；`activityMode: full` 在紧凑 HUD 提供聚合运行态、在展开面板提供详情 |
+| 任务 HUD | **taskboard** | 多步任务目标、步骤、blocker、等待/阻塞与验证；`activityMode: full` 在紧凑 HUD 提供聚合运行态、在展开面板提供详情 |
 | 过程历史 | **presentation** | 受控折叠原生工具行；运行中探索/Skill 身份与单一安全失败行，`app.tools.expand` 恢复 Pi 原生细节 |
-| 扩展 status key | 各插件 `setStatus` | mode / fast / process / auxiliary 等；statusline 对部分 key **排除重复展示**（见 `EXCLUDED_PROGRESS_KEYS`） |
+| 扩展 status key | 各插件 `setStatus` | mode / fast / taskboard / auxiliary 等；statusline 对部分 key **排除重复展示**（见 `EXCLUDED_PROGRESS_KEYS`） |
 
 约定：
 
@@ -143,7 +143,7 @@ terrific-pi/
 | 文件 | 谁读 | 内容 |
 |------|------|------|
 | `~/.pi/agent/settings.json` | pi 核心 + 全局默认 | packages、defaultProvider/Model/ThinkingLevel、theme… |
-| `~/.pi/agent/terrific.json` | mode / btw / context / auxiliary / docsflow / model-profile / fast / process-view / presentation | 本仓插件共享配置 |
+| `~/.pi/agent/terrific.json` | mode / btw / context / auxiliary / docsflow / model-profile / fast / taskboard / presentation | 本仓插件共享配置；Taskboard 仅在 `0.1.x` 读取旧 `processView`，当 Taskboard `0.2.0` 成为基线时移除回退 |
 | `~/.pi/agent/statusline.json` | statusline | widget 布局与 profile |
 | `~/.pi/agent/models.json` | pi + pi-provider-sync | 自定义 provider/models |
 | `~/.pi/agent/auth.json` | pi | **密钥；禁止入库** |
@@ -151,14 +151,14 @@ terrific-pi/
 
 ### 3.4 交互矩阵（简化）
 
-|  | statusline | mode | fast | context | btw | auxiliary | process-view | docsflow | model-profile* |
+|  | statusline | mode | fast | context | btw | auxiliary | taskboard | docsflow | model-profile* |
 |--|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| statusline | — | 读 mode badge | 读 fast badge | 无 | 无 | 可展示 aux usage | 排除 process 重复 | 可选阶段 | 已有 model 行 |
+| statusline | — | 读 mode badge | 读 fast badge | 无 | 无 | 可展示 aux usage | 排除 taskboard 重复 | 可选阶段 | 已有 model 行 |
 | mode | badge | — | 无 | 无 | 无 | ask/plan 限制工具是否含 aux | 无 | apply 需可写模式 | 无 |
 | fast | badge | 无 | — | 无 | 无 | 不继承 | 无 | 不继承 | 无 |
 | btw | 无 | 无 | 无 | 无 | — | **可走 btw 路由** | 无 | 无 | 无 |
 | auxiliary | usage/status | 工具可见性 | 无 | 无 | 路由 | — | web_research 活动文案 | 无 | **不改主模型** |
-| process-view | HUD 分工 | 无 | 无 | 无 | 无 | 活动标签协作 | — | 可报阶段 | 无 |
+| taskboard | HUD 分工 | 无 | 无 | 无 | 无 | 活动标签协作 | — | 可报阶段 | 无 |
 | docsflow | 可选 | 落盘权限 | 无 | 无 | 无 | 不占用 | 阶段进度 | — | 无 |
 | model-profile* | model 行（原生）；官方切换 notify | 无 | 无 | 无 | 无 | 正交 | 无 | 无 | — |
 
@@ -172,13 +172,13 @@ terrific-pi/
 
 | 名称 | 状态 | 为何要有 | 解决的问题 | 实现策略 | 明确不做什么 |
 |------|------|----------|------------|----------|--------------|
-| statusline | 已收录 | 官方 footer 不够密/不可配 | 可配置 HUD、quota、stacked/minimal | 本仓实现 | 不替代 process-view 任务面板 |
+| statusline | 已收录 | 官方 footer 不够密/不可配 | 可配置 HUD、quota、stacked/minimal | 本仓实现 | 不替代 taskboard 任务面板 |
 | mode | 已收录 | 需要会话级工具策略 | ask/plan/edit/auto | 本仓实现 | 不切换模型/thinking |
 | fast | 已收录 | Priority 无一键开关 | `service_tier` 注入 | 本仓窄实现 | 不控制 thinking、不通用 header 框架 |
 | context | 已收录 | 需要可解释上下文占用 | `/context` 拆解 | 本仓实现 | 不压缩、不调模型 |
 | btw | 已收录 | 主会话外快速问一句 | 旁路内存 session | 本仓实现 | 不写主历史、不加载工具 |
 | auxiliary | 已收录 | Hermes 式任务槽 | compact/title/summary/research/git | 本仓 runtime + 外部 pin | 不做万能 agent 框架 |
-| process-view | 已收录 | 多步任务可见性 | `process_update` + HUD | 本仓实现 | 不为每句回复建任务或重复文件/结论 |
+| taskboard | 已收录 | 多步任务可见性 | `process_update` + HUD | 本仓实现 | 不为每句回复建任务或重复文件/结论 |
 | presentation | 已收录 | 摆脱外部 renderer fork，同时保留低噪音过程流与用户输入边框 | 受控 compatibility renderer + 原生工具历史 | 本仓实现 | 仅受控 patch 两个 render 方法；不重写最终 Markdown、不接管工具执行 |
 | docsflow | 已收录 | 文档流水线要可迁移 | 四阶段 + 落盘 | 本仓编排 + pi-subagents | 不自研 subagent runtime |
 | **model-profile** | **已收录** | 社区单包无法一次满足 6 点 | 短列表 model+thinking；session restore；全局；startup/`new`；热键；status | **本仓薄封装**；模式来自 preset / presets-plus / startup-picker | 不重写全量选择器；官方 `/model` 仍改全局默认（pi 核心） |
@@ -250,3 +250,4 @@ terrific-pi/
 | 2026-07-20 | slash 交互后续：Aux/Docsflow 管理器补全、轻量命令 `status`/`config`、Process 默认模式、Profile 项目覆盖与 Statusline 条件菜单 |
 | 2026-07-22 | presentation 使用受控 native render compatibility layer 恢复用户边框、Bash 三态、Skill/探索与请求级文件回执；移除外部 renderer fork 依赖 |
 | 2026-07-22 | 正式定义个性化 Pi enhancement monorepo；补目录/workflow 边界、历史 session 契约与 dist 保留策略 |
+| 2026-07-22 | `process-view` 更名为 `taskboard`：canonical package/path/command/config/status key 均迁移，长期保留 `process_update` 与历史 session entry；旧 `/process`、`processView` 和 `process` status 回退仅保留于 `0.1.x` |

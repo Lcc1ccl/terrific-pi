@@ -113,7 +113,7 @@
   "fast": {
     "enabled": true
   },
-  "processView": {
+  "taskboard": {
     "activityMode": "full"
   },
   "presentation": {

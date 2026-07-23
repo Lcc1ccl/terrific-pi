@@ -4,11 +4,11 @@ import { describe, it } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import {
-	formatProcessLines,
+	formatTaskboardLines,
 	formatToolResultLines,
 	type ProcessTheme,
 } from "../lib/render.ts";
-import type { ProcessRenderState, ProcessSnapshot } from "../lib/types.ts";
+import type { TaskboardRenderState, ProcessSnapshot } from "../lib/types.ts";
 
 const plainTheme: ProcessTheme = {
 	fg: (_color, text) => text,
@@ -56,7 +56,7 @@ function snapshot(overrides: Partial<ProcessSnapshot> = {}): ProcessSnapshot {
 	};
 }
 
-function state(overrides: Partial<ProcessRenderState> = {}): ProcessRenderState {
+function state(overrides: Partial<TaskboardRenderState> = {}): TaskboardRenderState {
 	return {
 		viewMode: "compact",
 		activityMode: "full",
@@ -73,7 +73,7 @@ function state(overrides: Partial<ProcessRenderState> = {}): ProcessRenderState 
 			],
 		},
 		...overrides,
-	} as ProcessRenderState;
+	} as TaskboardRenderState;
 }
 
 function assertFits(lines: string[], width: number): void {
@@ -82,17 +82,17 @@ function assertFits(lines: string[], width: number): void {
 	}
 }
 
-describe("formatProcessLines", () => {
+describe("formatTaskboardLines", () => {
 	it("never exceeds target widths or compact line limits", () => {
 		for (const width of [40, 60, 72, 80, 100, 120]) {
-			const lines = formatProcessLines(state(), width, plainTheme);
+			const lines = formatTaskboardLines(state(), width, plainTheme);
 			assertFits(lines, width);
 			assert.ok(lines.length <= 4, `${width} columns produced ${lines.length} lines`);
 		}
 	});
 
 	it("renders a passive stage without inventing a structured plan", () => {
-		const lines = formatProcessLines({
+		const lines = formatTaskboardLines({
 			viewMode: "compact",
 			activityMode: "full",
 			activity: { stage: "analyzing", activeTools: [] },
@@ -100,7 +100,7 @@ describe("formatProcessLines", () => {
 			now: NOW,
 		}, 80, plainTheme);
 		assert.deepEqual(lines, ["● Analyzing request"]);
-		assert.deepEqual(formatProcessLines({
+		assert.deepEqual(formatTaskboardLines({
 			viewMode: "compact",
 			activityMode: "full",
 			activity: { stage: "settled", activeTools: [] },
@@ -114,7 +114,7 @@ describe("formatProcessLines", () => {
 			stage: "running_tools" as const,
 			activeTools: [{ callId: "bash-1", toolName: "bash", label: "bash private command", startedAt: NOW }],
 		};
-		assert.deepEqual(formatProcessLines({
+		assert.deepEqual(formatTaskboardLines({
 			viewMode: "compact",
 			activityMode: "task",
 			activity: { stage: "analyzing", activeTools: [] },
@@ -122,17 +122,17 @@ describe("formatProcessLines", () => {
 			now: NOW,
 		}, 80, plainTheme), []);
 
-		const taskCollapsed = formatProcessLines(state({ activityMode: "task", activity }), 100, plainTheme).join("\n");
+		const taskCollapsed = formatTaskboardLines(state({ activityMode: "task", activity }), 100, plainTheme).join("\n");
 		assert.doesNotMatch(taskCollapsed, /bash private command/);
-		const taskExpanded = formatProcessLines(state({ activityMode: "task", activity, expanded: true }), 100, plainTheme).join("\n");
+		const taskExpanded = formatTaskboardLines(state({ activityMode: "task", activity, expanded: true }), 100, plainTheme).join("\n");
 		assert.match(taskExpanded, /Active: bash private command/);
 
-		const offExpanded = formatProcessLines(state({ activityMode: "off", activity, expanded: true }), 100, plainTheme).join("\n");
+		const offExpanded = formatTaskboardLines(state({ activityMode: "off", activity, expanded: true }), 100, plainTheme).join("\n");
 		assert.doesNotMatch(offExpanded, /bash private command/);
 	});
 
 	it("puts the goal, task progress, current task, and elapsed time on the first compact line", () => {
-		const lines = formatProcessLines(state(), 120, plainTheme);
+		const lines = formatTaskboardLines(state(), 120, plainTheme);
 		assert.match(lines[0] ?? "", /Update reward configuration.*1\/4.*Apply changes.*1m05s/);
 		assert.doesNotMatch(lines.join("\n"), /✓ Inspect naming.*○ Validate workbook/);
 		assert.match(lines[1] ?? "", /Running 3 tools/);
@@ -141,7 +141,7 @@ describe("formatProcessLines", () => {
 	});
 
 	it("keeps progress and elapsed time visible in narrow compact layouts", () => {
-		const lines = formatProcessLines(state({
+		const lines = formatTaskboardLines(state({
 			activity: {
 				stage: "running_tools",
 				activeTools: [{ callId: "1", toolName: "edit", label: "a.ts", startedAt: NOW + 64_000 }],
@@ -155,14 +155,14 @@ describe("formatProcessLines", () => {
 
 	it("uses native tool expansion for a responsive live task and runtime panel", () => {
 		for (const width of [1, 2, 3, 8, 20, 40, 60, 72, 80, 100, 120]) {
-			const responsive = formatProcessLines(state({ expanded: true } as Partial<ProcessRenderState>), width, plainTheme);
+			const responsive = formatTaskboardLines(state({ expanded: true } as Partial<TaskboardRenderState>), width, plainTheme);
 			assertFits(responsive, width);
 			assert.ok(responsive.length <= 15);
 		}
-		const lines = formatProcessLines(state({ expanded: true } as Partial<ProcessRenderState>), 110, plainTheme);
+		const lines = formatTaskboardLines(state({ expanded: true } as Partial<TaskboardRenderState>), 110, plainTheme);
 		assertFits(lines, 110);
 		assert.ok(lines.length <= 15);
-		assert.match(lines.join("\n"), /Process View.*Running.*1\/4/);
+		assert.match(lines.join("\n"), /Taskboard.*Running.*1\/4/);
 		assert.doesNotMatch(lines.join("\n"), /\d+%/);
 		assert.match(lines.join("\n"), /Time: total 1m17s · current 1m05s/);
 		assert.match(lines.join("\n"), /Current: Apply changes/);
@@ -184,26 +184,26 @@ describe("formatProcessLines", () => {
 			models: [model],
 			steps: base.steps.map((step) => ({ ...step, models: step.models.length > 0 ? [model] : [] })),
 		};
-		const lines = formatProcessLines(state({ expanded: true, telemetry: longModelTelemetry }), 100, plainTheme);
+		const lines = formatTaskboardLines(state({ expanded: true, telemetry: longModelTelemetry }), 100, plainTheme);
 		const joined = lines.join("\n");
 		assert.match(joined, /Time: total .* · current 1m05s/);
 		assert.match(joined, /● Apply changes[\s\S]*1m05s/);
 	});
 
 	it("prioritizes blocked and interrupted reasons", () => {
-		const blocked = formatProcessLines(state({
+		const blocked = formatTaskboardLines(state({
 			snapshot: snapshot({ status: "blocked", blocker: "Choose the target sheet" }),
 			activity: { stage: "settled", activeTools: [] },
 		}), 80, plainTheme);
 		assert.match(blocked.join("\n"), /! Blocked/);
 		assert.match(blocked.join("\n"), /Need: Choose the target sheet/);
-		const narrowBlocked = formatProcessLines(state({
+		const narrowBlocked = formatTaskboardLines(state({
 			snapshot: snapshot({ status: "blocked", blocker: "Choose the target sheet" }),
 			activity: { stage: "settled", activeTools: [] },
 		}), 60, plainTheme);
 		assert.match(narrowBlocked.join("\n"), /Choose the target sheet/);
 
-		const interrupted = formatProcessLines(state({
+		const interrupted = formatTaskboardLines(state({
 			snapshot: snapshot({ status: "interrupted", update: "Run stopped after an error" }),
 			activity: { stage: "settled", activeTools: [] },
 		}), 80, plainTheme);
@@ -212,7 +212,7 @@ describe("formatProcessLines", () => {
 	});
 
 	it("shows recent success or failure when no tool remains active", () => {
-		const success = formatProcessLines(state({
+		const success = formatTaskboardLines(state({
 			activity: {
 				stage: "analyzing_results",
 				activeTools: [],
@@ -221,7 +221,7 @@ describe("formatProcessLines", () => {
 		}), 100, plainTheme).join("\n");
 		assert.match(success, /Latest tool finished/);
 
-		const failure = formatProcessLines(state({
+		const failure = formatTaskboardLines(state({
 			activity: {
 				stage: "analyzing_results",
 				activeTools: [],
@@ -232,7 +232,7 @@ describe("formatProcessLines", () => {
 	});
 
 	it("pins the detail panel in full mode", () => {
-		const lines = formatProcessLines(state({
+		const lines = formatTaskboardLines(state({
 			viewMode: "full",
 			snapshot: snapshot({
 				status: "completed",
@@ -246,19 +246,19 @@ describe("formatProcessLines", () => {
 		for (const text of ["Inspect naming", "Apply changes", "Validate workbook", "Summarize results"]) {
 			assert.match(lines.join("\n"), new RegExp(text));
 		}
-		assert.match(lines.join("\n"), /Process View/);
+		assert.match(lines.join("\n"), /Taskboard/);
 		assert.match(lines.join("\n"), /Verification: Workbook checks passed/);
 	});
 
 	it("hides all output in off mode", () => {
-		assert.deepEqual(formatProcessLines(state({ viewMode: "off" }), 100, plainTheme), []);
+		assert.deepEqual(formatTaskboardLines(state({ viewMode: "off" }), 100, plainTheme), []);
 	});
 });
 
 describe("formatToolResultLines", () => {
 	it("renders a one-line running or completed receipt", () => {
 		assert.deepEqual(formatToolResultLines({ content: [], details: snapshot() }, false, false), [
-			"Process 1/4 · Apply changes",
+			"Taskboard 1/4 · Apply changes",
 		]);
 		const completed = snapshot({
 			status: "completed",
@@ -266,7 +266,7 @@ describe("formatToolResultLines", () => {
 			update: "Workbook updated and verified",
 		});
 		assert.deepEqual(formatToolResultLines({ content: [], details: completed }, false, false), [
-			"Process done 4/4 · Workbook updated and verified · 2 artifacts",
+			"Taskboard done 4/4 · Workbook updated and verified · 2 artifacts",
 		]);
 	});
 
@@ -297,7 +297,7 @@ describe("formatToolResultLines", () => {
 		}, false, true), ["Invalid update retry"]);
 		assert.deepEqual(formatToolResultLines({
 			content: [{ type: "text", text: "\u001b[0m" }],
-		}, false, true), ["Process update failed"]);
-		assert.deepEqual(formatToolResultLines({ content: [] }, false, false), ["Process update finished"]);
+		}, false, true), ["Taskboard update failed"]);
+		assert.deepEqual(formatToolResultLines({ content: [] }, false, false), ["Taskboard update finished"]);
 	});
 });

@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { Check } from "typebox/value";
 
 import {
-	PROCESS_ENTRY_TYPE,
+	TASKBOARD_ENTRY_TYPE,
 	ProcessUpdateParams,
 	type ProcessSnapshot,
 	type ProcessUpdateInput,
@@ -44,7 +44,7 @@ function snapshot(): ProcessSnapshot {
 }
 
 function entry(data: unknown) {
-	return { type: "custom", customType: PROCESS_ENTRY_TYPE, data };
+	return { type: "custom", customType: TASKBOARD_ENTRY_TYPE, data };
 }
 
 describe("ProcessUpdateParams", () => {

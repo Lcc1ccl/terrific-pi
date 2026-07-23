@@ -13,7 +13,7 @@ terrific-pi/
 │   ├── auxiliary/       # task-scoped 辅助模型 runtime
 │   ├── mode/            # /mode 工具权限模式
 │   ├── btw/             # /btw 旁路问答
-│   ├── process-view/    # 结构化任务里程碑与等待/阻塞 HUD
+│   ├── taskboard/       # 结构化任务里程碑与等待/阻塞 HUD
 │   ├── presentation/    # 受控原生渲染、系统条与文件变更回执
 │   ├── docsflow/        # 项目文档流水线 (/docsflow)
 │   └── model-profile/   # 常用 model+thinking 短列表 (/profile)
@@ -49,12 +49,12 @@ terrific-pi/
 | auxiliary | `extensions/auxiliary` | task-key 辅助模型 runtime：裸 `/aux` 管理器、`/aux status`、compression/title/summary/web research/Git finalize、独立 usage 与 HUD |
 | mode | `extensions/mode` | `/mode ask\|plan\|edit\|auto\|config` 工具权限模式与全局默认管理；status key `mode` |
 | btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话）；`status`/`config` 与单次 `context=none` |
-| process-view | `extensions/process-view` | `process_update` 结构化任务里程碑、步骤计时、等待/阻塞与验证；`/process` 管理视图、展开、确认清除与新会话默认模式 |
+| taskboard | `extensions/taskboard` | `process_update` 结构化任务里程碑、步骤计时、等待/阻塞与验证；`/taskboard` 管理视图、展开、确认清除与新会话默认模式；`/process` 是兼容别名 |
 | presentation | `extensions/presentation` | 受控 native render compatibility、用户边框、运行中探索/Skill 身份、单一安全失败行、请求级文件回执与最终答案契约；`/presentation` 管理开关 |
 | docsflow | `extensions/docsflow` | 项目文档流水线：research→product→interface→delivery；裸命令管理器、阶段 model/thinking/timeout 覆盖；默认写 `./docsflow/`，可选 Obsidian vault |
 | model-profile | `extensions/model-profile` | 常用 3–5 套 model+thinking 短列表；`/profile` 快速应用、全局 CRUD、可信项目覆盖编辑、热键、冷启动短列表 |
 
-> 共享插件配置主文件：`~/.pi/agent/terrific.json`。Auxiliary 模型路由只读取 global config，不接受 project override。
+> 共享插件配置主文件：`~/.pi/agent/terrific.json`。Taskboard 的 canonical 段为 `taskboard`；旧 `/process`、`processView` 与 `process` status 回退仅保留于 Taskboard `0.1.x`，当 `0.2.0` 成为基线时移除；下一次 `/taskboard default <mode>` 会原子迁移配置。`process_update` 与历史 session types 保持稳定。Auxiliary 模型路由只读取 global config，不接受 project override。
 
 ## 已收录技能
 
@@ -132,7 +132,7 @@ FORCE=1 RESTORE=1 ./install.sh
 "../vendor/terrific-pi/extensions/auxiliary"
 "../vendor/terrific-pi/extensions/mode"
 "../vendor/terrific-pi/extensions/btw"
-"../vendor/terrific-pi/extensions/process-view"
+"../vendor/terrific-pi/extensions/taskboard"
 "../vendor/terrific-pi/extensions/presentation"
 "../vendor/terrific-pi/extensions/docsflow"
 "../vendor/terrific-pi/extensions/model-profile"

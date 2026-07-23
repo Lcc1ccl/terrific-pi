@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 
-import processView from "../extensions/process-view.ts";
+import taskboard from "../extensions/taskboard.ts";
 import { createPersistedState, normalizeProcessUpdate, syncProcessTelemetry } from "../lib/state.ts";
 import {
-	PROCESS_CONTEXT_TYPE,
-	PROCESS_ENTRY_TYPE,
-	PROCESS_STATUS_KEY,
-	PROCESS_WIDGET_KEY,
+	TASKBOARD_CONTEXT_TYPE,
+	TASKBOARD_ENTRY_TYPE,
+	TASKBOARD_STATUS_KEY,
+	TASKBOARD_WIDGET_KEY,
 	type ProcessSnapshot,
 	type ProcessUpdateInput,
 } from "../lib/types.ts";
@@ -66,7 +66,7 @@ function createHarness(options: HarnessOptions = {}) {
 	const confirmations = [...(options.confirmations ?? [])];
 	const shortcuts: unknown[] = [];
 	let tool: any;
-	let command: any;
+	const commands = new Map<string, any>();
 	let failAppend = false;
 	let currentWidget: any;
 	let renderRequests = 0;
@@ -165,7 +165,7 @@ function createHarness(options: HarnessOptions = {}) {
 			tool = value;
 		},
 		registerCommand(name: string, value: unknown) {
-			if (name === "process") command = value;
+			commands.set(name, value);
 		},
 		registerShortcut(value: unknown) {
 			shortcuts.push(value);
@@ -175,7 +175,7 @@ function createHarness(options: HarnessOptions = {}) {
 			entries.push({ type: "custom", customType, data });
 		},
 	};
-	processView(pi as never);
+	taskboard(pi as never);
 
 	return {
 		ctx,
@@ -188,7 +188,8 @@ function createHarness(options: HarnessOptions = {}) {
 		confirmCalls,
 		shortcuts,
 		get tool() { return tool; },
-		get command() { return command; },
+		get command() { return commands.get("taskboard"); },
+		get processAlias() { return commands.get("process"); },
 		get currentWidget() { return currentWidget; },
 		get renderRequests() { return renderRequests; },
 		setFailAppend(value: boolean) { failAppend = value; },
@@ -209,29 +210,56 @@ async function execute(harness: ReturnType<typeof createHarness>, input = runnin
 }
 
 function latestSnapshot(entries: any[]): ProcessSnapshot | undefined {
-	return [...entries].reverse().find((entry) => entry.customType === PROCESS_ENTRY_TYPE)?.data.snapshot;
+	return [...entries].reverse().find((entry) => entry.customType === TASKBOARD_ENTRY_TYPE)?.data.snapshot;
 }
 
-describe("process-view registration and tool", () => {
-	it("registers one sequential self-shell tool, one command, and no shortcut", () => {
+describe("taskboard registration and tool", () => {
+	it("registers taskboard with a process compatibility alias and keeps process_update", () => {
 		const harness = createHarness();
 		assert.equal(harness.tool.name, "process_update");
+		assert.equal(harness.tool.label, "Taskboard update");
 		assert.equal(harness.tool.executionMode, "sequential");
 		assert.equal(harness.tool.renderShell, "self");
 		assert.ok(harness.tool.promptGuidelines.every((line: string) => line.includes("process_update")));
 		assert.ok(harness.command);
+		assert.strictEqual(harness.command, harness.processAlias);
 		assert.deepEqual(harness.shortcuts, []);
+	});
+
+	it("keeps legacy session entry and context type strings for restoration", () => {
+		assert.equal(TASKBOARD_ENTRY_TYPE, "process-view-state-v1");
+		assert.equal(TASKBOARD_CONTEXT_TYPE, "process-view-context");
+	});
+
+	it("executes /process default through the canonical config migration", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "taskboard-process-alias-"));
+		const path = join(agentDir, "terrific.json");
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+		writeFileSync(path, JSON.stringify({ processView: { activityMode: "task", legacyOnly: true } }));
+		try {
+			process.env.PI_CODING_AGENT_DIR = agentDir;
+			const harness = createHarness();
+			await harness.processAlias.handler("default off", harness.ctx);
+			assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), {
+				taskboard: { activityMode: "task", legacyOnly: true, defaultViewMode: "off" },
+			});
+			assert.match(harness.notifications.at(-1)?.message ?? "", /Taskboard default.*off/i);
+		} finally {
+			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+			rmSync(agentDir, { recursive: true, force: true });
+		}
 	});
 
 	it("persists normalized details before committing UI state", async () => {
 		const harness = createHarness();
 		const result = await execute(harness);
-		assert.match(result.content[0].text, /Process state updated: 1\/3 running/);
+		assert.match(result.content[0].text, /Taskboard state updated: 1\/3 running/);
 		const { telemetry, ...detailsSnapshot } = result.details;
 		assert.deepEqual(harness.entries[0].data.snapshot, detailsSnapshot);
 		assert.deepEqual(harness.entries[0].data.telemetry, telemetry);
-		assert.equal(harness.entries[0].customType, PROCESS_ENTRY_TYPE);
-		assert.equal(harness.widgetCalls[0]?.key, PROCESS_WIDGET_KEY);
+		assert.equal(harness.entries[0].customType, TASKBOARD_ENTRY_TYPE);
+		assert.equal(harness.widgetCalls[0]?.key, TASKBOARD_WIDGET_KEY);
 		assert.ok(harness.currentWidget.render(100).join("\n").includes("Implement process view"));
 	});
 
@@ -397,7 +425,7 @@ describe("process-view registration and tool", () => {
 		await execute(harness);
 		assert.deepEqual(
 			await harness.emit("tool_call", { toolName: "git_finalize", toolCallId: "git-1", input: {} }),
-			{ block: true, reason: "git_finalize can complete Process View only when its final active step is ready to commit" },
+			{ block: true, reason: "git_finalize can complete Taskboard only when its final active step is ready to commit" },
 		);
 	});
 
@@ -406,7 +434,7 @@ describe("process-view registration and tool", () => {
 		const result = await execute(harness);
 		assert.equal(result.details.title, "Implement process view");
 		assert.equal(harness.entries.length, 1);
-		assert.match(harness.notifications[0]?.message ?? "", /Process View UI/i);
+		assert.match(harness.notifications[0]?.message ?? "", /Taskboard UI/i);
 	});
 
 	it("shows the current progress only in the HUD while retaining historical and final receipts", async () => {
@@ -426,7 +454,7 @@ describe("process-view registration and tool", () => {
 		);
 
 		const completed = await execute(harness, completedInput());
-		assert.match(runningCollapsed.render(120).join("\n"), /Process 1\/3/);
+		assert.match(runningCollapsed.render(120).join("\n"), /Taskboard 1\/3/);
 		const completedCollapsed = harness.tool.renderResult(
 			completed,
 			{ expanded: false },
@@ -435,7 +463,7 @@ describe("process-view registration and tool", () => {
 		);
 		assert.deepEqual(completedCollapsed.render(120), []);
 		await harness.emit("agent_settled");
-		assert.match(completedCollapsed.render(120).join("\n"), /Process done 3\/3/);
+		assert.match(completedCollapsed.render(120).join("\n"), /Taskboard done 3\/3/);
 
 		const error = harness.tool.renderResult(
 			{ content: [{ type: "text", text: "Invalid update" }] },
@@ -452,7 +480,7 @@ describe("request, branch, and context lifecycle", () => {
 		const harness = createHarness({
 			branch: [{
 				type: "custom",
-				customType: PROCESS_ENTRY_TYPE,
+				customType: TASKBOARD_ENTRY_TYPE,
 				data: { version: 2, viewMode: "full", cleared: false },
 			}],
 		});
@@ -469,12 +497,12 @@ describe("request, branch, and context lifecycle", () => {
 			...runningInput(),
 			status: "waiting",
 		}), "full");
-		const harness = createHarness({ branch: [{ type: "custom", customType: PROCESS_ENTRY_TYPE, data: stored }] });
+		const harness = createHarness({ branch: [{ type: "custom", customType: TASKBOARD_ENTRY_TYPE, data: stored }] });
 		await harness.emit("session_start", { reason: "resume" });
-		assert.equal(harness.widgetCalls[0]?.key, PROCESS_WIDGET_KEY);
+		assert.equal(harness.widgetCalls[0]?.key, TASKBOARD_WIDGET_KEY);
 		assert.deepEqual(harness.hiddenLabels, []);
 
-		const print = createHarness({ mode: "print", branch: [{ type: "custom", customType: PROCESS_ENTRY_TYPE, data: stored }] });
+		const print = createHarness({ mode: "print", branch: [{ type: "custom", customType: TASKBOARD_ENTRY_TYPE, data: stored }] });
 		await print.emit("session_start", { reason: "resume" });
 		assert.deepEqual(print.widgetCalls, []);
 		assert.deepEqual(print.hiddenLabels, []);
@@ -488,7 +516,7 @@ describe("request, branch, and context lifecycle", () => {
 			"compact",
 			syncProcessTelemetry(undefined, undefined, snapshot, 1_000),
 		);
-		const harness = createHarness({ branch: [{ type: "custom", customType: PROCESS_ENTRY_TYPE, data: stored }] });
+		const harness = createHarness({ branch: [{ type: "custom", customType: TASKBOARD_ENTRY_TYPE, data: stored }] });
 		await harness.emit("session_start", { reason: "resume" });
 		const restored = harness.entries.at(-1)?.data;
 		assert.equal(restored.snapshot.status, "waiting");
@@ -507,7 +535,7 @@ describe("request, branch, and context lifecycle", () => {
 		const first = await harness.emit("context", { messages: [{ role: "user", content: "new request" }] });
 		assert.equal(first.messages.length, 2);
 		assert.equal(first.messages[1].role, "custom");
-		assert.equal(first.messages[1].customType, PROCESS_CONTEXT_TYPE);
+		assert.equal(first.messages[1].customType, TASKBOARD_CONTEXT_TYPE);
 		assert.equal(first.messages[1].display, false);
 		assert.doesNotMatch(first.messages[1].content, /\/private\/|verification/i);
 		assert.equal(await harness.emit("context", { messages: [] }), undefined);
@@ -524,7 +552,7 @@ describe("request, branch, and context lifecycle", () => {
 		assert.ok(harness.currentWidget);
 		harness.entries.push({
 			type: "custom",
-			customType: PROCESS_ENTRY_TYPE,
+			customType: TASKBOARD_ENTRY_TYPE,
 			data: { version: 1, viewMode: "compact", cleared: true },
 		});
 		await harness.emit("session_tree", { newLeafId: "tombstone", oldLeafId: "work" });
@@ -537,7 +565,7 @@ describe("request, branch, and context lifecycle", () => {
 		const entryCount = harness.entries.length;
 		await harness.emit("session_compact", { reason: "manual", willRetry: false });
 		const first = await harness.emit("context", { messages: [] });
-		assert.equal(first.messages[0].customType, PROCESS_CONTEXT_TYPE);
+		assert.equal(first.messages[0].customType, TASKBOARD_CONTEXT_TYPE);
 		assert.equal(harness.entries.length, entryCount);
 		assert.equal(await harness.emit("context", { messages: [] }), undefined);
 	});
@@ -571,24 +599,24 @@ describe("request, branch, and context lifecycle", () => {
 	it("publishes waiting/blocked footer status for statusline and clears it when idle", async () => {
 		const harness = createHarness();
 		await execute(harness, { ...runningInput(), status: "waiting" });
-		assert.deepEqual(harness.statusCalls.at(-1), { key: PROCESS_STATUS_KEY, value: "waiting" });
+		assert.deepEqual(harness.statusCalls.at(-1), { key: TASKBOARD_STATUS_KEY, value: "waiting" });
 
 		await execute(harness, { ...runningInput(), status: "blocked", blocker: "Need decision" });
-		assert.deepEqual(harness.statusCalls.at(-1), { key: PROCESS_STATUS_KEY, value: "blocked" });
+		assert.deepEqual(harness.statusCalls.at(-1), { key: TASKBOARD_STATUS_KEY, value: "blocked" });
 
 		await execute(harness, completedInput());
-		assert.deepEqual(harness.statusCalls.at(-1), { key: PROCESS_STATUS_KEY, value: undefined });
+		assert.deepEqual(harness.statusCalls.at(-1), { key: TASKBOARD_STATUS_KEY, value: undefined });
 
 		await harness.emit("session_shutdown", { reason: "quit" });
-		assert.deepEqual(harness.statusCalls.at(-1), { key: PROCESS_STATUS_KEY, value: undefined });
+		assert.deepEqual(harness.statusCalls.at(-1), { key: TASKBOARD_STATUS_KEY, value: undefined });
 	});
 });
 
 describe("presentation activity integration", () => {
 	it("hides passive and compact tool activity in task mode while keeping expanded runtime activity", async () => {
-		const agentDir = mkdtempSync(join(tmpdir(), "process-view-task-mode-"));
+		const agentDir = mkdtempSync(join(tmpdir(), "taskboard-task-mode-"));
 		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({ processView: { activityMode: "task" } }));
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({ taskboard: { activityMode: "task" } }));
 		try {
 			process.env.PI_CODING_AGENT_DIR = agentDir;
 			const harness = createHarness();
@@ -668,7 +696,7 @@ describe("commands and passive telemetry", () => {
 
 		const accepted = createHarness({ confirmations: [true] });
 		await execute(accepted);
-		await accepted.command.handler("clear", accepted.ctx);
+		await accepted.processAlias.handler("clear", accepted.ctx);
 		assert.deepEqual(accepted.entries.at(-1)?.data, { version: 1, viewMode: "compact", cleared: true });
 
 		const print = createHarness({ mode: "print" });
@@ -685,7 +713,7 @@ describe("commands and passive telemetry", () => {
 		assert.doesNotMatch(harness.currentWidget.render(110).join("\n"), /Tasks|Runtime/);
 
 		harness.setToolsExpanded(true);
-		assert.match(harness.currentWidget.render(110).join("\n"), /Process View.*Tasks.*Runtime/s);
+		assert.match(harness.currentWidget.render(110).join("\n"), /Taskboard.*Tasks.*Runtime/s);
 
 		await harness.emit("message_end", {
 			message: {

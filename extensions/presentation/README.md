@@ -6,7 +6,7 @@ Low-noise Pi transcript presentation with one display owner per fact.
 
 ## Install
 
-Load `presentation` after `process-view`:
+Load `presentation` after `taskboard`:
 
 ```json
 "../vendor/terrific-pi/extensions/presentation"

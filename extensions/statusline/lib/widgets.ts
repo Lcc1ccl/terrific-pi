@@ -36,8 +36,8 @@ import type {
 } from "./types.ts";
 import { WIDGET_PRIORITY } from "./types.ts";
 
-/** Extension status keys that have dedicated widgets or live in process-view. */
-export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail", "mode", "fast", "process", "auxiliary"]);
+/** Extension status keys that have dedicated widgets or live in Taskboard. */
+export const EXCLUDED_PROGRESS_KEYS = new Set(["ponytail", "mode", "fast", "taskboard", "process", "auxiliary"]);
 
 /** Metadata-only tools that should not appear in footer activity. */
 export const EXCLUDED_TOOL_ACTIVITY_NAMES = new Set(["process_update"]);
@@ -52,7 +52,10 @@ export const MODE_STATUS_KEY = "mode";
 /** Status key written by /fast. */
 export const FAST_STATUS_KEY = "fast";
 
-/** Status key written by process-view while waiting/blocked. */
+/** Status key written by Taskboard while waiting/blocked. */
+export const TASKBOARD_STATUS_KEY = "taskboard";
+
+/** Legacy status key accepted through Taskboard 0.1.x; remove when 0.2.0 is the baseline. */
 export const PROCESS_STATUS_KEY = "process";
 
 export function runStateForAssistantEvent(type: string): RunState | undefined {
@@ -61,17 +64,18 @@ export function runStateForAssistantEvent(type: string): RunState | undefined {
 	return undefined;
 }
 
-/** Promote Ready → Waiting when process-view is paused on subagent/external work. */
+/** Promote Ready → Waiting when Taskboard is paused on subagent/external work. */
 export function resolveRunState(
 	runState: RunState,
 	extensionStatuses?: ReadonlyMap<string, string> | Iterable<readonly [string, string]>,
 ): RunState {
 	if (runState !== "Ready" || !extensionStatuses) return runState;
-	const processStatus = extensionStatuses instanceof Map
-		? extensionStatuses.get(PROCESS_STATUS_KEY)
-		: new Map(extensionStatuses).get(PROCESS_STATUS_KEY);
-	const status = processStatus ? sanitizeStatus(processStatus).toLowerCase() : "";
-	return status === "waiting" || status === "blocked" ? "Waiting" : runState;
+	const statuses = extensionStatuses instanceof Map ? extensionStatuses : new Map(extensionStatuses);
+	const taskboardStatus = statuses.get(TASKBOARD_STATUS_KEY);
+	const legacyProcessStatus = statuses.get(PROCESS_STATUS_KEY);
+	const status = taskboardStatus ?? legacyProcessStatus;
+	const normalized = status ? sanitizeStatus(status).toLowerCase() : "";
+	return normalized === "waiting" || normalized === "blocked" ? "Waiting" : runState;
 }
 
 export function sanitizeStatus(text: string): string {

@@ -3,7 +3,7 @@ import { Text, truncateToWidth, visibleWidth, type Component } from "@earendil-w
 import { isProcessSnapshot, isProcessTelemetry, sanitizeProcessText, stepElapsedMs } from "./state.ts";
 import type {
 	ActivitySnapshot,
-	ProcessRenderState,
+	TaskboardRenderState,
 	ProcessSnapshot,
 	ProcessStatus,
 	ProcessStep,
@@ -115,7 +115,7 @@ function detailLine(snapshot: ProcessSnapshot): string | undefined {
 	return undefined;
 }
 
-function passiveLines(state: ProcessRenderState, theme: ProcessTheme): string[] {
+function passiveLines(state: TaskboardRenderState, theme: ProcessTheme): string[] {
 	const label = STAGE_LABELS[state.activity.stage];
 	if (!label) return [];
 	const activity = formatActivity(state.activity);
@@ -150,7 +150,7 @@ function formatTokenPair(usage: { input: number; output: number }): string {
 	return `↑${formatTokens(usage.input)} ↓${formatTokens(usage.output)}`;
 }
 
-function compactSummary(state: ProcessRenderState, width: number, theme: ProcessTheme): string {
+function compactSummary(state: TaskboardRenderState, width: number, theme: ProcessTheme): string {
 	const snapshot = state.snapshot!;
 	const meta = STATUS_META[snapshot.status];
 	const current = currentStep(snapshot);
@@ -168,7 +168,7 @@ function compactSummary(state: ProcessRenderState, width: number, theme: Process
 	return `${symbol} ${goal} · ${progress} · ${currentLabel}${focus} · ${elapsed}`;
 }
 
-function compactLines(state: ProcessRenderState, width: number, theme: ProcessTheme): string[] {
+function compactLines(state: TaskboardRenderState, width: number, theme: ProcessTheme): string[] {
 	const snapshot = state.snapshot!;
 	const lines = [compactSummary(state, width, theme)];
 	if (state.activityMode === "full") {
@@ -242,7 +242,7 @@ function runtimeLine(telemetry: ProcessTelemetry | undefined): string {
 	return `Runtime: ${modelSummary(telemetry.models)} · ${turns} · ${formatTokenPair(usage)} · R${formatTokens(usage.cacheRead)} W${formatTokens(usage.cacheWrite)}${cost}`;
 }
 
-function detailedActivity(state: ProcessRenderState): string | undefined {
+function detailedActivity(state: TaskboardRenderState): string | undefined {
 	if (state.activity.activeTools.length > 0) {
 		const shown = state.activity.activeTools.slice(0, 2).map((tool) =>
 			`${formatTool(tool)} ${formatElapsed(Math.max(0, state.now - tool.startedAt))}`);
@@ -255,7 +255,7 @@ function detailedActivity(state: ProcessRenderState): string | undefined {
 	return stage ? `Stage: ${stage}` : undefined;
 }
 
-function detailPanelLines(state: ProcessRenderState, width: number, theme: ProcessTheme): string[] {
+function detailPanelLines(state: TaskboardRenderState, width: number, theme: ProcessTheme): string[] {
 	if (width < 1) return [];
 	const snapshot = state.snapshot!;
 	const meta = STATUS_META[snapshot.status];
@@ -265,7 +265,7 @@ function detailPanelLines(state: ProcessRenderState, width: number, theme: Proce
 	const totalElapsed = formatElapsed(totalElapsedMs(state.telemetry, state.now));
 	const currentElapsed = formatElapsed(stepElapsedMs(currentMetric, state.now));
 	const lines = [boxBorder("top", width, theme)];
-	lines.push(boxRow(` ${theme.bold("Process View")} · ${meta.label} · ${progress} · ${snapshot.title}`, width, theme));
+	lines.push(boxRow(` ${theme.bold("Taskboard")} · ${meta.label} · ${progress} · ${snapshot.title}`, width, theme));
 	lines.push(boxRow(` Time: total ${totalElapsed} · current ${currentElapsed}`, width, theme));
 	if (current) {
 		lines.push(boxRow(` Current: ${current.text}`, width, theme));
@@ -287,8 +287,8 @@ function detailPanelLines(state: ProcessRenderState, width: number, theme: Proce
 	return lines.slice(0, 15);
 }
 
-export function formatProcessLines(
-	state: ProcessRenderState,
+export function formatTaskboardLines(
+	state: TaskboardRenderState,
 	width: number,
 	theme: ProcessTheme,
 ): string[] {
@@ -299,17 +299,17 @@ export function formatProcessLines(
 		: fit(compactLines(state, width, theme), width);
 }
 
-export class ProcessWidget implements Component {
-	private readonly getState: () => ProcessRenderState;
+export class TaskboardWidget implements Component {
+	private readonly getState: () => TaskboardRenderState;
 	private readonly theme: ProcessTheme;
 
-	constructor(getState: () => ProcessRenderState, theme: ProcessTheme) {
+	constructor(getState: () => TaskboardRenderState, theme: ProcessTheme) {
 		this.getState = getState;
 		this.theme = theme;
 	}
 
 	render(width: number): string[] {
-		return formatProcessLines(this.getState(), width, this.theme);
+		return formatTaskboardLines(this.getState(), width, this.theme);
 	}
 
 	invalidate(): void {}
@@ -322,11 +322,11 @@ export function formatToolResultLines(
 ): string[] {
 	if (isError) {
 		const errorText = result.content.find((content) => content.type === "text")?.text;
-		return [sanitizeProcessText(errorText ?? "") || "Process update failed"];
+		return [sanitizeProcessText(errorText ?? "") || "Taskboard update failed"];
 	}
 	if (!isProcessSnapshot(result.details)) {
 		const text = result.content.find((content) => content.type === "text")?.text;
-		return [sanitizeProcessText(text ?? "") || "Process update finished"];
+		return [sanitizeProcessText(text ?? "") || "Taskboard update finished"];
 	}
 
 	const snapshot = result.details;
@@ -337,9 +337,9 @@ export function formatToolResultLines(
 			const artifacts = snapshot.artifacts.length > 0
 				? ` · ${snapshot.artifacts.length} artifact${snapshot.artifacts.length === 1 ? "" : "s"}`
 				: "";
-			return [`Process done ${done}/${snapshot.steps.length} · ${summary}${artifacts}`];
+			return [`Taskboard done ${done}/${snapshot.steps.length} · ${summary}${artifacts}`];
 		}
-		return [`Process ${done}/${snapshot.steps.length} · ${currentStep(snapshot)?.text ?? snapshot.title}`];
+		return [`Taskboard ${done}/${snapshot.steps.length} · ${currentStep(snapshot)?.text ?? snapshot.title}`];
 	}
 
 	const meta = STATUS_META[snapshot.status];

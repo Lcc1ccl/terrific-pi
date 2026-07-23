@@ -6,8 +6,8 @@ import {
 import { Container } from "@earendil-works/pi-tui";
 
 import { ActivityTracker } from "../lib/activity.ts";
-import { loadProcessViewActivityMode, loadProcessViewDefault, updateProcessViewConfig } from "../lib/config.ts";
-import { ProcessWidget, renderToolResult } from "../lib/render.ts";
+import { loadTaskboardActivityMode, loadTaskboardDefault, updateTaskboardConfig } from "../lib/config.ts";
+import { TaskboardWidget, renderToolResult } from "../lib/render.ts";
 import { selectMenu } from "../lib/select-menu.ts";
 import {
 	buildContextReminder,
@@ -23,17 +23,17 @@ import {
 	syncProcessTelemetry,
 } from "../lib/state.ts";
 import {
-	PROCESS_CONTEXT_TYPE,
-	PROCESS_ENTRY_TYPE,
-	PROCESS_STATUS_KEY,
-	PROCESS_WIDGET_KEY,
+	TASKBOARD_CONTEXT_TYPE,
+	TASKBOARD_ENTRY_TYPE,
+	TASKBOARD_STATUS_KEY,
+	TASKBOARD_WIDGET_KEY,
 	ProcessUpdateParams,
-	type PersistedProcessState,
-	type ProcessActivityMode,
-	type ProcessRenderState,
+	type PersistedTaskboardState,
+	type TaskboardActivityMode,
+	type TaskboardRenderState,
 	type ProcessSnapshot,
 	type ProcessTelemetry,
-	type ProcessViewMode,
+	type TaskboardViewMode,
 	type RuntimeControlState,
 } from "../lib/types.ts";
 
@@ -58,11 +58,11 @@ function isUnfinished(snapshot: ProcessSnapshot | undefined): snapshot is Proces
 	return Boolean(snapshot && snapshot.status !== "completed");
 }
 
-function processSummary(state: PersistedProcessState): string {
+function taskboardSummary(state: PersistedTaskboardState): string {
 	const snapshot = state.snapshot;
-	if (!snapshot) return `Process view: ${state.viewMode} · no active task`;
+	if (!snapshot) return `Taskboard: ${state.viewMode} · no active task`;
 	const done = snapshot.steps.filter((step) => step.status === "done").length;
-	return `Process view: ${state.viewMode} · ${snapshot.status} ${done}/${snapshot.steps.length} · ${snapshot.title}`;
+	return `Taskboard: ${state.viewMode} · ${snapshot.status} ${done}/${snapshot.steps.length} · ${snapshot.title}`;
 }
 
 const COMMIT_HASH = /^[0-9a-f]{7,64}$/i;
@@ -134,9 +134,9 @@ function partialFromGit(snapshot: ProcessSnapshot, receipt: GitFinalizeReceipt, 
 	};
 }
 
-export default function processView(pi: ExtensionAPI) {
-	let state: PersistedProcessState = createPersistedState(undefined, "compact");
-	let activityMode: ProcessActivityMode = "full";
+export default function taskboard(pi: ExtensionAPI) {
+	let state: PersistedTaskboardState = createPersistedState(undefined, "compact");
+	let activityMode: TaskboardActivityMode = "full";
 	let control: RuntimeControlState = { requestStarted: false };
 	const activity = new ActivityTracker();
 	let widgetMounted = false;
@@ -148,7 +148,7 @@ export default function processView(pi: ExtensionAPI) {
 	let uiFailureNotified = false;
 	let corruptStateNotified = false;
 
-	const renderState = (): ProcessRenderState => {
+	const renderState = (): TaskboardRenderState => {
 		let expanded = false;
 		try {
 			expanded = getToolsExpanded?.() ?? false;
@@ -179,7 +179,7 @@ export default function processView(pi: ExtensionAPI) {
 		uiFailureNotified = true;
 		const message = error instanceof Error ? error.message : String(error);
 		try {
-			ctx.ui.notify(`Process View UI unavailable: ${message}`, "warning");
+			ctx.ui.notify(`Taskboard UI unavailable: ${message}`, "warning");
 		} catch {}
 	};
 
@@ -208,7 +208,7 @@ export default function processView(pi: ExtensionAPI) {
 		const status = state.snapshot?.status;
 		const value = status === "waiting" || status === "blocked" ? status : undefined;
 		try {
-			ctx.ui.setStatus(PROCESS_STATUS_KEY, value);
+			ctx.ui.setStatus(TASKBOARD_STATUS_KEY, value);
 		} catch (error) {
 			notifyUiFailure(ctx, error);
 		}
@@ -223,17 +223,17 @@ export default function processView(pi: ExtensionAPI) {
 		getToolsExpanded = () => ctx.ui.getToolsExpanded();
 		try {
 			if (!shouldShowWidget()) {
-				if (widgetMounted) ctx.ui.setWidget(PROCESS_WIDGET_KEY, undefined);
+				if (widgetMounted) ctx.ui.setWidget(TASKBOARD_WIDGET_KEY, undefined);
 				widgetMounted = false;
 				requestWidgetRender = undefined;
 				stopDurationTick();
 				return;
 			}
 			if (!widgetMounted) {
-				ctx.ui.setWidget(PROCESS_WIDGET_KEY, (tui, theme) => {
+				ctx.ui.setWidget(TASKBOARD_WIDGET_KEY, (tui, theme) => {
 					const render = () => tui.requestRender();
 					requestWidgetRender = render;
-					const widget = new ProcessWidget(renderState, theme);
+					const widget = new TaskboardWidget(renderState, theme);
 					return {
 						render: (width: number) => widget.render(width),
 						invalidate: () => widget.invalidate(),
@@ -253,8 +253,8 @@ export default function processView(pi: ExtensionAPI) {
 		}
 	};
 
-	const appendState = (next: PersistedProcessState) => {
-		pi.appendEntry<PersistedProcessState>(PROCESS_ENTRY_TYPE, next);
+	const appendState = (next: PersistedTaskboardState) => {
+		pi.appendEntry<PersistedTaskboardState>(TASKBOARD_ENTRY_TYPE, next);
 		state = next;
 		telemetryDirty = false;
 	};
@@ -264,21 +264,21 @@ export default function processView(pi: ExtensionAPI) {
 		&& isProcessSnapshot(details)
 		&& snapshotFingerprint(details) === snapshotFingerprint(state.snapshot!);
 
-	const appendSystemState = (next: PersistedProcessState, ctx: ExtensionContext): boolean => {
+	const appendSystemState = (next: PersistedTaskboardState, ctx: ExtensionContext): boolean => {
 		try {
 			appendState(next);
 			return true;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			ctx.ui.notify(`Process state could not be saved: ${message}`, "error");
+			ctx.ui.notify(`Taskboard state could not be saved: ${message}`, "error");
 			return false;
 		}
 	};
 
 	const restore = (ctx: ExtensionContext) => {
 		const agentDir = getAgentDir();
-		activityMode = loadProcessViewActivityMode(agentDir);
-		const restored = restoreProcessState(ctx.sessionManager.getBranch(), loadProcessViewDefault(agentDir));
+		activityMode = loadTaskboardActivityMode(agentDir);
+		const restored = restoreProcessState(ctx.sessionManager.getBranch(), loadTaskboardDefault(agentDir));
 		state = restored.state;
 		control = { requestStarted: false };
 		activity.reset();
@@ -298,14 +298,14 @@ export default function processView(pi: ExtensionAPI) {
 		}
 		if (restored.corrupted) {
 			try {
-				pi.appendEntry<PersistedProcessState>(PROCESS_ENTRY_TYPE, state);
+				pi.appendEntry<PersistedTaskboardState>(TASKBOARD_ENTRY_TYPE, state);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				ctx.ui.notify(`Cleared Process state could not be saved: ${message}`, "error");
+				ctx.ui.notify(`Cleared Taskboard state could not be saved: ${message}`, "error");
 			}
 			if (!corruptStateNotified) {
 				corruptStateNotified = true;
-				ctx.ui.notify("Process state was invalid and has been cleared", "warning");
+				ctx.ui.notify("Taskboard state was invalid and has been cleared", "warning");
 			}
 		}
 		refreshWidget(ctx);
@@ -313,8 +313,8 @@ export default function processView(pi: ExtensionAPI) {
 
 	pi.registerTool({
 		name: "process_update",
-		label: "Process update",
-		description: "Publish a concise structured snapshot of user-visible progress for the current task.",
+		label: "Taskboard update",
+		description: "Publish a concise structured Taskboard snapshot of user-visible progress for the current task.",
 		promptSnippet: "Publish concise user-visible task progress for non-trivial work",
 		promptGuidelines: PROMPT_GUIDELINES,
 		parameters: ProcessUpdateParams,
@@ -337,7 +337,7 @@ export default function processView(pi: ExtensionAPI) {
 			refreshWidget(ctx);
 			const done = snapshot.steps.filter((step) => step.status === "done").length;
 			return {
-				content: [{ type: "text", text: `Process state updated: ${done}/${snapshot.steps.length} ${snapshot.status}` }],
+				content: [{ type: "text", text: `Taskboard state updated: ${done}/${snapshot.steps.length} ${snapshot.status}` }],
 				details: { ...snapshot, telemetry },
 			};
 		},
@@ -356,7 +356,7 @@ export default function processView(pi: ExtensionAPI) {
 		},
 	});
 
-	const saveViewMode = (mode: ProcessViewMode, ctx: ExtensionContext) => {
+	const saveViewMode = (mode: TaskboardViewMode, ctx: ExtensionContext) => {
 		const next = state.snapshot
 			? createPersistedState(state.snapshot, mode, state.telemetry)
 			: state.cleared
@@ -367,11 +367,11 @@ export default function processView(pi: ExtensionAPI) {
 			refreshWidget(ctx);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			ctx.ui.notify(`Process mode could not be saved: ${message}`, "error");
+			ctx.ui.notify(`Taskboard mode could not be saved: ${message}`, "error");
 		}
 	};
 
-	const clearProcess = (ctx: ExtensionContext) => {
+	const clearTaskboard = (ctx: ExtensionContext) => {
 		try {
 			appendState(createTombstone(state.viewMode));
 			control.pendingContextReminder = undefined;
@@ -380,43 +380,43 @@ export default function processView(pi: ExtensionAPI) {
 			refreshWidget(ctx);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			ctx.ui.notify(`Process state could not be cleared: ${message}`, "error");
+			ctx.ui.notify(`Taskboard state could not be cleared: ${message}`, "error");
 		}
 	};
 
-	const confirmClearProcess = async (ctx: ExtensionContext) => {
+	const confirmClearTaskboard = async (ctx: ExtensionContext) => {
 		if (!state.snapshot) {
 			ctx.ui.notify("No current task to clear", "warning");
 			return;
 		}
 		if (!ctx.hasUI || ctx.mode !== "tui") {
-			ctx.ui.notify("/process clear requires TUI confirmation", "warning");
+			ctx.ui.notify("/taskboard clear requires TUI confirmation", "warning");
 			return;
 		}
 		const done = state.snapshot.steps.filter((step) => step.status === "done").length;
 		const usage = state.telemetry?.usage;
 		const tokens = usage ? usage.input + usage.output + usage.cacheRead + usage.cacheWrite : 0;
 		const confirmed = await ctx.ui.confirm(
-			"Clear current task",
+			"Clear current Taskboard task",
 			`Clear "${state.snapshot.title}" (${done}/${state.snapshot.steps.length}, ${state.telemetry?.turns ?? 0} turns, ${tokens} tokens)? This removes its saved progress and telemetry.`,
 		);
-		if (confirmed) clearProcess(ctx);
+		if (confirmed) clearTaskboard(ctx);
 	};
 
-	const setGlobalDefaultViewMode = (ctx: ExtensionContext, mode: ProcessViewMode) => {
-		const result = updateProcessViewConfig(getAgentDir(), mode);
+	const setGlobalDefaultViewMode = (ctx: ExtensionContext, mode: TaskboardViewMode) => {
+		const result = updateTaskboardConfig(getAgentDir(), mode);
 		if (!result.ok) {
 			ctx.ui.notify(`Failed to update terrific.json: ${result.error}`, "error");
 			return;
 		}
-		ctx.ui.notify(`Process View default for new sessions: ${mode}`, "info");
+		ctx.ui.notify(`Taskboard default for new sessions: ${mode}`, "info");
 	};
 
-	const runProcessManager = async (ctx: ExtensionContext) => {
+	const runTaskboardManager = async (ctx: ExtensionContext) => {
 		while (true) {
 			const expanded = ctx.ui.getToolsExpanded();
-			const defaultMode = loadProcessViewDefault(getAgentDir());
-			const choice = await selectMenu(ctx, processSummary(state), [
+			const defaultMode = loadTaskboardDefault(getAgentDir());
+			const choice = await selectMenu(ctx, taskboardSummary(state), [
 				`View mode: ${state.viewMode}`,
 				`Default for new sessions: ${defaultMode}`,
 				`${expanded ? "Collapse" : "Expand"} live panel`,
@@ -425,12 +425,12 @@ export default function processView(pi: ExtensionAPI) {
 			]);
 			if (!choice || choice === "Done") return;
 			if (choice.startsWith("View mode:")) {
-				const mode = await selectMenu(ctx, "Process view mode", ["compact", "full", "off"], { cancelAction: "back" });
+				const mode = await selectMenu(ctx, "Taskboard view mode", ["compact", "full", "off"], { cancelAction: "back" });
 				if (mode === "compact" || mode === "full" || mode === "off") saveViewMode(mode, ctx);
 				continue;
 			}
 			if (choice.startsWith("Default for new sessions:")) {
-				const mode = await selectMenu(ctx, "Default Process View mode", ["compact", "full", "off"], { cancelAction: "back" });
+				const mode = await selectMenu(ctx, "Default Taskboard mode", ["compact", "full", "off"], { cancelAction: "back" });
 				if (mode === "compact" || mode === "full" || mode === "off") setGlobalDefaultViewMode(ctx, mode);
 				continue;
 			}
@@ -439,37 +439,40 @@ export default function processView(pi: ExtensionAPI) {
 				refreshWidget(ctx);
 				continue;
 			}
-			if (choice === "Clear current task") await confirmClearProcess(ctx);
+			if (choice === "Clear current task") await confirmClearTaskboard(ctx);
 		}
 	};
 
-	pi.registerCommand("process", {
-		description: "Manage Process View or use compact | full | off | clear | default <mode>",
-		handler: async (args, ctx) => {
+	const taskboardCommand = {
+		description: "Manage Taskboard or use compact | full | off | clear | default <mode>",
+		handler: async (args: string, ctx: ExtensionContext) => {
 			const parts = args.trim().toLowerCase().split(/\s+/).filter(Boolean);
 			const action = parts[0];
 			if (!action) {
-				if (ctx.mode === "tui") await runProcessManager(ctx);
-				else ctx.ui.notify(`${processSummary(state)} · global default ${loadProcessViewDefault(getAgentDir())}`, "info");
+				if (ctx.mode === "tui") await runTaskboardManager(ctx);
+				else ctx.ui.notify(`${taskboardSummary(state)} · global default ${loadTaskboardDefault(getAgentDir())}`, "info");
 				return;
 			}
 			if (action === "default") {
 				const mode = parts[1];
 				if (mode === "compact" || mode === "full" || mode === "off") setGlobalDefaultViewMode(ctx, mode);
-				else ctx.ui.notify(`Global default: ${loadProcessViewDefault(getAgentDir())}. Usage: /process default <compact|full|off>`, "warning");
+				else ctx.ui.notify(`Global default: ${loadTaskboardDefault(getAgentDir())}. Usage: /taskboard default <compact|full|off>`, "warning");
 				return;
 			}
 			if (action === "clear") {
-				await confirmClearProcess(ctx);
+				await confirmClearTaskboard(ctx);
 				return;
 			}
 			if (action === "compact" || action === "full" || action === "off") {
 				saveViewMode(action, ctx);
 				return;
 			}
-			ctx.ui.notify("Usage: /process [compact|full|off|clear|default <compact|full|off>]", "warning");
+			ctx.ui.notify("Usage: /taskboard [compact|full|off|clear|default <compact|full|off>]", "warning");
 		},
-	});
+	};
+	pi.registerCommand("taskboard", taskboardCommand);
+	// Compatibility through 0.1.x; process_update and persisted type strings remain stable.
+	pi.registerCommand("process", taskboardCommand);
 
 	pi.on("session_start", async (_event, ctx) => restore(ctx));
 
@@ -494,7 +497,7 @@ export default function processView(pi: ExtensionAPI) {
 				...event.messages,
 				{
 					role: "custom" as const,
-					customType: PROCESS_CONTEXT_TYPE,
+					customType: TASKBOARD_CONTEXT_TYPE,
 					content: buildContextReminder(snapshot),
 					display: false,
 					timestamp: Date.now(),
@@ -538,7 +541,7 @@ export default function processView(pi: ExtensionAPI) {
 	pi.on("tool_call", async (event) => {
 		if (event.toolName !== "git_finalize" || !state.snapshot || state.snapshot.status !== "running") return;
 		if (!gitFinalizeEligible(state.snapshot)) {
-			return { block: true, reason: "git_finalize can complete Process View only when its final active step is ready to commit" };
+			return { block: true, reason: "git_finalize can complete Taskboard only when its final active step is ready to commit" };
 		}
 	});
 
@@ -632,8 +635,8 @@ export default function processView(pi: ExtensionAPI) {
 		}
 		if (ctx.hasUI) {
 			try {
-				ctx.ui.setStatus(PROCESS_STATUS_KEY, undefined);
-				if (ctx.mode === "tui" && widgetMounted) ctx.ui.setWidget(PROCESS_WIDGET_KEY, undefined);
+				ctx.ui.setStatus(TASKBOARD_STATUS_KEY, undefined);
+				if (ctx.mode === "tui" && widgetMounted) ctx.ui.setWidget(TASKBOARD_WIDGET_KEY, undefined);
 			} catch {}
 		}
 		widgetMounted = false;

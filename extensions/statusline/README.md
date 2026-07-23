@@ -213,11 +213,11 @@ The footer follows the active pi theme rather than maintaining separate RGB pale
 | `quota` | native OAuth Claude/Codex usage windows, including loading/first-load error state |
 | `environment` | context files / skills / tools counts (low-contrast / dim) |
 | `toolActivity` | current agent-run tool counts; `detailed` keeps per-tool rows, `compact` shows error total + `core_tools` (bash/edit/read/write) + `aux_tools` (web_research/aux_summarize/git_finalize); metadata-only `process_update` is excluded |
-| `progress` | extension status texts (excludes dedicated badges and `auxiliary`, which lives in process-view) |
+| `progress` | extension status texts (excludes dedicated badges and `auxiliary`, which lives in Taskboard) |
 | `duration` | current-request / current-process active time (`🕒` prefix in emoji mode); includes tools and child pi processes, excludes idle between requests |
-| `state` | Ready / Thinking / Working / Waiting (tools, subagent, or process-view wait/block) |
+| `state` | Ready / Thinking / Working / Waiting (tools, subagent, or Taskboard wait/block) |
 
-`toolActivity` resets at each agent run and counts business tools only. Process View's `process_update` publishes session metadata and is ignored at both tool start and tool end, preventing duplicate progress in the footer and editor-above HUD. Set `toolActivityMode` via `/statusline` or `statusline.json`.
+`toolActivity` resets at each agent run and counts business tools only. Taskboard's `process_update` publishes session metadata and is ignored at both tool start and tool end, preventing duplicate progress in the footer and editor-above HUD. Set `toolActivityMode` via `/statusline` or `statusline.json`.
 
 Auxiliary model usage is **not** a separate widget. Branch-local `terrific-pi:auxiliary-usage-v1` input/output/cost fold into the main `tokens` and `cost` widgets as low-contrast `Ⅰ` suffixes. Unsplit totals (no in/out breakdown) append once after the pair; missing usage/cost shows `Ⅰ ?` / trailing `?`. Known partial cost is still shown. The widgets editor preview legend notes this. Legacy `auxUsage` widget ids in old configs are ignored.
 

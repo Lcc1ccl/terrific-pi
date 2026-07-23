@@ -102,12 +102,14 @@ export default function presentation(pi: ExtensionAPI): void {
 
 	const statusReport = (): string => {
 		const commands = pi.getCommands();
-		const process = commands.some((command) => command.name === "process");
+		const taskboard = commands.some((command) => command.name === "taskboard")
+			// Compatibility through Taskboard 0.1.x; remove the /process probe when 0.2.0 is the baseline.
+			|| commands.some((command) => command.name === "process");
 		const toolMode = compactToolsActive() ? "compatibility renderer active" : "native rows";
 		return [
 			`Presentation: ${config.enabled ? "on" : "off"}`,
 			`workspace=${config.workspace ? "on" : "off"} system=${config.systemEvents ? "on" : "off"} user=${config.userMessageBox ? "box" : "native"} artifacts=${config.artifacts ? "on" : "off"} tools=${config.compactTools ? "compact" : "native"} expanded=${config.maxExpandedArtifacts}`,
-			`integration: tools=${toolMode} process-view=${process ? "available" : "missing"}`,
+			`integration: tools=${toolMode} taskboard=${taskboard ? "available" : "missing"}`,
 		].join("\n");
 	};
 

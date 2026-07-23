@@ -34,7 +34,7 @@
 ### 2026-07-18：从插件功能走向协同体验
 
 - statusline 经历信息层级、亮暗主题、plain/emoji、quota、窄屏与间距迭代。
-- process-view 形成目标、步骤、计时、waiting/blocked 等任务状态。
+- taskboard（当时名为 process-view）形成目标、步骤、计时、waiting/blocked 等任务状态。
 - auxiliary 从单一 Git 场景扩展为任务级模型路由，并开始对照 Hermes 与社区实现。
 - 用户明确要求：新增 feat 默认检查 statusline/HUD、mode、fast、context、btw 与共享配置的联动。
 
@@ -98,7 +98,7 @@
 
 ### 3.5 同一事实只有一个展示所有者
 
-statusline 负责常驻摘要，process-view 负责任务进度，presentation 负责会话中的工具与系统事件。一个事实只能有一个主 renderer；其他层最多引用摘要或提供下钻，必须用明确的 key/event ownership 去重。
+statusline 负责常驻摘要，taskboard 负责任务进度，presentation 负责会话中的工具与系统事件。一个事实只能有一个主 renderer；其他层最多引用摘要或提供下钻，必须用明确的 key/event ownership 去重。
 
 ### 3.6 配置只有一个权威来源
 
@@ -130,7 +130,7 @@ statusline 负责常驻摘要，process-view 负责任务进度，presentation �
 | 事故模式 | 根因 | 以后如何防止 |
 |----------|------|--------------|
 | fast 只改 HUD，真实请求未生效 | UI toggle 被当作事实源 | 先测试 provider payload，再测 badge |
-| process/presentation/statusline 重复同一进度 | 多个插件同时拥有 renderer | feat 设计时写 ownership 表和去重 key |
+| taskboard/presentation/statusline 重复同一进度 | 多个插件同时拥有 renderer | feat 设计时写 ownership 表和去重 key |
 | widget 移动、default/current 语义多轮翻转 | 先补局部交互，未定义不变量 | 先列状态机、排序规则和场景矩阵 |
 | 参考截图覆盖既有语义 | 把示例误当需求 | 先写“保留行为”和“新增行为”两列 |
 | 只完成任务的一部分 | 没有逐条 acceptance mapping | 最终验证逐项回看原始编号 |

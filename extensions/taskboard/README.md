@@ -1,8 +1,8 @@
-# process-view
+# taskboard
 
 Structured task milestones and task-scoped HUD for [pi](https://pi.dev).
 
-Process View keeps multi-step work inspectable while `presentation` owns collapsed tool history:
+Taskboard keeps multi-step work inspectable while `presentation` owns collapsed tool history:
 
 - a compact editor-above HUD for the goal, task progress, current-step time, and blocker
 - a live task panel when Pi's native tool expansion is enabled (default `Ctrl+O`)
@@ -11,13 +11,13 @@ Process View keeps multi-step work inspectable while `presentation` owns collaps
 ## Install
 
 ```bash
-pi install /path/to/terrific-pi/extensions/process-view
+pi install /path/to/terrific-pi/extensions/taskboard
 ```
 
 For this repository's development layout, add the package next to the other terrific-pi packages in `~/.pi/agent/settings.json`:
 
 ```json
-"../vendor/terrific-pi/extensions/process-view"
+"../vendor/terrific-pi/extensions/taskboard"
 ```
 
 Reload Pi after changing packages:
@@ -43,13 +43,15 @@ Tool calls execute sequentially. Invalid snapshots throw without changing memory
 
 ## HUD
 
-The Widget key is `terrific-pi:process-view` and uses Pi theme tokens. Its compact first line keeps the goal, completed/total task count, current step, and current-step active time together. The latest blocker, update, or verification may use one additional line.
+The Widget key is `terrific-pi:taskboard` and uses Pi theme tokens. Its compact first line keeps the goal, completed/total task count, current step, and current-step active time together. The latest blocker, update, or verification may use one additional line.
 
-`processView.activityMode` controls runtime activity independently from task state:
+`taskboard.activityMode` controls runtime activity independently from task state. Existing `processView` config is read only when `taskboard` is absent; the next `/taskboard default <mode>` migrates it atomically:
 
 - `full` (default): show aggregate runtime activity in compact task views and detailed sanitized activity in expanded task views. Compact mode intentionally shows counts/outcomes rather than duplicating native tool-row labels.
 - `task`: hide passive and collapsed runtime activity; expanded task panels still show it for inspection. Use it only when another stable activity surface is enabled.
 - `off`: hide runtime activity entirely while retaining task state.
+
+Taskboard writes only the `taskboard` object and preserves unknown legacy fields during that migration.
 
 When Pi's native tool expansion is enabled, compact mode switches to a live panel with:
 
@@ -58,24 +60,33 @@ When Pi's native tool expansion is enabled, compact mode switches to a live pane
 - task-local input/output/cache/cost totals and runtime activity when `activityMode` is not `off`
 - the latest blocker, update, verification, or artifact labels
 
-LLM turn wall-clock (current turn / session) stays in statusline `duration`; Process View only shows task/step active time and usage totals.
+LLM turn wall-clock (current turn / session) stays in statusline `duration`; Taskboard only shows task/step active time and usage totals.
 
-The panel is responsive, bounded to 15 lines, and `/process full` pins it open. Step time pauses while Waiting, Blocked, or Interrupted and resumes if the same step becomes active again.
+The panel is responsive, bounded to 15 lines, and `/taskboard full` pins it open. Step time pauses while Waiting, Blocked, or Interrupted and resumes if the same step becomes active again.
 
 When activity is visible, only `read`, `edit`, `write`, `grep`, `find`, and `ls` may show a sanitized path. Paths outside the workspace show only their basename. `bash` never shows its command, and unknown tools never serialize arguments or results.
 
 ## Commands
 
 ```text
-/process              TUI manager: summary, view mode, global default, live-panel expansion, confirmed clear
-/process compact      compact by default; follow Pi's native tool expansion
-/process full         pin the live task/runtime panel open
-/process off          hide the HUD while retaining state and receipts
-/process clear        TUI confirmation, then write a tombstone and clear the current task
-/process default <mode>  save compact|full|off for new session branches
+/taskboard              TUI manager: summary, view mode, global default, live-panel expansion, confirmed clear
+/taskboard compact      compact by default; follow Pi's native tool expansion
+/taskboard full         pin the live task/runtime panel open
+/taskboard off          hide the HUD while retaining state and receipts
+/taskboard clear        TUI confirmation, then write a tombstone and clear the current task
+/taskboard default <mode>  save compact|full|off for new session branches
 ```
 
-Outside TUI mode, bare `/process` prints the current summary and `/process clear` refuses without TUI confirmation. View mode is stored per session branch. `processView.defaultViewMode` in `~/.pi/agent/terrific.json` supplies the initial mode only when a branch has no saved Process View state; `/process default <mode>` writes that global default. The extension registers no shortcuts. The default `Ctrl+O` remains owned by Pi as `app.tools.expand`, so user keybinding overrides continue to work.
+Outside TUI mode, bare `/taskboard` prints the current summary and `/taskboard clear` refuses without TUI confirmation. View mode is stored per session branch. `taskboard.defaultViewMode` in `~/.pi/agent/terrific.json` supplies the initial mode only when a branch has no saved Taskboard state; `/taskboard default <mode>` writes that global default. The extension registers no shortcuts. The default `Ctrl+O` remains owned by Pi as `app.tools.expand`, so user keybinding overrides continue to work.
+
+## Compatibility Window
+
+| Contract | Policy |
+|----------|--------|
+| `process_update`, `process-view-state-v1`, `process-view-context` | Durable tool/session contracts; no planned removal |
+| `/process`, `processView`, legacy `process` status, presentation's `/process` detection | Transitional aliases through Taskboard `0.1.x`; removed when `0.2.0` becomes the baseline |
+
+Use `/taskboard` and the `taskboard` config/status keys for all new integrations. Running `/taskboard default <mode>` or `/process default <mode>` migrates the legacy config object atomically.
 
 ## Lifecycle
 
@@ -92,12 +103,12 @@ Tree navigation and resume reconstruct only the selected branch. Active tool tel
 
 ## Integration
 
-- `statusline`: recommended configuration omits `toolActivity`; Waiting/blocked process state is still published on the `process` status key so footer `state` shows Waiting.
+- `statusline`: recommended configuration omits `toolActivity`; Waiting/blocked Taskboard state is published on the `taskboard` status key so footer `state` shows Waiting. Statusline also accepts legacy `process` while old sessions or extensions finish migration.
 - `presentation`: its display-only native renderer owns collapsed tool rows and its file ledger projects ordinary successful file-change receipts onto one native tool row; `process_update.artifacts` remains for tests, screenshots, URLs, commits, and reports.
-- `mode`: ask/plan may remove the custom tool. Process View does not widen permissions.
+- `mode`: ask/plan may remove the custom tool. Taskboard does not widen permissions.
 - `fast`: no provider request or header changes.
 - `context`: only the bounded one-shot lifecycle reminder described above.
-- `btw`: isolated sessions do not write Process View state into the main session.
+- `btw`: isolated sessions do not write Taskboard state into the main session.
 
 ## Privacy And Failure Handling
 
@@ -112,7 +123,7 @@ Tree navigation and resume reconstruct only the selected branch. Active tool tel
 ## Develop
 
 ```bash
-cd extensions/process-view
+cd extensions/taskboard
 npm install
 npm run check
 ```

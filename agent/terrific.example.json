@@ -5,7 +5,7 @@
   "fast": {
     "enabled": false
   },
-  "processView": {
+  "taskboard": {
     "defaultViewMode": "compact",
     "activityMode": "full"
   },

@@ -11,11 +11,17 @@ import {
 	PRESENTATION_SYSTEM_ENTRY_TYPE,
 } from "../lib/types.ts";
 
-function createHarness(mode: "tui" | "print" | "rpc" = "tui", menuChoices: string[] = [], cwd = "/workspace/terrific-pi") {
+function createHarness(
+	mode: "tui" | "print" | "rpc" = "tui",
+	menuChoices: string[] = [],
+	cwd = "/workspace/terrific-pi",
+	availableCommands: string[] = ["skill:foo"],
+) {
 	const handlers = new Map<string, Array<(event: any, ctx: any) => unknown>>();
 	const eventHandlers = new Map<string, Array<(value: unknown) => void>>();
 	const entries: Array<{ customType: string; data: unknown }> = [];
 	const commands = new Map<string, any>();
+	const notifications: Array<{ message: string; level?: string }> = [];
 	const entryRenderers = new Map<string, unknown>();
 	const tools = new Map<string, unknown>();
 	let customCalls = 0;
@@ -25,7 +31,7 @@ function createHarness(mode: "tui" | "print" | "rpc" = "tui", menuChoices: strin
 		hasUI: mode === "tui",
 		model: { provider: "openai", id: "gpt-test" },
 		ui: {
-			notify() {},
+			notify(message: string, level?: string) { notifications.push({ message, level }); },
 			async custom() { customCalls += 1; return menuChoices.shift(); },
 			async input() { return undefined; },
 			async confirm() { return false; },
@@ -50,7 +56,7 @@ function createHarness(mode: "tui" | "print" | "rpc" = "tui", menuChoices: strin
 		registerEntryRenderer(type: string, renderer: unknown) { entryRenderers.set(type, renderer); },
 		registerTool(tool: { name: string }) { tools.set(tool.name, tool); },
 		registerCommand(name: string, command: unknown) { commands.set(name, command); },
-		getCommands() { return [{ name: "skill:foo", source: "skill" }]; },
+		getCommands() { return availableCommands.map((name) => ({ name, source: name.startsWith("skill:") ? "skill" : "test" })); },
 		getThinkingLevel() { return "high"; },
 		async exec(_command: string, args: string[]) {
 			if (args[0] === "branch") return { code: 0, stdout: "main\n", stderr: "", killed: false };
@@ -62,6 +68,7 @@ function createHarness(mode: "tui" | "print" | "rpc" = "tui", menuChoices: strin
 		ctx,
 		entries,
 		commands,
+		notifications,
 		entryRenderers,
 		tools,
 		get customCalls() { return customCalls; },
@@ -114,6 +121,20 @@ test("presentation appends UI-only system events without owning built-in executi
 		if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previous;
 		rmSync(agentDir, { recursive: true, force: true });
+	}
+});
+
+test("presentation reports canonical taskboard availability with process compatibility fallback", async () => {
+	for (const [commands, expected] of [
+		[["taskboard", "process"], "taskboard=available"],
+		[["process"], "taskboard=available"],
+		[["skill:foo"], "taskboard=missing"],
+	] as const) {
+		const harness = createHarness("tui", [], "/workspace/terrific-pi", [...commands]);
+		await harness.commands.get("presentation").handler("status", harness.ctx);
+		const message = harness.notifications.at(-1)?.message ?? "";
+		assert.match(message, new RegExp(expected));
+		assert.doesNotMatch(message, /process-view/);
 	}
 });
 
