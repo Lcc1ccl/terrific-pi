@@ -12,7 +12,7 @@ Runtime: openai/gpt-5.4-mini · 1 turn · ↑5.3k ↓46 · R0 W0 · $0.004
 PROCESS_FIXTURE_OK
 
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Process View · Waiting · 0/1 · Live process fixture                                                                                                          │
+│ Taskboard · Waiting · 0/1 · Live process fixture                                                                                                             │
 │ Time: total 1s · current 1s                                                                                                                                  │
 │ Current: Validate process presentation                                                                                                                       │
 ├─ Tasks ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤

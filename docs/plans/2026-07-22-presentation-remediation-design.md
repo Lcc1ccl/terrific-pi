@@ -4,7 +4,7 @@
 >
 > 状态：问题、最终技术设计、实施顺序与验收门槛已冻结；进入测试先行实施
 >
-> 范围：`extensions/presentation`、`extensions/process-view`、`extensions/auxiliary`、展示配置与真实 TUI 验收
+> 范围：`extensions/presentation`、`extensions/taskboard`、`extensions/auxiliary`、展示配置与真实 TUI 验收
 
 ## 1. 用户指令与交付原则
 
@@ -22,7 +22,7 @@
 
 - `git_finalize` 成功结果返回 `terminate: true`，同时提示模型不得在其后响应。
 - 成功提交后不再有模型回合发布 `process_update(completed)` 或最终回答。
-- `process-view` 在 `agent_settled` 遵守“不擅自宣称任务完成”原则，只能把仍为 `running` 的快照转为 `waiting`。
+- `taskboard` 在 `agent_settled` 遵守“不擅自宣称任务完成”原则，只能把仍为 `running` 的快照转为 `waiting`。
 - 用户看到的结果是：Git 已提交、任务仍为 Waiting、会话没有正常收尾。
 
 ### P0-2 Bash 运行/成功/失败三态退化
@@ -38,7 +38,7 @@
 
 1. Pi 原生 `ToolExecutionComponent`。
 2. `presentation` 的 `presentation-tools-v1` durable entry。
-3. `process-view` 在 `activityMode=full` 下的 active/recent activity。
+3. `taskboard` 在 `activityMode=full` 下的 active/recent activity。
 4. `ArtifactJournal` 的文件回执。
 
 这不是简单文案重复，而是没有定义唯一 owner。
@@ -85,7 +85,7 @@
 - wrapper 测试断言 collapsed 成功为空。
 - live fixture 只覆盖 Bash error，不覆盖 running/success 状态转换。
 - 文件 fixture 已出现双回执，但审计只检查存在性和隐私，不检查数量与 A/M/D 正确性。
-- 没有 `git_finalize` + `process-view` + agent loop 的组合测试。
+- 没有 `git_finalize` + `taskboard` + agent loop 的组合测试。
 
 ## 3. 不可降级的目标效果
 
@@ -153,7 +153,7 @@ Bash 命令正文默认不进入 collapsed 历史；expanded 必须可查。安�
 - 私有 API 只封装在单一 compatibility 模块中，带版本守卫、幂等 install/uninstall 和 fail-safe。
 - 不再通过同名 `registerTool()` 模拟 renderer middleware，从而不接管工具执行。
 - 由一个 tool presentation controller 统一 running -> success/error -> expanded 生命周期。
-- `process-view` 只管任务；ArtifactJournal 只管请求级净文件影响；system entries 继续由 presentation 管理。
+- `taskboard` 只管任务；ArtifactJournal 只管请求级净文件影响；system entries 继续由 presentation 管理。
 
 初步结论：方案 C 最符合完整效果与长期可控性。实施前必须完整对照旧 fork、Pi `0.81.1` TUI 生命周期和 reload/resume 行为，再冻结接口。
 
@@ -164,7 +164,7 @@ Bash 命令正文默认不进入 collapsed 历史；expanded 必须可查。安�
 | 用户输入 | presentation user-message compatibility layer | 原消息自身 |
 | 活跃工具状态 | presentation tool presentation controller | 否，原地更新 |
 | 完成/失败工具历史 | presentation tool presentation controller | 使用原 tool call/result |
-| 任务步骤 | process-view | 是 |
+| 任务步骤 | taskboard | 是 |
 | 请求级文件净变化 | ArtifactJournal | 是，每请求一次 |
 | workspace/model/mode/fast/Skill | presentation system events | 是 |
 | 最终回答 | Pi 原生 assistant message | 是 |
@@ -202,7 +202,7 @@ Bash 命令正文默认不进入 collapsed 历史；expanded 必须可查。安�
 
 - ArtifactJournal 改为请求级净变化聚合。
 - 修复 dirty path disappearance 的文件指纹判定。
-- `processView.activityMode=full` 的紧凑 HUD 只显示聚合工具计数/结果；工具名称和详情只保留在原生 tool row 与展开任务面板。
+- `taskboard.activityMode=full` 的紧凑 HUD 只显示聚合工具计数/结果；工具名称和详情只保留在原生 tool row 与展开任务面板。
 - 重定义 `git_finalize` 成功后的非终止收尾契约，允许 process completion 和最终回答；禁止后续写操作。
 
 ### Phase 4：真实 TUI 验收
@@ -246,7 +246,7 @@ Bash 命令正文默认不进入 collapsed 历史；expanded 必须可查。安�
 
 - package typecheck/test 全绿。
 - 新回归测试完成 RED -> GREEN 证据。
-- presentation、process-view、auxiliary、statusline 联动测试通过。
+- presentation、taskboard、auxiliary、statusline 联动测试通过。
 - 真实 TUI captures 覆盖三种宽度、collapsed/expanded 和生命周期。
 - 用户输入边框、Bash 三态、单一文件回执、process completed 均有视觉证据。
 - 没有内置 tool execution ownership 冲突。
@@ -316,8 +316,8 @@ Bash 命令正文默认不进入 collapsed 历史；expanded 必须可查。安�
 
 1. `git_finalize` 移除 `terminate:true`，details 增加严格版本 receipt：`kind/version/status/commit/requestedPush/operationSatisfied`。
 2. `operationSatisfied=true` 仅用于本地 commit 已满足请求，或 push 成功；requested push 的 `partial` 为 false。
-3. process-view 在 `tool_call` 检查：若存在 running process，只有“其他步骤全 done、唯一 active 是最后一步”时允许 terminal `git_finalize`。
-4. process-view 在宿主等待的 `tool_result` hook 中验证 receipt；满足时把最后一步与 task 同步持久化为 completed，并加入唯一 commit artifact。
+3. taskboard 在 `tool_call` 检查：若存在 running process，只有“其他步骤全 done、唯一 active 是最后一步”时允许 terminal `git_finalize`。
+4. taskboard 在宿主等待的 `tool_result` hook 中验证 receipt；满足时把最后一步与 task 同步持久化为 completed，并加入唯一 commit artifact。
 5. `partial` 保持未完成并转 waiting/failed，明确记录“本地提交成功、push 失败”；commit 前失败不改变完成状态。
 6. `git_finalize` 必须是其 assistant response 中唯一 tool call；commit 产生后 auxiliary 保存 active tools、将下一模型回合工具集置空，并在同批后续 `tool_call` 中阻止其他工具；下一回合只能输出最终 assistant 收尾。
 7. `agent_settled/session_shutdown` 恢复 active tools 和 run-scoped guard。
@@ -340,7 +340,7 @@ Pi `0.81.1` 已从根包导出两个目标组件。本轮私有依赖是实例 s
 - 删除 `presentation` 对内置 `read/grep/find/ls/bash/edit/write` 的同名注册，删除已废弃的 public-wrapper/timeline 实现；compatibility controller 成为唯一展示层。
 - 内建 user message frame、Bash pending/success/error、准确 Skill path identity、native expanded fallback、reload-safe prototype ownership 与单请求 artifact projection。
 - `ArtifactJournal` 使用请求起点文件指纹和 base HEAD 对比；已覆盖 dirty -> committed 不误报，以及 Bash 修改并提交仍保留净变更。
-- `git_finalize` 返回 `git_finalize@1` receipt 且不再终止 agent loop；成功提交锁定余下工具但允许最终 assistant message。`process-view` 仅在合格最终步骤收到有效 receipt 时完成任务，partial push 保持 Waiting 并标记该步骤失败。
+- `git_finalize` 返回 `git_finalize@1` receipt 且不再终止 agent loop；成功提交锁定余下工具但允许最终 assistant message。`taskboard` 仅在合格最终步骤收到有效 receipt 时完成任务，partial push 保持 Waiting 并标记该步骤失败。
 - Process HUD 紧凑态只显示聚合活动，不重复 native tool-row 标签；展开面板继续提供详情。
 
 权限结论：未使用 `sudo`、网络、新依赖、Pi core 修改、Git push/rebase/reset 或 session JSONL 迁移。

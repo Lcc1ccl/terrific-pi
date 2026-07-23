@@ -8,7 +8,7 @@
 >
 > 目标：在不复刻 Proma 三栏布局的前提下，用 pi 可定制能力尽可能复刻 Claude Code 的低噪音过程流，并保留 Proma 的任务里程碑、文件产物可见性和可回溯性
 >
-> 范围：外部 pi package 组合、`process-view` 适配、一个新的 presentation 编排插件、配置快照/离线迁移和集成验证
+> 范围：外部 pi package 组合、`taskboard` 适配、一个新的 presentation 编排插件、配置快照/离线迁移和集成验证
 
 ## 1. 执行结论
 
@@ -21,7 +21,7 @@ pi-tool-display@0.5.0 的薄补丁 fork
 pi-compact-transcript@0.6.2 的薄补丁 fork
   └─ 负责工具单行化、连续同类合并、tool turn 动作摘要、Ctrl+O 回退原渲染
 
-extensions/process-view
+extensions/taskboard
   └─ 只负责多步任务目标、步骤、等待/阻塞、验证，不再重复工具活动
 
 extensions/presentation（新增）
@@ -48,7 +48,7 @@ extensions/statusline
 
 ```text
 ● WORKSPACE · terrific-pi · main · rules 2
-◆ 4× read extensions/process-view/... {126 lines · 2s}
+◆ 4× read extensions/taskboard/... {126 lines · 2s}
 ◆ grep "tool_execution" extensions {31 lines}
 Read 4 files, ran 1 other tool · 5s
 
@@ -113,7 +113,7 @@ Ran 2 commands, 1 failed · 6s
 - 不实现 Proma 左会话栏、右文件栏或浮动侧栏。
 - 不做 IDE 文件浏览器、项目索引器或 workspace watcher 服务。
 - 不改模型推理协议，不截断发送给模型的工具结果。
-- 不建立第二套任务状态机；任务状态继续由 `process-view` 唯一负责。
+- 不建立第二套任务状态机；任务状态继续由 `taskboard` 唯一负责。
 - 不建立第二套 footer；系统常驻态继续由 `statusline` 唯一负责。
 - 不把外部 package 源码复制进本仓重新维护。
 - 不让 presentation 插件绕过 `/mode`、安全网或工具权限。
@@ -190,7 +190,7 @@ pi 当前 `ToolExecutionComponent` 为每个 tool call 单独向 `chatContainer`
 - thinking block 标记和 MCP 自动 decoration（由薄补丁配置关闭）。
 - transcript burst 或 run summary。
 
-### 6.3 `process-view`（现有插件）
+### 6.3 `taskboard`（现有插件）
 
 继续负责：
 
@@ -242,13 +242,13 @@ user input
   │
   ├─ presentation/input ───────────────► validated skill invocation entry
   ├─ presentation/before_agent_start ─► workspace entry + per-run answer contract
-  ├─ process-view/before_agent_start ──► task tombstone / passive stage
+  ├─ taskboard/before_agent_start ──► task tombstone / passive stage
   │
   ▼
 assistant/tool stream
   ├─ pi-compact-transcript ────────────► collapsed tool rows / burst
   ├─ pi-tool-display ──────────────────► edit/write expanded renderer
-  ├─ process-view ─────────────────────► task HUD
+  ├─ taskboard ─────────────────────► task HUD
   ├─ presentation artifact tracker ────► successful file mutation journal
   └─ statusline ───────────────────────► current runtime footer
   │
@@ -261,7 +261,7 @@ assistant final Markdown
   └─ result first; no repeated process/tool/file narration
   │
   ▼ agent_settled
-  ├─ process-view ─────────────────────► waiting/interrupted/completed settle
+  ├─ taskboard ─────────────────────► waiting/interrupted/completed settle
   └─ presentation ─────────────────────► only supplemental Git reconciliation if needed
 ```
 
@@ -288,7 +288,7 @@ assistant final Markdown
 
 1. `pi-tool-display` 先注册 edit/write renderer。
 2. patched compact transcript 后 patch transcript component，expanded 时回落到当前 renderer。
-3. `presentation` 可在任意现有 terrific 插件之后加载，但建议放在 `process-view` 后，便于命令/能力诊断。
+3. `presentation` 可在任意现有 terrific 插件之后加载，但建议放在 `taskboard` 后，便于命令/能力诊断。
 
 当前两个 fork 以 SSH git exact pin 安装：目标机需具备 GitHub SSH 访问权限（或将 fork 改为公开后改用 HTTPS pin）。上游若合并并发版，再分别替换为精确 npm pin。
 
@@ -296,7 +296,7 @@ assistant final Markdown
 
 ```json
 {
-  "processView": {
+  "taskboard": {
     "defaultViewMode": "compact",
     "activityMode": "task"
   },
@@ -662,16 +662,16 @@ presentation 在 `input` 收到 `/skill:<name>` 时，用 `pi.getCommands()` 校
 
 启动无意外重复 tool owner；process_update 仍使用自身 renderer；expanded read/bash 为 pi 原生，expanded edit/write 为 tool-display。
 
-## Phase 3：Process View 去重适配
+## Phase 3：Taskboard 去重适配
 
 ### 修改文件
 
-- `extensions/process-view/lib/types.ts`
-- `extensions/process-view/lib/config.ts`
-- `extensions/process-view/lib/render.ts`
-- `extensions/process-view/extensions/process-view.ts`
+- `extensions/taskboard/lib/types.ts`
+- `extensions/taskboard/lib/config.ts`
+- `extensions/taskboard/lib/render.ts`
+- `extensions/taskboard/extensions/taskboard.ts`
 - 对应 `tests/{config,render,extension}.test.ts`
-- `extensions/process-view/README.md`
+- `extensions/taskboard/README.md`
 
 ### 改动
 
@@ -691,7 +691,7 @@ presentation 在 `input` 收到 `/skill:<name>` 时，用 `pi.getCommands()` 校
 - 多步任务仍始终可见 goal/progress/current/time。
 - waiting/blocked/verification 不受影响。
 - compact transcript 开启后没有重复工具活动行或当前任务进度行。
-- standalone process-view 默认行为不回归。
+- standalone taskboard 默认行为不回归。
 
 ## Phase 4：Presentation 插件骨架与系统条
 
@@ -739,7 +739,7 @@ extensions/presentation/
 
 ### 修改范围
 
-在 `extensions/presentation/lib/artifacts.ts` 与 extension lifecycle 中实现，不塞入 process-view state。
+在 `extensions/presentation/lib/artifacts.ts` 与 extension lifecycle 中实现，不塞入 taskboard state。
 
 ### 实现顺序
 
@@ -824,7 +824,7 @@ FORCE=1 RESTORE=1 PI_HOME=<tmp> AGENTS_SKILLS_DIR=<tmp> ./install.sh
 
 - 根 `README.md` 插件表和 external package 说明。
 - `docs/CAPABILITIES.md` 能力表、HUD 分层、决策账本和 external pins。
-- `extensions/process-view/README.md`。
+- `extensions/taskboard/README.md`。
 - `extensions/presentation/README.md`。
 - `agent/terrific.example.json`。
 - `snapshot/agent/{settings,statusline,terrific}.json`。
@@ -867,14 +867,14 @@ README 插件表与磁盘一致；CAPABILITIES 记录为什么复用两个社区
 ### 包级命令
 
 ```bash
-cd extensions/process-view && npm run check
+cd extensions/taskboard && npm run check
 cd extensions/presentation && npm run check
 cd extensions/statusline && npm test
 cd extensions/mode && npm run check
 cd extensions/fast && npm test
 ```
 
-按各包实际 script 调整，但每个变更包至少运行其完整 test；presentation/process-view 必须 typecheck。
+按各包实际 script 调整，但每个变更包至少运行其完整 test；presentation/taskboard 必须 typecheck。
 
 ### TUI 人工检查
 
@@ -899,7 +899,7 @@ Phase 0 compatibility baseline
   ├─ Phase 1 compact-transcript + tool-display patches
   └─ Phase 2 package/config wiring
        │
-       ├─ Phase 3 process-view adaptation
+       ├─ Phase 3 taskboard adaptation
        └─ Phase 4 presentation system/contract
              └─ Phase 5 artifact ledger
 
@@ -912,7 +912,7 @@ Phase 1-8 ──► Phase 9 integration acceptance
 写入安全：
 
 - 同一工作树始终只有一个 writer。
-- external fork、本仓 process-view、本仓 presentation 可由不同 planner/reviewer 并行分析，但实际写入分别串行或使用隔离 worktree。
+- external fork、本仓 taskboard、本仓 presentation 可由不同 planner/reviewer 并行分析，但实际写入分别串行或使用隔离 worktree。
 - 每阶段先目标测试，再包级完整测试，再 fresh read-only review。
 
 ## 15. Review Gates
@@ -921,7 +921,7 @@ Phase 1-8 ──► Phase 9 integration acceptance
 
 - 是否直接复用了两个社区包。
 - presentation 是否越界实现 tool renderer/task/footer。
-- process-view/statusline 是否只做必要接线。
+- taskboard/statusline 是否只做必要接线。
 
 ### Gate B：行为正确性
 
@@ -979,7 +979,7 @@ Phase 1-8 ──► Phase 9 integration acceptance
 
 - `settings.json`：移除两个 external pins 与 presentation；恢复 `hideThinkingBlock`、`outputPad`、`quietStartup`。
 - `statusline.json`：需要恢复旧显示时重新加入 `toolActivity`；`environment` 从未移除。
-- `terrific.json`：删除 `presentation` 段，将 `processView.activityMode` 改回 `full` 或删除。
+- `terrific.json`：删除 `presentation` 段，将 `taskboard.activityMode` 改回 `full` 或删除。
 
 ### 状态兼容
 
@@ -1005,7 +1005,7 @@ M1 已能获得主要视觉收益；M1–M4 构成目标体验；M5–M6 才能�
 - [x] exact external pins 与兼容性证据已记录。
 - [x] turn-bounded tool burst、条件 summary、统一工具块间距、process preserve、hidden thinking 均通过测试。
 - [x] patched tool-display 已关闭 thinking labeling 与 MCP/custom decoration。
-- [x] process-view `activityMode=task` 无重复工具行。
+- [x] taskboard `activityMode=task` 无重复工具行。
 - [x] presentation entries 全部 UI-only。
 - [ ] artifact receipt 对 Git/非 Git/dirty/error/steer-followUp 有正确 flush 与降级。
 - [x] mode/fast 只在用户动作后 emit。

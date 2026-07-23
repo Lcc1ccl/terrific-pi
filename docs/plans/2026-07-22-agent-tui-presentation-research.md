@@ -2,7 +2,7 @@
 
 > 日期：2026-07-22
 >
-> 范围：Claude Code、OpenAI Codex CLI、OpenCode，以及 terrific-pi 的 `presentation`、`process-view`、`statusline` 与历史 renderer fork 基线
+> 范围：Claude Code、OpenAI Codex CLI、OpenCode，以及 terrific-pi 的 `presentation`、`taskboard`、`statusline` 与历史 renderer fork 基线
 >
 > 调研结论状态：历史源码与配置审计完成；当前实现以 [presentation remediation design](./2026-07-22-presentation-remediation-design.md) 为准。
 >
@@ -27,7 +27,7 @@
 
 ### 实施状态（2026-07-22）
 
-- 已落实：Pi `0.81.1` package baseline、无 fork package 迁移、受控 native render compatibility layer（不接管 built-in tool execution）、运行中探索/Skill identity、单行 width-aware renderer、动态展开键位、exact-path Skill entry、单一失败行、探索批次、A→B→A transient 状态、`processView.activityMode=full` 与收紧后的 statusline 预算。
+- 已落实：Pi `0.81.1` package baseline、无 fork package 迁移、受控 native render compatibility layer（不接管 built-in tool execution）、运行中探索/Skill identity、单行 width-aware renderer、动态展开键位、exact-path Skill entry、单一失败行、探索批次、A→B→A transient 状态、`taskboard.activityMode=full` 与收紧后的 statusline 预算。
 - 已验证：`presentation` typecheck 与完整 package tests、offline install smoke、隔离 TUI，以及 authenticated model-driven 的 read/edit-write/bash-error/process-task/skill-load/reload/resume 真实 captures。
 - 真实视觉证据：42 个 80x24、120x40、160x50 collapsed/expanded pane 均通过宽度、隐私、披露和生命周期断言；详见 [live fixture](./fixtures/presentation/2026-07-22-live-model-verification.md)。
 
@@ -51,7 +51,7 @@
 
 ### 2.2 已执行验证
 
-- `process-view`: typecheck + 71 tests 通过。
+- `taskboard`: typecheck + 71 tests 通过。
 - `presentation`: typecheck + 27 tests 通过。
 - `pi-compact-transcript`: 9 tests 通过。
 - `statusline`: 149 tests 通过。
@@ -206,18 +206,18 @@
 |---|---|---|
 | 工具执行与显示解耦 | compact fork patch transcript component；expanded 回到原 renderer | 方向正确，保留 Pi 原生执行和上下文 |
 | 最终回答 | 保留 native assistant Markdown，只注入 answer contract | 正确，避免 final 被压成工具回执 |
-| 任务进度 | `process-view` 保存 milestone、blocked/waiting/verification | 比单纯 spinner 更可审计 |
+| 任务进度 | `taskboard` 保存 milestone、blocked/waiting/verification | 比单纯 spinner 更可审计 |
 | 文件产物 | `presentation` 自动生成 UI-only artifact receipt | 解决“做了什么文件变更”的高价值问题 |
 | 状态分层 | statusline 管常驻状态，presentation 管离散事件 | 职责边界合理 |
 | thinking 降噪 | hidden thinking + thought ticker 关闭 | 符合用户偏好 |
 | 失败独占 | compact fork 解除 burst hidden，失败用红色 marker | 正确，异常不会被成功 burst 吞掉 |
-| 隐私基础 | bash collapsed 隐藏 command；process-view 不显示 unknown args | 符合低噪音与安全目标 |
+| 隐私基础 | bash collapsed 隐藏 command；taskboard 不显示 unknown args | 符合低噪音与安全目标 |
 
 ### 6.2 关键差距矩阵
 
 | 维度 | 用户需要 | 当前真实行为 | 判断 | 优先级 |
 |---|---|---|---|---|
-| 当前 read 目标 | 看见正在读哪个文件 | compact live row 显示当前/代表路径；`processView.activityMode=task` 会隐藏 passive 与 collapsed activity | 部分具备，但并行/burst 与工具间空档不稳定 | P1 |
+| 当前 read 目标 | 看见正在读哪个文件 | compact live row 显示当前/代表路径；`taskboard.activityMode=task` 会隐藏 passive 与 collapsed activity | 部分具备，但并行/burst 与工具间空档不稳定 | P1 |
 | Skill 可见性 | 明确用了什么 skill | 只记录用户显式 `/skill:<name>`；模型按规则读取 `SKILL.md` 不会触发 Skill entry | 核心缺失 | P0 |
 | collapsed 单行 | 过程流不挤占屏幕 | `presentation` system/artifact renderer 不感知 width；合法 32 项 artifact receipt 在 80 列为 40 行，当前本机 16 项配置为 19 行 | 与成功标准直接冲突 | P0 |
 | compact 长参数 | 不显示大段 prompt/命令 | 本机新 pin 为避免 clipping，让完整 preview 自动换行；unknown tool 可选择 `prompt`、`text`、`url` | 与用户偏好及隐私边界冲突 | P0 |
@@ -238,8 +238,8 @@
 - collapsed artifact 使用 `maxExpandedArtifacts`：`extensions/presentation/lib/render.ts:42-49`。
 - unknown compact preview 会优先展示 `url`、`prompt`、`text`：本机 compact fork `extensions/compact-transcript.ts:236-299`。
 - turn summary 只有 read/edit/bash/default 四类：同文件 `:882-952`。
-- `task` activity mode 无 snapshot 时不显示 passive activity，collapsed task HUD 也不显示 activity：`extensions/process-view/lib/render.ts:173-180`、`:298-301`。
-- 本机配置确为 `processView.activityMode="task"`：`~/.pi/agent/terrific.json` 对应段。
+- `task` activity mode 无 snapshot 时不显示 passive activity，collapsed task HUD 也不显示 activity：`extensions/taskboard/lib/render.ts:173-180`、`:298-301`。
+- 本机配置确为 `taskboard.activityMode="task"`：`~/.pi/agent/terrific.json` 对应段。
 - 审计当时的 Phase 0 文档明确六个 model-backed capture 未完成；该历史 gate 已由 [live fixture](./fixtures/presentation/2026-07-22-live-model-verification.md) 关闭。
 
 ## 7. 优化方案（实施前建议）
@@ -411,7 +411,7 @@
 1. **外部 fork 已移除；受控 patch 保留。** `presentation` 仅 patch 两个 native `render` 方法，具备 compare-and-swap 卸载与原 renderer 回退；不会接管 tool execution。
 2. **screen-reader/reduced-motion：已满足当前需要。** 所有 presentation 状态都有文本 label，未引入动画/blink，展开提示来自可重绑定的 `app.tools.expand`。
 3. **per-tool output policy：明确不做。** 当前没有多个 rich custom tools 需要默认展开；全局原生展开已经覆盖需求。
-4. **subagent activity summary：明确不做。** `process-view` 已负责主流程进度；复制子代理原始工具流会违背低噪音目标，只有用户需要主会话内的 agent 汇总时才重新立项。
+4. **subagent activity summary：明确不做。** `taskboard` 已负责主流程进度；复制子代理原始工具流会违背低噪音目标，只有用户需要主会话内的 agent 汇总时才重新立项。
 5. **fullscreen/sidebar：明确不做。** 当前目标不需要。OpenCode 的宽屏 sidebar 很完整，但会扩大布局、状态和键位维护面。
 
 ## 8. 明确不建议照搬

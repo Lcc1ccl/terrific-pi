@@ -13,6 +13,7 @@ yarn-error.log*
 pnpm-lock.yaml
 package-lock.json
 *.tgz
+*.tar.gz
 
 # Secrets & local runtime (never commit)
 .env

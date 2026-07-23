@@ -24,7 +24,7 @@
 ## 2. 边界
 
 - 不把 `/profile` 扩成第二个全量 `/model`
-- 不允许手工编辑 Process View 的模型进度、状态和 usage
+- 不允许手工编辑 Taskboard 的模型进度、状态和 usage
 - 不在 `/mode` 中实现任意工具集编辑器
 - 不为 `/fast` 的单一布尔配置建立多层 TUI
 - 不建立跨 package 的公共运行时依赖；各 extension 必须继续可独立安装
@@ -64,7 +64,7 @@
 - Compact 改为独立显式动作并继续确认
 - 文档不再宣称绝对“no session writes”
 
-## 4. Phase 1：Process View 管理器（已完成）
+## 4. Phase 1：Taskboard 管理器（已完成）
 
 无参数 `/process` 在 TUI 打开浅层管理器：
 
@@ -158,7 +158,7 @@
 
 ## 8. Phase 5：打磨（代码完成；真机 TUI 待验）
 
-- Process View 全局 default view mode
+- Taskboard 全局 default view mode
 - Model Profile project/global 来源追踪与 project override 编辑
 - Statusline 仅在相关 widget 启用时展示相关配置项
 - 统一 README、CAPABILITIES 和示例
