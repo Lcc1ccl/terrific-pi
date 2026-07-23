@@ -14,6 +14,12 @@ import { CONFIGURABLE_AUXILIARY_TASKS, runAuxiliaryConfigTui } from "../lib/conf
 import { buildResearchRequest, delegateResearch, validateResearchOutput } from "../lib/delegation.ts";
 import { createFinalizationToolLock, createGitFinalizeReceipt, finalizeGit, GitFinalizeError, hasSiblingToolCall } from "../lib/git-finalize.ts";
 import {
+	PILOT_ROUTER_SYSTEM_PROMPT,
+	buildPilotRouterMessages,
+	createPilotRouterBridge,
+	parsePilotRouterOutput,
+} from "../lib/pilot-router.ts";
+import {
 	buildCommitMessages,
 	buildSummaryMessages,
 	estimateTextTokens,
@@ -150,6 +156,7 @@ function titleWasAttempted(ctx: ExtensionContext): boolean {
 export default function auxiliary(pi: ExtensionAPI) {
 	let latestContext: ExtensionContext | undefined;
 	let runtime: AuxiliaryRuntime | undefined;
+	let pilotRouterBridge: ReturnType<typeof createPilotRouterBridge> | undefined;
 	let titleAttempted = false;
 	const finalizationLock = createFinalizationToolLock(
 		() => pi.getActiveTools(),
@@ -338,6 +345,26 @@ export default function auxiliary(pi: ExtensionAPI) {
 			}
 		}
 		throw new AuxiliaryError("provider_error", lastError);
+	};
+
+	const runPilotRouter = async (ctx: ExtensionContext, prompt: string, signal: AbortSignal) => {
+		const config = load(ctx);
+		if (!config.enabled) throw new AuxiliaryError("disabled", "Auxiliary runtime is disabled");
+		const route = resolveTaskRoute(config, "pilot_router");
+		const result = await runtimeFor(ctx).call({
+			task: "pilot_router",
+			executor: "call",
+			adapter: "pilot_router:v1",
+			systemPrompt: PILOT_ROUTER_SYSTEM_PROMPT,
+			messages: buildPilotRouterMessages(prompt),
+			requiredInput: "text",
+			signal,
+			validateOutput: (text, response) => {
+				if (response.stopReason === "length") throw new AuxiliaryError("invalid_output", "pilot_router output was truncated");
+				return JSON.stringify(parsePilotRouterOutput(text));
+			},
+		}, route);
+		return parsePilotRouterOutput(result.text);
 	};
 
 	pi.registerTool({
@@ -546,6 +573,21 @@ export default function auxiliary(pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		restoreFinalizedTools();
 		latestContext = ctx;
+		pilotRouterBridge?.close();
+		pilotRouterBridge = createPilotRouterBridge({
+			events: pi.events,
+			timeoutMs: () => latestContext ? resolveTaskRoute(load(latestContext), "pilot_router").timeoutMs : 10_000,
+			run: (prompt, signal) => {
+				const activeContext = latestContext;
+				if (!activeContext) throw new AuxiliaryError("provider_error", "pilot_router session context is unavailable");
+				return runPilotRouter(activeContext, prompt, signal);
+			},
+		});
+		titleAttempted = titleWasAttempted(ctx);
+	});
+
+	pi.on("session_tree", async (_event, ctx) => {
+		latestContext = ctx;
 		titleAttempted = titleWasAttempted(ctx);
 	});
 
@@ -637,6 +679,8 @@ export default function auxiliary(pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		restoreFinalizedTools();
+		pilotRouterBridge?.close();
+		pilotRouterBridge = undefined;
 		runtime?.shutdown();
 		runtime = undefined;
 		latestContext?.ui.setStatus("auxiliary", undefined);

@@ -254,7 +254,7 @@ describe("auxiliary configurator", () => {
 
 		const defaultRoute = ui.dialogs.find((item) => item.title === "Default route");
 		assert.ok(defaultRoute);
-		assert.match(defaultRoute.descriptions["Apply primary model to all tasks"] ?? "", /enable.*all six/i);
+		assert.match(defaultRoute.descriptions["Apply primary model to all tasks"] ?? "", /enable.*all seven/i);
 		const output = defaultRoute.options.find((option) => option.startsWith("Max output tokens"));
 		assert.ok(output);
 		assert.match(defaultRoute.descriptions[output] ?? "", /generated.*not.*input.*context/i);

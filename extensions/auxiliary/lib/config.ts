@@ -47,6 +47,7 @@ export const DEFAULT_AUXILIARY_CONFIG: AuxiliaryConfig = {
 			timeoutMs: 300_000,
 			fallbackModels: ["openai/gpt-5.4-mini"],
 		},
+		pilot_router: { thinking: "off", timeoutMs: 10_000, maxOutputTokens: 128, maxRetries: 0 },
 	},
 	git: { confirm: true, allowHeadless: false, allowPush: true },
 };

@@ -11,6 +11,7 @@ Task-scoped auxiliary model runtime for Pi. It runs bounded side calls without c
 - `git_finalize` for already staged changes, with exact confirmation and optional normal push
 - Canonical branch-local usage entries and active-task status
 - Vision usage bridge for `pi-vision-handoff`
+- Versioned internal `pilot_router` request/response bridge for the Pilot control plane
 
 The core package has no runtime dependencies beyond Pi peer APIs and Node.js.
 
@@ -72,7 +73,7 @@ Project-local `auxiliary` config is intentionally ignored because a model route 
 
 Run `/aux config` in TUI mode to edit the global runtime, default route, and task routes. The selected menu item shows a wrapped `Tip:` explaining its runtime impact. Model pickers use fuzzy matching across model IDs, full refs, and display names, so queries such as `5.6` or `sol` find `gpt-5.6-sol`. Each confirmed change is written atomically while preserving other `terrific.json` sections; malformed JSON is never overwritten.
 
-The Default route menu includes **Apply primary model to all tasks**. After confirmation, it copies the effective default model to all six configurable task routes and enables auxiliary routing for every task. Existing thinking, timeout, output, retry, fallback, and unknown task fields remain unchanged; vision is excluded.
+The Default route menu includes **Apply primary model to all tasks**. After confirmation, it copies the effective default model to all seven configurable task routes and enables auxiliary routing for every task. Existing thinking, timeout, output, retry, fallback, and unknown task fields remain unchanged; vision is excluded.
 
 See [`../../agent/terrific.example.json`](../../agent/terrific.example.json) for the complete template. Each task can set:
 
@@ -81,7 +82,7 @@ See [`../../agent/terrific.example.json`](../../agent/terrific.example.json) for
 - `thinking`, `timeoutMs`, and fields consumed by that task
 - up to three ordered `fallbackModels`
 
-Most routes expose `maxOutputTokens` and `maxRetries`. Compression and BTW do not consume retries, while Web Research owns its bounded result contract and consumes neither retries nor a route-level output cap, so those ineffective fields are hidden from their menus. Configurable task keys are `compression`, `title_generation`, `text_summary`, `commit_message`, `btw`, and `web_research`. Vision routing remains owned by `/vision-handoff`; `/aux config` exposes that external entry without writing an ineffective `tasks.vision` block.
+Most routes expose `maxOutputTokens` and `maxRetries`. Compression and BTW do not consume retries, while Web Research owns its bounded result contract and consumes neither retries nor a route-level output cap, so those ineffective fields are hidden from their menus. Configurable task keys are `compression`, `title_generation`, `text_summary`, `commit_message`, `btw`, `web_research`, and `pilot_router`. `pilot_router` inherits the default route unless overridden, uses a fixed 10-second/128-token/no-retry budget, and is callable only through its versioned internal event contract. Vision routing remains owned by `/vision-handoff`; `/aux config` exposes that external entry without writing an ineffective `tasks.vision` block.
 
 ## Commands And Tools
 
@@ -106,7 +107,7 @@ Most routes expose `maxOutputTokens` and `maxRetries`. Compression and BTW do no
 5. Rechecks a SHA-256 fingerprint over full staged blob IDs before commit.
 6. Uses normal `git push --porcelain` only when an upstream already exists.
 7. Must be the only tool call in its assistant response. A successful local commit locks further tool calls for that turn but permits the final assistant result.
-8. Returns a versioned `git_finalize@1` receipt so Process View can complete only an eligible terminal commit step.
+8. Returns a versioned `git_finalize@1` receipt so Taskboard can complete only an eligible terminal commit step.
 
 It never stages files, creates an upstream, force pushes, pushes tags, or rebases. A successful local commit is retained and reported if push fails; a requested push failure remains a partial operation, not task completion.
 
@@ -114,7 +115,7 @@ It never stages files, creates an upstream, force pushes, pushes tags, or rebase
 
 Each attempt appends `terrific-pi:auxiliary-usage-v1` to the current session branch. Entries contain model/task/status/usage metadata only, never prompts, responses, diffs, URLs, tool arguments, or error stacks.
 
-While a call is active, status key `auxiliary` still tracks the task, but statusline progress ignores it so process-view can own live tool/model display (`web_research · provider/model` via tool updates).
+While a call is active, status key `auxiliary` still tracks the task, but statusline progress ignores it so Taskboard can own live tool/model display (`web_research · provider/model` via tool updates).
 
 Branch-local usage is folded into the statusline main `tokens` / `cost` widgets as dim `Ⅰ` suffixes (no separate aux widget or call counter).
 

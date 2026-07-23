@@ -184,6 +184,19 @@ describe("auxiliary config", () => {
 		assert.ok(loaded.warnings.some((warning) => /headers/.test(warning)));
 	});
 
+	test("adds a bounded pilot_router task that inherits the shared default model", () => {
+		assert.deepEqual(resolveTaskRoute(DEFAULT_AUXILIARY_CONFIG, "pilot_router"), {
+			model: DEFAULT_AUXILIARY_CONFIG.default.model,
+			thinking: "off",
+			timeoutMs: 10_000,
+			maxOutputTokens: 128,
+			maxRetries: 0,
+			fallbackModels: [],
+		});
+		const override = mergeAuxiliaryConfig({ auxiliary: { tasks: { pilot_router: { model: "grok/router" } } } });
+		assert.equal(resolveTaskRoute(override.config, "pilot_router").model, "grok/router");
+	});
+
 	test("parses provider/model at the first slash", () => {
 		assert.deepEqual(parseModelRef("openrouter/org/model:free"), { provider: "openrouter", modelId: "org/model:free" });
 		assert.equal(parseModelRef("current"), "current");

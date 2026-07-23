@@ -20,6 +20,7 @@ export const CONFIGURABLE_AUXILIARY_TASKS = [
 	"commit_message",
 	"btw",
 	"web_research",
+	"pilot_router",
 ] as const satisfies readonly AuxiliaryTaskKey[];
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const satisfies readonly ThinkingLevel[];
@@ -48,6 +49,7 @@ const TASK_ROUTE_FIELDS: Record<ConfigurableTask, ReadonlySet<RouteField>> = {
 	web_research: new Set(ROUTE_OVERRIDE_FIELDS.filter(
 		(field) => field !== "maxRetries" && field !== "maxOutputTokens",
 	)),
+	pilot_router: new Set(ROUTE_OVERRIDE_FIELDS),
 };
 
 function routeFieldVisible(target: RouteTarget, field: RouteField): boolean {
@@ -659,7 +661,7 @@ async function routeMenu(deps: AuxiliaryConfiguratorDeps, target: RouteTarget): 
 			),
 			...(target.kind === "default" ? [menuItem(
 				"Apply primary model to all tasks",
-				`Copies ${route.model} to every task model and enables auxiliary routing for all six managed tasks. Other task fields stay unchanged; vision is excluded.`,
+				`Copies ${route.model} to every task model and enables auxiliary routing for all seven managed tasks. Other task fields stay unchanged; vision is excluded.`,
 			)] : []),
 			menuItem(thinkingLabel, "Requested reasoning level; models without reasoning support run with thinking off."),
 			menuItem(timeoutLabel, "Maximum wall time for each model attempt before an eligible fallback is tried."),
