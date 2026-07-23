@@ -9,7 +9,7 @@
 terrific-pi 是**个性化 Pi 的增强组件 monorepo**：在一个 Git、治理、迁移和离线发布边界中，维护多个独立 pi package、agent/skill 资源、跨包 workflows 与无密钥配置。它不是单一运行时大包，也不是为了共享依赖而建立的 Node workspace。
 
 - 路径通常为 `~/.pi/vendor/terrific-pi`，由 `settings.json` 使用相对 package path 引用。
-- 每个 `extensions/<name>/` 独立加载、测试和发布；根仓只统一治理与打包，不制造跨插件隐式运行时耦合。
+- 每个 `extensions/<name>/` 都可独立安装、启用、测试和发布；兼容 package 按明确的 Pi API/status/config 契约组合后可提供更完整体验。根仓只统一治理与打包，不制造跨插件隐式运行时耦合。
 - package 私有的 agents/chains/skills 跟随该 package；只有跨 package 编排才进入根 `workflows/`。
 - **禁止**入库或打包：真实 `auth.json`、token、session JSONL、trust、subagent 运行态、worktree、本机私密路径和任何密钥。
 - **允许**入库：手写公开模板、经消毒的 snapshot，以及 **空 key** 的 `auth.template.json`（见 `snapshot/README.md`）。
@@ -98,6 +98,7 @@ extensions/<name>/
 - `"type": "module"`
 - `"keywords"` 包含 `pi-package`（及 `pi-extension`）
 - `"pi.extensions"` 指向实际入口（如 `./extensions/<name>.ts`）
+- Phase 0/source-only package 可用 `"terrificPi": {"install": false}` 标记；源码随归档分发，但 install/pack 不得把它加入启用 packages 或 manifest
 - `@earendil-works/pi-*`、`pi-tui` 等 pi 内置能力放 **`peerDependencies": "*"`**，不要打进包
 - 真正的第三方运行时依赖才进 `dependencies`；本仓库插件默认 **零 runtime 依赖**
 - `files` 只列发布所需路径；测试可保留在仓内但不影响加载

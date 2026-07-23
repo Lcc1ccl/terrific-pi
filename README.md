@@ -1,6 +1,6 @@
 # terrific-pi
 
-个性化 [pi](https://pi.dev) 增强组件 monorepo：统一维护独立插件、package 内 agents/chains、可迁移 skills、agent 配置、跨包 workflows、无密钥快照与离线发布物。
+`terrific-pi` 是个性化 [pi](https://pi.dev) 增强组件 monorepo：统一维护独立插件、package 内 agents/chains、可迁移 skills、agent 配置、跨包 workflows、无密钥快照与离线发布物。它不是必须整体加载的 runtime；每个 package 都可以独立安装、启用和发布。
 
 ## 目录结构
 
@@ -12,6 +12,7 @@ terrific-pi/
 │   ├── context/         # /context 上下文占用
 │   ├── auxiliary/       # task-scoped 辅助模型 runtime
 │   ├── mode/            # /mode 工具权限模式
+│   ├── pilot/           # Pilot control-plane（Phase 0，未启用）
 │   ├── btw/             # /btw 旁路问答
 │   ├── taskboard/       # 结构化任务里程碑与等待/阻塞 HUD
 │   ├── presentation/    # 受控原生渲染、系统条与文件变更回执
@@ -34,7 +35,9 @@ terrific-pi/
 
 ## Monorepo 边界
 
-- 根仓统一 Git、治理、迁移与离线发布；`extensions/<name>` 仍是独立可安装、可测试的 pi package。
+- 根仓统一 Git、治理、迁移与离线发布；`extensions/<name>` 仍是独立可安装、可测试、可独立启用的 pi package。
+- 每个 package 只拥有自己的运行事实和 UI 表面；兼容 package 通过 Pi 公共 API、status key 和 `terrific.json` 的显式契约组合，不存在根级隐式 runtime。
+- 单包解决单一问题；组合启用可获得更完整体验。例如，未来 `appearance` 提供的 `terrific-night` theme 与 `statusline`、`taskboard`、`presentation` 组合时形成完整的原生 TUI profile，但任何一个 package 都不是其他 package 的安装前提。
 - 单个 package 自有的 `agents/`、`chains/`、`skills/` 留在包内并由 manifest 暴露；根 `workflows/` 只放跨 package 编排。
 - `agent/` 是公开模板，`snapshot/agent/` 是经消毒的迁移 payload，live `~/.pi/agent` 与 sessions 不属于仓库。
 - 根 `workflows/` 不会因存在于仓库而被 Pi 自动发现，加载入口见 [`workflows/README.md`](./workflows/README.md)。
@@ -48,13 +51,14 @@ terrific-pi/
 | context | `extensions/context` | `/context [summary\|details\|config]` 上下文占用拆解；`c` 复制，`x` 确认后压缩 session |
 | auxiliary | `extensions/auxiliary` | task-key 辅助模型 runtime：裸 `/aux` 管理器、`/aux status`、compression/title/summary/web research/Git finalize、独立 usage 与 HUD |
 | mode | `extensions/mode` | `/mode ask\|plan\|edit\|auto\|config` 工具权限模式与全局默认管理；status key `mode` |
+| pilot | `extensions/pilot` | Phase 0 control-plane spike：双激活状态、direct role contract、AUTO input routing 与 Auxiliary `pilot_router` bridge；未加入 settings，尚不创建 Bundle/Worker/写入授权 |
 | btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话）；`status`/`config` 与单次 `context=none` |
 | taskboard | `extensions/taskboard` | `process_update` 结构化任务里程碑、步骤计时、等待/阻塞与验证；`/taskboard` 管理视图、展开、确认清除与新会话默认模式；`/process` 是兼容别名 |
 | presentation | `extensions/presentation` | 受控 native render compatibility、用户边框、运行中探索/Skill 身份、单一安全失败行、请求级文件回执与最终答案契约；`/presentation` 管理开关 |
 | docsflow | `extensions/docsflow` | 项目文档流水线：research→product→interface→delivery；裸命令管理器、阶段 model/thinking/timeout 覆盖；默认写 `./docsflow/`，可选 Obsidian vault |
 | model-profile | `extensions/model-profile` | 常用 3–5 套 model+thinking 短列表；`/profile` 快速应用、全局 CRUD、可信项目覆盖编辑、热键、冷启动短列表 |
 
-> 共享插件配置主文件：`~/.pi/agent/terrific.json`。Taskboard 的 canonical 段为 `taskboard`；旧 `/process`、`processView` 与 `process` status 回退仅保留于 Taskboard `0.1.x`，当 `0.2.0` 成为基线时移除；下一次 `/taskboard default <mode>` 会原子迁移配置。`process_update` 与历史 session types 保持稳定。Auxiliary 模型路由只读取 global config，不接受 project override。
+> 共享插件配置主文件：`~/.pi/agent/terrific.json`。Taskboard 的 canonical 段为 `taskboard`；旧 `/process`、`processView` 与 `process` status 回退仅保留于 Taskboard `0.1.x`，当 `0.2.0` 成为基线时移除；下一次 `/taskboard default <mode>` 会原子迁移配置。`process_update` 与历史 session types 保持稳定。Auxiliary 模型路由只读取 global config，不接受 project override。`pilot` 仍处于 Phase 0，故未列入下方开发机 packages。
 
 ## 已收录技能
 

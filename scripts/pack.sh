@@ -90,7 +90,7 @@ tar -C "$ROOT" \
 		dir="$(dirname "$pkg")"
 		base="$(basename "$dir")"
 		if command -v python3 >/dev/null 2>&1; then
-			has_pi="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("1" if d.get("pi",{}).get("extensions") else "0")' "$pkg")"
+			has_pi="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); meta=d.get("terrificPi",{}); print("1" if d.get("pi",{}).get("extensions") and not (isinstance(meta,dict) and meta.get("install") is False) else "0")' "$pkg")"
 			[[ "$has_pi" == "1" ]] || continue
 		fi
 		echo "../vendor/terrific-pi/extensions/$base"

@@ -33,6 +33,8 @@ terrific-pi/
 └── dist/                # 可再生成的离线包，默认仅保留最新 5 个
 ```
 
+`terrific-pi` 是产品与治理边界，不是根级 runtime：每个 extension 可独立安装、启用和测试；兼容扩展才通过 Pi 的公共 API 和明确配置/status 契约组合。`terrific-night` 是计划中的中性 theme id，只有未来 `appearance` package 落地后才可选择；它与 `statusline`、`taskboard`、`presentation` 的组合是完整原生 TUI profile，而非任何单包的前置条件。
+
 **加载关系（开发机典型）**：
 
 ```text
@@ -62,6 +64,7 @@ terrific-pi/
 |------|--------|----------|----------|----------|
 | 底栏 HUD | `extensions/statusline` | 自动 footer；`/statusline` 配置 | 一眼看 path/model/tokens/mode/fast/状态；仅相关 widget 启用时显示 Context & usage | **本仓实现**（可配置 widget） |
 | 工具权限模式 | `extensions/mode` | `/mode ask\|plan\|edit\|auto\|config` | 会话内限制可写/可执行工具，并管理全局默认 | **本仓实现** |
+| Pilot control plane | `extensions/pilot` | Phase 0 未启用；后续 `/pilot` + `/mode` | 双激活、direct role contract、AUTO input routing 与共享 Auxiliary router 的安全前提 | **本仓 Phase 0 spike**；不创建 Bundle/Worker/写入授权 |
 | OpenAI Priority | `extensions/fast` | `/fast [on\|off\|toggle\|status]` | 仅 GPT 模型 + openai 家族 Responses 时注入 `service_tier=priority` | **本仓实现**（窄注入） |
 | 上下文拆解 | `extensions/context` | `/context [summary\|details\|config]`；`c` 复制、`x` 确认压缩 | 不调模型查看占用；压缩为显式动作 | **本仓实现** |
 | 旁路问答 | `extensions/btw` | `/btw …`、`status`、`config`、`context=none` | 独立内存会话问答，不污染主 session | **本仓实现**；模型可走 auxiliary 路由 |
@@ -178,6 +181,7 @@ terrific-pi/
 | context | 已收录 | 需要可解释上下文占用 | `/context` 拆解 | 本仓实现 | 不压缩、不调模型 |
 | btw | 已收录 | 主会话外快速问一句 | 旁路内存 session | 本仓实现 | 不写主历史、不加载工具 |
 | auxiliary | 已收录 | Hermes 式任务槽 | compact/title/summary/research/git | 本仓 runtime + 外部 pin | 不做万能 agent 框架 |
+| pilot | Phase 0 实施中，未启用 | 现有 workflow 包不覆盖双激活、权限闭环与 Canonical Bundle 契约 | 验证 Pilot activation、single-path routing 与 Auxiliary bridge | 本仓薄控制面，复用 Auxiliary 与 pi-subagents | 不复制 tmux/runtime；不在 Phase 0 写项目或取代 mode/docsflow |
 | taskboard | 已收录 | 多步任务可见性 | `process_update` + HUD | 本仓实现 | 不为每句回复建任务或重复文件/结论 |
 | presentation | 已收录 | 摆脱外部 renderer fork，同时保留低噪音过程流与用户输入边框 | 受控 compatibility renderer + 原生工具历史 | 本仓实现 | 仅受控 patch 两个 render 方法；不重写最终 Markdown、不接管工具执行 |
 | docsflow | 已收录 | 文档流水线要可迁移 | 四阶段 + 落盘 | 本仓编排 + pi-subagents | 不自研 subagent runtime |
@@ -250,4 +254,5 @@ terrific-pi/
 | 2026-07-20 | slash 交互后续：Aux/Docsflow 管理器补全、轻量命令 `status`/`config`、Process 默认模式、Profile 项目覆盖与 Statusline 条件菜单 |
 | 2026-07-22 | presentation 使用受控 native render compatibility layer 恢复用户边框、Bash 三态、Skill/探索与请求级文件回执；移除外部 renderer fork 依赖 |
 | 2026-07-22 | 正式定义个性化 Pi enhancement monorepo；补目录/workflow 边界、历史 session 契约与 dist 保留策略 |
+| 2026-07-22 | Pilot Phase 0：登记双激活、input routing 与 Auxiliary `pilot_router` bridge；未启用 settings 或 legacy cutover |
 | 2026-07-22 | `process-view` 更名为 `taskboard`：canonical package/path/command/config/status key 均迁移，长期保留 `process_update` 与历史 session entry；旧 `/process`、`processView` 和 `process` status 回退仅保留于 `0.1.x` |

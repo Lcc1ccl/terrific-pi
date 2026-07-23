@@ -90,8 +90,10 @@ read_packages() {
 		printf '%s\n' "${from_manifest[@]}"
 		return
 	fi
-	# Fallback: discover extensions/*/package.json
+	# Fallback: discover installable extensions/*/package.json.
 	find "$root/extensions" -mindepth 2 -maxdepth 2 -name package.json 2>/dev/null | sort | while read -r pkg; do
+		installable="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); meta=d.get("terrificPi",{}); print("1" if d.get("pi",{}).get("extensions") and not (isinstance(meta,dict) and meta.get("install") is False) else "0")' "$pkg")"
+		[[ "$installable" == "1" ]] || continue
 		base="$(basename "$(dirname "$pkg")")"
 		echo "../vendor/terrific-pi/extensions/$base"
 	done

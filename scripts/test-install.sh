@@ -92,6 +92,7 @@ for agent in (default_agent, restore_agent):
     assert "../vendor/terrific-pi/extensions/presentation" in packages, "presentation package missing"
     assert "../vendor/terrific-pi/extensions/taskboard" in packages, "taskboard package missing"
     assert "../vendor/terrific-pi/extensions/process-view" not in packages, "legacy process-view package survived migration"
+    assert "../vendor/terrific-pi/extensions/pilot" not in packages, "Phase 0 pilot package unexpectedly enabled"
     config = json.loads((agent / "terrific.json").read_text(encoding="utf-8"))
     if agent == default_agent:
         assert config == {"processView": {"activityMode": "task", "legacyOnly": True}}, "default install overwrote legacy config"
@@ -117,6 +118,7 @@ assert "git_dirty=" in manifest, "manifest has no worktree provenance"
 assert "external_packages<<" in manifest, "manifest has no external package block"
 assert subagents_pin in manifest, "manifest has no fixed pi-subagents pin"
 assert "retired_external_packages<<" in manifest, "manifest has no retired package block"
+assert "../vendor/terrific-pi/extensions/pilot" not in manifest, "manifest unexpectedly enables Phase 0 pilot"
 assert "npm:pi-subagents" in manifest, "manifest does not retire npm pi-subagents"
 assert "workflows<<" in manifest, "manifest has no workflows block"
 assert not any("pi-tool-display/config.json" in name or "pi-compact-transcript/config.json" in name for name in names), "retired renderer config shipped"

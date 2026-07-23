@@ -1,6 +1,6 @@
 # Pilot 工作流外壳设计
 
-> 状态：**讨论稿（Draft / Round 4）**，未批准实施
+> 状态：**实施中（Phase 0）**
 >
 > 创建：2026-07-20
 >
@@ -8,7 +8,7 @@
 >
 > 目的：沉淀 Pilot 辅助驾驶系统的目标、外部证据、Pi 原生架构、候选实现和未决问题，供多轮讨论持续修订
 >
-> 关系：本文件取代 [`2026-07-18-docs-flow-subagents-plan.md`](./2026-07-18-docs-flow-subagents-plan.md) 的产品方向；在本设计获批前，不修改现有插件、命令和用户配置
+> 关系：本文件取代 [`2026-07-18-docs-flow-subagents-plan.md`](./2026-07-18-docs-flow-subagents-plan.md) 的产品方向；已获实施授权，当前仅推进 Phase 0，不修改用户配置或启用未完成的产品面
 
 ## 1. 文档约定
 
@@ -1382,4 +1382,4 @@ AUTO/Aux spike 失败则 `/mode auto` 不发布；permission spike 失败则 Pil
 5. Legacy docsflow data 是否需要一次性显式 import；无论是否提供都不得自动删除或继续运行旧 workflow。
 6. Background runtime 何时修复并启用；不阻塞 foreground Pilot。
 
-当前用户侧架构决策已冻结；下一步应先完成 Phase 0 spike 设计与验收命令，再请求实施批准。
+当前用户侧架构决策已冻结；Phase 0 正在实现 activation、input routing 与 Auxiliary `pilot_router` bridge，后续阶段仍以各自验收结果为前置。
