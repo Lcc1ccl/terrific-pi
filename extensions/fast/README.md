@@ -24,7 +24,8 @@ Injects `service_tier: "priority"` into Responses / Codex Responses requests. Fo
 | Model switch (incl. `/profile` browse) | `model_select` updates badge immediately; inject follows live model |
 | Back to GPT + supported API | Preference re-applies automatically |
 | Legacy session `fast-state` | Migrated once into global config when `fast` key is absent |
-| Config writes | Locked merge into `terrific.json` (same lock file as other writers) |
+| Config writes | Locked merge into `terrific.json` (same lock file as other writers); write failure leaves the current preference unchanged |
+| External edits | `fast.enabled` is reread before each request and provider payload |
 
 ### Supported models
 

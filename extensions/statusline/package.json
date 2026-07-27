@@ -9,7 +9,8 @@
     "extensions": ["./extensions/statusline.ts"]
   },
   "scripts": {
-    "test": "node --test --experimental-strip-types tests/*.test.ts"
+    "test": "node --test --experimental-strip-types tests/*.test.ts",
+    "benchmark": "node --experimental-strip-types benchmarks/render.bench.ts"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

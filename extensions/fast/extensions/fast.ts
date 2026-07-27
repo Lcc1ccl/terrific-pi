@@ -358,10 +358,11 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	const setPreferred = (ctx: ExtensionContext, next: boolean) => {
-		preferred = next;
-		if (!saveFastEnabled(preferred)) {
-			ctx.ui.notify("Fast preference set in-memory only (failed to write terrific.json)", "warning");
+		if (!saveFastEnabled(next)) {
+			ctx.ui.notify("Fast preference unchanged (failed to write terrific.json)", "warning");
+			return;
 		}
+		preferred = next;
 
 		const current = currentModel(ctx);
 		const active = isFastActive(preferred, current.api, current.modelId);
@@ -406,6 +407,7 @@ export default function (pi: ExtensionAPI) {
 			return filtered.map((value) => ({ value, label: value }));
 		},
 		handler: async (args, ctx) => {
+			preferred = loadFastEnabled();
 			const arg = args.trim().toLowerCase();
 			if (arg === "status") {
 				const current = currentModel(ctx);
@@ -423,12 +425,7 @@ export default function (pi: ExtensionAPI) {
 		} else {
 			// One-shot migration from legacy session entries when global key is absent.
 			const session = readSessionFastState(ctx);
-			if (session !== undefined) {
-				preferred = session;
-				saveFastEnabled(preferred);
-			} else {
-				preferred = false;
-			}
+			preferred = session !== undefined && saveFastEnabled(session) ? session : false;
 		}
 		refresh(ctx);
 	};
@@ -448,12 +445,14 @@ export default function (pi: ExtensionAPI) {
 		refresh(ctx, event.model);
 	});
 
-	// Safety net: re-sync badge from live model before each run.
+	// Re-read the file at request boundaries so external edits are authoritative.
 	pi.on("before_agent_start", async (_event, ctx) => {
+		preferred = loadFastEnabled();
 		refresh(ctx);
 	});
 
 	pi.on("before_provider_request", (event, ctx) => {
+		preferred = loadFastEnabled();
 		const current = currentModel(ctx);
 		// Payload model id is a secondary check when session model id is missing.
 		const payloadModel =

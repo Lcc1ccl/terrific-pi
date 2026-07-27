@@ -5,8 +5,9 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { readAppearanceProfile, withoutOwnedGlobalConfigWarning } from "../lib/appearance-profile.ts";
 import { DEFAULT_CONFIG, loadConfig, resolveConfigPath, resolveConfigPaths, updateModeConfig, type ModeName } from "../lib/config.ts";
-import { selectMenu } from "../lib/select-menu.ts";
+import { selectMenu, type SelectMenuOptions } from "../lib/select-menu.ts";
 import {
 	isModeName,
 	MODE_ENTRY_TYPE,
@@ -48,6 +49,19 @@ function emitModePresentationEvent(pi: ExtensionAPI, mode: ModeName): boolean {
 }
 
 export default function (pi: ExtensionAPI) {
+	const currentAppearance = () => {
+		const agentDir = getAgentDir();
+		const profile = readAppearanceProfile(agentDir);
+		return { agentDir, profile, menu: { active: profile.active, ascii: process.env.TERM === "dumb" } };
+	};
+	const openMenu = (ctx: ExtensionContext, title: string, options: string[], settings?: SelectMenuOptions) =>
+		selectMenu(ctx, title, options, settings, currentAppearance().menu);
+	const reportWarnings = (ctx: ExtensionContext, warnings: readonly string[]) => {
+		const { agentDir, profile } = currentAppearance();
+		for (const warning of withoutOwnedGlobalConfigWarning(warnings, profile, agentDir)) {
+			report(ctx, warning, "warning");
+		}
+	};
 	let currentMode: ModeName = "edit";
 	let baselineTools: string[] = [];
 	let baselineCaptured = false;
@@ -149,8 +163,8 @@ export default function (pi: ExtensionAPI) {
 		}
 		while (true) {
 			const { global, effective } = loadScopes();
-			for (const warning of effective.warnings) report(ctx, warning, "warning");
-			const choice = await selectMenu(ctx, [
+			reportWarnings(ctx, effective.warnings);
+			const choice = await openMenu(ctx, [
 				"Mode configuration",
 				`write: global (${resolveConfigPath(getAgentDir())})`,
 				`effective: ${effective.config.mode.default} · persist ${effective.config.mode.persistPerSession ? "on" : "off"}`,
@@ -165,10 +179,10 @@ export default function (pi: ExtensionAPI) {
 			]);
 			if (!choice || choice === "Done") return;
 			if (choice.startsWith("Global default mode:")) {
-				const next = await selectMenu(ctx, "Default mode", ["ask", "plan", "edit", "auto"], { cancelAction: "back" });
+				const next = await openMenu(ctx, "Default mode", ["ask", "plan", "edit", "auto"], { cancelAction: "back" });
 				if (next && isModeName(next)) mutateGlobalMode(ctx, (mode) => { mode.default = next; }, `Default mode: ${next}`);
 			} else if (choice.startsWith("Global persist per session:")) {
-				const next = await selectMenu(ctx, "Persist mode per session", ["On", "Off"], { cancelAction: "back" });
+				const next = await openMenu(ctx, "Persist mode per session", ["On", "Off"], { cancelAction: "back" });
 				if (next) mutateGlobalMode(ctx, (mode) => { mode.persistPerSession = next === "On"; }, `Persist per session: ${next.toLowerCase()}`);
 			} else if (choice === "Save current as default") {
 				mutateGlobalMode(ctx, (mode) => { mode.default = currentMode; }, `Saved ${currentMode} as the global default`);
@@ -197,7 +211,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.isProjectTrusted(),
 				CONFIG_DIR_NAME,
 			);
-			for (const warning of warnings) report(ctx, warning, "warning");
+			reportWarnings(ctx, warnings);
 
 			const arg = args.trim().toLowerCase();
 			if (arg === "config") {
@@ -219,7 +233,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			const choice = await selectMenu(ctx, "Execution mode", [
+			const choice = await openMenu(ctx, "Execution mode", [
 				`ask — read/grep/find/ls only${currentMode === "ask" ? " (current)" : ""}`,
 				`plan — read-only tools${currentMode === "plan" ? " (current)" : ""}`,
 				`edit — default toolset${currentMode === "edit" ? " (current)" : ""}`,
@@ -240,7 +254,7 @@ export default function (pi: ExtensionAPI) {
 			ctx.isProjectTrusted(),
 			CONFIG_DIR_NAME,
 		);
-		for (const warning of warnings) report(ctx, warning, "warning");
+		reportWarnings(ctx, warnings);
 
 		// Capture baseline on first start for this runtime; re-capture if empty
 		if (!baselineCaptured || baselineTools.length === 0) {

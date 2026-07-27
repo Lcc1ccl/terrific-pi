@@ -9,6 +9,7 @@ import {
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { installPresentationCompatibility } from "../lib/compat/index.ts";
+import { renderUserMessageBox } from "../lib/compat/user-message.ts";
 
 const OSC_A = "\x1b]133;A\x07";
 const OSC_B = "\x1b]133;B\x07";
@@ -64,6 +65,128 @@ test("unloading the newest compatibility handle reactivates the previous live re
 		first.uninstall();
 	}
 	assert.equal(UserMessageComponent.prototype.render, original);
+});
+
+test("active native profile renders a full-width prompt band from native Markdown at supported widths", () => {
+	initTheme("dark", false);
+	const handle = installPresentationCompatibility({
+		isUserMessageBoxEnabled: () => true,
+		isCompactToolsEnabled: () => false,
+		isTerrificNativeActive: () => true,
+		getTheme: () => ({
+			fg(color: string, text: string) { return color === "accent" ? `\x1b[32m${text}\x1b[39m` : text; },
+			getBgAnsi(color: string) { assert.equal(color, "userMessageBg"); return "\x1b[48;5;22m"; },
+			bold(text: string) { return text; },
+		}),
+	} as never);
+	try {
+		const message = new UserMessageComponent("1. first\n\n`code` and **bold**\n中文🙂 ANSI", undefined, 0);
+		for (const width of [40, 80, 120, 160]) {
+			const lines = message.render(width);
+			const output = lines.map(stripVTControlCharacters).join("\n");
+			assert.match(output, /❯ 1\. first/);
+			assert.match(output, /code and bold/);
+			assert.match(output, /中文🙂 ANSI/);
+			assert.doesNotMatch(output, /╭ user |╰─|│/);
+			assert.equal(occurrences(lines, OSC_A), 1);
+			assert.equal(occurrences(lines, OSC_B), 1);
+			assert.equal(occurrences(lines, OSC_C), 1);
+			assert.ok(lines.some((line) => line.includes("\x1b[38;2;")), "native Markdown foreground survives");
+			assert.ok(lines.every((line) => visibleWidth(line) <= width));
+			assert.ok(lines.filter((line) => visibleWidth(line) > 0).every((line) => visibleWidth(line) === width));
+		}
+	} finally {
+		handle.uninstall();
+	}
+});
+
+test("synthetic OSC 133/633 BEL/ST zones preserve native A-content-B-C ordering", () => {
+	const markers = {
+		a133: "\x1b]133;A\x07",
+		a633: "\x1b]633;A\x1b\\",
+		b133: "\x1b]133;B\x1b\\",
+		b633: "\x1b]633;B\x07",
+		c133: "\x1b]133;C\x07",
+		c633: "\x1b]633;C\x1b\\",
+	};
+	const lines = renderUserMessageBox(
+		{},
+		40,
+		function (width) {
+			assert.equal(width, 38);
+			return [
+				`${markers.a133}${markers.a633}${" ".repeat(width)}`,
+				`\x1b[31mcontent\x1b[39m${" ".repeat(width - 7)}`,
+				`${markers.b133}${markers.b633}${markers.c133}${markers.c633}${" ".repeat(width)}`,
+			];
+		},
+		{ fg(_color, text) { return text; }, getBgAnsi() { return "\x1b[48;5;22m"; } },
+		true,
+		true,
+	);
+	const output = lines.join("\n");
+	for (const marker of Object.values(markers)) assert.equal(output.split(marker).length - 1, 1, marker);
+	const aEnd = Math.max(output.indexOf(markers.a133), output.indexOf(markers.a633));
+	const prompt = output.indexOf("❯");
+	const content = output.indexOf("content");
+	const bStart = Math.min(output.indexOf(markers.b133), output.indexOf(markers.b633));
+	const bEnd = Math.max(output.indexOf(markers.b133), output.indexOf(markers.b633));
+	const cStart = Math.min(output.indexOf(markers.c133), output.indexOf(markers.c633));
+	assert.ok(aEnd < prompt && prompt < content && content < bStart && bEnd < cStart);
+	assert.ok(lines[0]?.startsWith(`${markers.a133}${markers.a633}`));
+	assert.ok(lines.at(-1)?.startsWith(`${markers.b133}${markers.b633}${markers.c133}${markers.c633}`));
+});
+
+test("active pure wrapper fails open at narrow width and after theme failure", () => {
+	const narrowCalls: number[] = [];
+	const narrow = renderUserMessageBox(
+		{}, 7,
+		function (width) { narrowCalls.push(width); return [`native:${width}`]; },
+		{ fg(_color, text) { return text; }, getBgAnsi() { return ""; } },
+		true, true,
+	);
+	assert.deepEqual(narrow, ["native:7"]);
+	assert.deepEqual(narrowCalls, [7]);
+
+	const failureCalls: number[] = [];
+	const failed = renderUserMessageBox(
+		{}, 40,
+		function (width) {
+			failureCalls.push(width);
+			return width === 40 ? ["native:40"] : ["content"];
+		},
+		{ fg() { throw new Error("theme failed"); }, getBgAnsi() { throw new Error("background failed"); } },
+		true, true,
+	);
+	assert.deepEqual(failed, ["native:40"]);
+	assert.deepEqual(failureCalls, [38, 40]);
+});
+
+test("active native profile uses ASCII prompt for TERM=dumb and fails open narrowly", () => {
+	initTheme("dark", false);
+	const previousTerm = process.env.TERM;
+	process.env.TERM = "dumb";
+	const original = UserMessageComponent.prototype.render;
+	const handle = installPresentationCompatibility({
+		isUserMessageBoxEnabled: () => true,
+		isCompactToolsEnabled: () => false,
+		isTerrificNativeActive: () => true,
+		getTheme: () => ({
+			fg(_color: string, text: string) { return text; },
+			getBgAnsi() { return ""; },
+		}),
+	} as never);
+	try {
+		const message = new UserMessageComponent("fallback", undefined, 0);
+		assert.match(message.render(40).map(stripVTControlCharacters).join("\n"), /> fallback/);
+		const narrow = message.render(7);
+		assert.deepEqual(narrow, original.call(message, 7));
+		assert.ok(narrow.every((line) => visibleWidth(line) <= 7));
+	} finally {
+		handle.uninstall();
+		if (previousTerm === undefined) delete process.env.TERM;
+		else process.env.TERM = previousTerm;
+	}
 });
 
 test("user message compatibility adds one semantic full-width box without rebuilding content", () => {

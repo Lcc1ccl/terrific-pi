@@ -6,6 +6,7 @@ import {
 import { Container } from "@earendil-works/pi-tui";
 
 import { ActivityTracker } from "../lib/activity.ts";
+import { readAppearanceProfile } from "../lib/appearance-profile.ts";
 import { loadTaskboardActivityMode, loadTaskboardDefault, updateTaskboardConfig } from "../lib/config.ts";
 import { TaskboardWidget, renderToolResult } from "../lib/render.ts";
 import { selectMenu } from "../lib/select-menu.ts";
@@ -135,6 +136,8 @@ function partialFromGit(snapshot: ProcessSnapshot, receipt: GitFinalizeReceipt, 
 }
 
 export default function taskboard(pi: ExtensionAPI) {
+	let terrificNativeActive = readAppearanceProfile(getAgentDir()).active;
+	let terrificAscii = process.env.TERM === "dumb";
 	let state: PersistedTaskboardState = createPersistedState(undefined, "compact");
 	let activityMode: TaskboardActivityMode = "full";
 	let control: RuntimeControlState = { requestStarted: false };
@@ -189,6 +192,21 @@ export default function taskboard(pi: ExtensionAPI) {
 		durationTickTimer = undefined;
 	};
 
+	const reloadFileConfig = (ctx: ExtensionContext) => {
+		const nextActive = readAppearanceProfile(getAgentDir()).active;
+		const nextAscii = process.env.TERM === "dumb";
+		const appearanceChanged = nextActive !== terrificNativeActive || nextAscii !== terrificAscii;
+		terrificNativeActive = nextActive;
+		terrificAscii = nextAscii;
+		activityMode = loadTaskboardActivityMode(getAgentDir());
+		if (appearanceChanged && widgetMounted && ctx.mode === "tui") {
+			ctx.ui.setWidget(TASKBOARD_WIDGET_KEY, undefined);
+			widgetMounted = false;
+			requestWidgetRender = undefined;
+			stopDurationTick();
+		}
+	};
+
 	const syncDurationTick = () => {
 		const running = widgetMounted
 			&& state.viewMode !== "off"
@@ -199,7 +217,10 @@ export default function taskboard(pi: ExtensionAPI) {
 			return;
 		}
 		if (durationTickTimer) return;
-		durationTickTimer = setInterval(() => requestWidgetRender?.(), 1_000);
+		const timer = setInterval(() => {
+			if (durationTickTimer === timer) requestWidgetRender?.();
+		}, 1_000);
+		durationTickTimer = timer;
 		durationTickTimer.unref();
 	};
 
@@ -233,7 +254,10 @@ export default function taskboard(pi: ExtensionAPI) {
 				ctx.ui.setWidget(TASKBOARD_WIDGET_KEY, (tui, theme) => {
 					const render = () => tui.requestRender();
 					requestWidgetRender = render;
-					const widget = new TaskboardWidget(renderState, theme);
+					const widget = new TaskboardWidget(renderState, theme, terrificNativeActive ? {
+						variant: "terrific",
+						ascii: terrificAscii,
+					} : undefined, terrificNativeActive ? () => tui.terminal.rows : undefined);
 					return {
 						render: (width: number) => widget.render(width),
 						invalidate: () => widget.invalidate(),
@@ -277,7 +301,7 @@ export default function taskboard(pi: ExtensionAPI) {
 
 	const restore = (ctx: ExtensionContext) => {
 		const agentDir = getAgentDir();
-		activityMode = loadTaskboardActivityMode(agentDir);
+		reloadFileConfig(ctx);
 		const restored = restoreProcessState(ctx.sessionManager.getBranch(), loadTaskboardDefault(agentDir));
 		state = restored.state;
 		control = { requestStarted: false };
@@ -348,7 +372,7 @@ export default function taskboard(pi: ExtensionAPI) {
 
 		renderResult(result, { expanded }, theme, context) {
 			const rendered = renderToolResult(result, expanded, context.isError, theme);
-			if (expanded || context.isError) return rendered;
+			if (context.isError || (expanded && !terrificNativeActive)) return rendered;
 			return {
 				render: (width: number) => isCurrentWidgetSnapshot(result.details) ? [] : rendered.render(width),
 				invalidate: () => rendered.invalidate(),
@@ -455,6 +479,8 @@ export default function taskboard(pi: ExtensionAPI) {
 				.map((value) => ({ value, label: value }));
 		},
 		handler: async (args: string, ctx: ExtensionContext) => {
+			reloadFileConfig(ctx);
+			refreshWidget(ctx);
 			const parts = args.trim().toLowerCase().split(/\s+/).filter(Boolean);
 			const action = parts[0];
 			const usage = "Usage: /taskboard [compact|full|off|clear|default <compact|full|off>]";
@@ -495,6 +521,7 @@ export default function taskboard(pi: ExtensionAPI) {
 	pi.on("session_tree", async (_event, ctx) => restore(ctx));
 
 	pi.on("before_agent_start", async (_event, ctx) => {
+		reloadFileConfig(ctx);
 		control.requestStarted = true;
 		control.pendingStopReason = undefined;
 		pendingTelemetry = undefined;

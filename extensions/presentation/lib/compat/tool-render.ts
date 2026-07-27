@@ -67,6 +67,7 @@ interface ExplorationEpisode {
 export interface ToolRenderOptions {
 	isEnabled(): boolean;
 	isArtifactProjectionEnabled?(): boolean;
+	isTerrificNativeActive?(): boolean;
 	getTheme(): CompatibilityTheme | undefined;
 	now(): number;
 	resolveSkillName?(args: unknown, cwd: string): string | undefined;
@@ -84,6 +85,29 @@ export interface ToolRenderController {
 
 const EXPLORATION = new Set(["read", "grep", "find", "ls"]);
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+
+interface ActiveGlyphs {
+	running: string;
+	pending: string;
+	success: string;
+	artifact: string;
+	failed: string;
+	interrupt: string;
+	separator: string;
+}
+
+const ACTIVE_GLYPHS: { unicode: ActiveGlyphs; ascii: ActiveGlyphs } = {
+	unicode: { running: "●", pending: "□", success: "✓", artifact: "◆", failed: "✗", interrupt: "!", separator: "·" },
+	ascii: { running: "*", pending: "[ ]", success: "+", artifact: "+", failed: "x", interrupt: "!", separator: "." },
+};
+
+function activeGlyphs(): ActiveGlyphs {
+	return process.env.TERM === "dumb" ? ACTIVE_GLYPHS.ascii : ACTIVE_GLYPHS.unicode;
+}
+
+function separator(terrificNativeActive: boolean): string {
+	return terrificNativeActive ? activeGlyphs().separator : "·";
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -234,15 +258,17 @@ function artifactOperation(file: FileArtifact, theme: CompatibilityTheme | undef
 	return `${color(theme, "muted", marker)} ${sanitizeSystemText(file.path, 120)}${artifactDiff(file, theme)}`;
 }
 
-function artifactSummary(state: PresentationArtifactState, theme: CompatibilityTheme | undefined): string {
+function artifactSummary(state: PresentationArtifactState, theme: CompatibilityTheme | undefined, terrificNativeActive = false): string {
+	const glyphs = terrificNativeActive ? activeGlyphs() : undefined;
+	const divider = ` ${separator(terrificNativeActive)} `;
 	if (state.reverted) {
-		return `${color(theme, "warning", "◆")} ${strong(theme, "Files")} · unchanged · net changes reverted`;
+		return `${color(theme, "warning", glyphs?.artifact ?? "◆")} ${strong(theme, "Files")}${divider}unchanged${divider}net changes reverted`;
 	}
 	const additions = state.files.reduce((total, file) => total + (file.additions ?? 0), 0);
 	const deletions = state.files.reduce((total, file) => total + (file.deletions ?? 0), 0);
 	const shown = state.files.slice(0, 2).map((file) => artifactOperation(file, theme));
 	const more = state.files.length - shown.length;
-	return `${color(theme, "success", "◆")} ${strong(theme, "Files")} ${state.files.length} changed${artifactDiff({ additions, deletions } as FileArtifact, theme)}${shown.length ? `${color(theme, "muted", " · ")}${shown.join(color(theme, "muted", " · "))}` : ""}${more > 0 ? color(theme, "muted", ` · +${more} more`) : ""}`;
+	return `${color(theme, "success", glyphs?.artifact ?? "◆")} ${strong(theme, "Files")} ${state.files.length} changed${artifactDiff({ additions, deletions } as FileArtifact, theme)}${shown.length ? `${color(theme, "muted", divider)}${shown.join(color(theme, "muted", divider))}` : ""}${more > 0 ? color(theme, "muted", `${divider}+${more} more`) : ""}`;
 }
 
 function artifactDetails(state: PresentationArtifactState, theme: CompatibilityTheme | undefined): string[] {
@@ -259,37 +285,75 @@ function runningLine(
 	state: ToolState,
 	theme: CompatibilityTheme | undefined,
 	now: number,
+	terrificNativeActive = false,
 ): string {
 	const elapsed = state.startedAt === undefined ? 0 : now - state.startedAt;
-	const frame = SPINNER[Math.floor(Math.max(0, elapsed) / 200) % SPINNER.length]!;
-	return `${color(theme, "accent", frame)} ${strong(theme, "Running")} · ${label} · ${formatDuration(elapsed)}`;
+	const frame = terrificNativeActive && process.env.TERM === "dumb"
+		? activeGlyphs().running
+		: SPINNER[Math.floor(Math.max(0, elapsed) / 200) % SPINNER.length]!;
+	const divider = separator(terrificNativeActive);
+	return `${color(theme, "accent", frame)} ${strong(theme, "Running")} ${divider} ${label} ${divider} ${formatDuration(elapsed)}`;
 }
 
-function terminalLine(state: ToolState, theme: CompatibilityTheme | undefined): string {
+function successGlyph(theme: CompatibilityTheme | undefined, terrificNativeActive: boolean): string {
+	return color(theme, "success", terrificNativeActive ? activeGlyphs().success : "◆");
+}
+
+function pendingLine(label: string, theme: CompatibilityTheme | undefined): string {
+	return `${color(theme, "muted", activeGlyphs().pending)} ${strong(theme, label)} ${activeGlyphs().separator} pending`;
+}
+
+function interruption(state: ToolState): "cancelled" | "interrupted" | undefined {
+	const details = isRecord(state.result?.details) ? state.result.details : undefined;
+	const value = `${typeof details?.status === "string" ? details.status : ""} ${typeof details?.reason === "string" ? details.reason : ""} ${textOutput(state.result).split(/\r?\n/, 1)[0] ?? ""}`;
+	if (/\bcancel(?:led|ed)?\b/i.test(value)) return "cancelled";
+	if (/\binterrupt(?:ed)?\b/i.test(value)) return "interrupted";
+	return undefined;
+}
+
+function terminalLine(state: ToolState, theme: CompatibilityTheme | undefined, terrificNativeActive = false): string {
 	const label = state.skillName ? `Skill(${state.skillName})` : labelFor(state.name);
+	const divider = separator(terrificNativeActive);
 	const elapsed = state.startedAt !== undefined && state.endedAt !== undefined
-		? ` · ${formatDuration(state.endedAt - state.startedAt)}`
+		? ` ${divider} ${formatDuration(state.endedAt - state.startedAt)}`
 		: "";
-	if (state.isError) {
-		return `${color(theme, "error", "✗")} ${strong(theme, label)} · failed · ${safeError(state.result)}${elapsed}`;
+	const interrupted = terrificNativeActive && state.isError ? interruption(state) : undefined;
+	if (interrupted) {
+		return `${color(theme, "warning", activeGlyphs().interrupt)} ${strong(theme, label)} ${divider} ${interrupted}${elapsed}`;
 	}
-	return `${color(theme, "success", "◆")} ${strong(theme, label)} · ${state.skillName ? "loaded" : customSuccess(state)}${elapsed}`;
+	if (state.isError) {
+		const detail = safeError(state.result);
+		const displayed = terrificNativeActive ? detail.replaceAll(" · ", ` ${divider} `) : detail;
+		return `${color(theme, "error", terrificNativeActive ? activeGlyphs().failed : "✗")} ${strong(theme, label)} ${divider} failed ${divider} ${displayed}${elapsed}`;
+	}
+	return `${successGlyph(theme, terrificNativeActive)} ${strong(theme, label)} ${divider} ${state.skillName ? "loaded" : customSuccess(state)}${elapsed}`;
 }
 
-function bashLine(state: ToolState, theme: CompatibilityTheme | undefined, now: number): string {
+function bashLine(state: ToolState, theme: CompatibilityTheme | undefined, now: number, terrificNativeActive = false): string {
+	const divider = separator(terrificNativeActive);
 	if (!terminal(state)) {
-		if (state.startedAt === undefined) return `${color(theme, "muted", "◆")} ${strong(theme, "Bash")} · pending`;
-		return runningLine("Bash", state, theme, now);
+		if (state.startedAt === undefined) {
+			return terrificNativeActive
+				? pendingLine("Bash", theme)
+				: `${color(theme, "muted", "◆")} ${strong(theme, "Bash")} · pending`;
+		}
+		return runningLine("Bash", state, theme, now, terrificNativeActive);
 	}
 	const elapsed = state.startedAt !== undefined && state.endedAt !== undefined
-		? ` · ${formatDuration(state.endedAt - state.startedAt)}`
+		? ` ${divider} ${formatDuration(state.endedAt - state.startedAt)}`
 		: "";
 	const lines = outputLineCount(state.result);
 	const lineText = lines > 0 ? `${lines} line${lines === 1 ? "" : "s"}` : "no output";
-	if (state.isError) {
-		return `${color(theme, "error", "✗")} ${strong(theme, "Bash")} · failed · ${safeError(state.result)} · ${lineText}${elapsed}`;
+	const interrupted = terrificNativeActive && state.isError ? interruption(state) : undefined;
+	if (interrupted) {
+		return `${color(theme, "warning", activeGlyphs().interrupt)} ${strong(theme, "Bash")} ${divider} ${interrupted} ${divider} ${lineText}${elapsed}`;
 	}
-	return `${color(theme, "success", "◆")} ${strong(theme, "Bash")} · completed · ${lineText}${elapsed}`;
+	if (state.isError) {
+		const detail = safeError(state.result);
+		const displayed = terrificNativeActive ? detail.replaceAll(" · ", ` ${divider} `) : detail;
+		return `${color(theme, "error", terrificNativeActive ? activeGlyphs().failed : "✗")} ${strong(theme, "Bash")} ${divider} failed ${divider} ${displayed} ${divider} ${lineText}${elapsed}`;
+	}
+	return `${successGlyph(theme, terrificNativeActive)} ${strong(theme, "Bash")} ${divider} completed ${divider} ${lineText}${elapsed}`;
 }
 
 function explorationLine(
@@ -297,6 +361,7 @@ function explorationLine(
 	states: Map<string, ToolState>,
 	theme: CompatibilityTheme | undefined,
 	now: number,
+	terrificNativeActive = false,
 ): { representative?: string; line?: string } {
 	const members = episode.members.map((id) => states.get(id)).filter((state): state is ToolState => Boolean(state));
 	const normal = members.filter((state) => !state.isError);
@@ -308,10 +373,13 @@ function explorationLine(
 		const otherCount = Math.max(0, normal.length - 1);
 		const started = normal.map((state) => state.startedAt).filter((value): value is number => value !== undefined);
 		const elapsed = started.length > 0 ? ` · ${formatDuration(now - Math.min(...started))}` : "";
-		const frame = SPINNER[Math.floor(Math.max(0, now - (started.length > 0 ? Math.min(...started) : now)) / 200) % SPINNER.length]!;
+		const frame = terrificNativeActive && process.env.TERM === "dumb"
+			? activeGlyphs().running
+			: SPINNER[Math.floor(Math.max(0, now - (started.length > 0 ? Math.min(...started) : now)) / 200) % SPINNER.length]!;
+		const divider = separator(terrificNativeActive);
 		return {
 			representative,
-			line: `${color(theme, "accent", frame)} ${strong(theme, "Exploring")} · ${explorationTarget(current)}${otherCount > 0 ? ` · +${otherCount}` : ""}${elapsed}`,
+			line: `${color(theme, "accent", frame)} ${strong(theme, "Exploring")} ${divider} ${explorationTarget(current)}${otherCount > 0 ? ` ${divider} +${otherCount}` : ""}${elapsed.replace(" · ", ` ${divider} `)}`,
 		};
 	}
 	const reads = normal.filter((state) => state.name === "read").length;
@@ -324,9 +392,10 @@ function explorationLine(
 	const starts = normal.map((state) => state.startedAt).filter((value): value is number => value !== undefined);
 	const ends = normal.map((state) => state.endedAt).filter((value): value is number => value !== undefined);
 	const elapsed = starts.length > 0 && ends.length > 0 ? ` · ${formatDuration(Math.max(...ends) - Math.min(...starts))}` : "";
+	const divider = separator(terrificNativeActive);
 	return {
 		representative,
-		line: `${color(theme, "success", "◆")} ${strong(theme, "Explored")} · ${parts.join(" · ")}${elapsed}`,
+		line: `${successGlyph(theme, terrificNativeActive)} ${strong(theme, "Explored")} ${divider} ${parts.join(` ${divider} `)}${elapsed.replace(" · ", ` ${divider} `)}`,
 	};
 }
 
@@ -341,9 +410,13 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 	let currentTurnId = 0;
 	let timer: ReturnType<typeof setInterval> | undefined;
 
-	const resetState = (): void => {
+	const stopTimer = (): void => {
 		if (timer) clearInterval(timer);
 		timer = undefined;
+	};
+
+	const resetState = (): void => {
+		stopTimer();
 		states.clear();
 		episodes.clear();
 		artifactsByRequest.clear();
@@ -357,16 +430,21 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 	const requestRender = (state: ToolState | undefined): void => state?.component?.ui?.requestRender?.();
 
 	const refreshTimer = (): void => {
-		const running = [...states.values()].filter((state) => state.startedAt !== undefined && !terminal(state) && state.component);
+		const running = options.isEnabled()
+			? [...states.values()].filter((state) => state.turnId === currentTurnId && state.name !== "process_update" && state.startedAt !== undefined && !terminal(state) && state.component)
+			: [];
 		if (running.length === 0) {
-			if (timer) clearInterval(timer);
-			timer = undefined;
+			stopTimer();
 			return;
 		}
 		if (timer) return;
 		timer = setInterval(() => {
+			if (!options.isEnabled()) {
+				stopTimer();
+				return;
+			}
 			for (const state of states.values()) {
-				if (state.startedAt !== undefined && !terminal(state)) requestRender(state);
+				if (state.turnId === currentTurnId && state.name !== "process_update" && state.startedAt !== undefined && !terminal(state)) requestRender(state);
 			}
 		}, 200);
 		timer.unref?.();
@@ -550,6 +628,7 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 		boundary() {
 			activeEpisode = undefined;
 			currentTurnId += 1;
+			stopTimer();
 		},
 		setArtifact(artifact) {
 			applyArtifact(artifact);
@@ -557,6 +636,8 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 		render(instanceValue, width, original) {
 			const instance = instanceValue as ToolComponentLike;
 			const state = upsertFromInstance(instance);
+			refreshTimer();
+			const terrificNativeActive = options.isTerrificNativeActive?.() ?? false;
 			const artifactEnabled = options.isArtifactProjectionEnabled?.() ?? options.isEnabled();
 			const artifact = artifactEnabled && typeof instance.toolCallId === "string" ? artifactsByAnchor.get(instance.toolCallId) : undefined;
 			const compactTools = options.isEnabled();
@@ -570,9 +651,9 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 			if (artifact) {
 				if (!compactTools) {
 					const native = original.call(instanceValue, width);
-					return width < 1 ? native : [...native, "", truncateToWidth(artifactSummary(artifact, options.getTheme()), width, "…")];
+					return width < 1 ? native : [...native, "", truncateToWidth(artifactSummary(artifact, options.getTheme(), terrificNativeActive), width, "…")];
 				}
-				return width < 1 ? [] : ["", truncateToWidth(artifactSummary(artifact, options.getTheme()), width, "…")];
+				return width < 1 ? [] : ["", truncateToWidth(artifactSummary(artifact, options.getTheme(), terrificNativeActive), width, "…")];
 			}
 			if (!state) return original.call(instanceValue, width);
 			try {
@@ -580,29 +661,38 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 				if (duplicate && duplicate.representative !== state.id) return [];
 				let line: string | undefined;
 				if (state.groupId) {
-					if (state.isError) line = terminalLine(state, options.getTheme());
+					if (state.isError) line = terminalLine(state, options.getTheme(), terrificNativeActive);
 					else {
 						const episode = episodes.get(state.groupId);
-						const group = episode ? explorationLine(episode, states, options.getTheme(), options.now()) : {};
+						const group = episode ? explorationLine(episode, states, options.getTheme(), options.now(), terrificNativeActive) : {};
 						if (group.representative !== state.id) return [];
 						line = group.line;
 					}
 				} else if (state.skillName) {
 					line = terminal(state)
-						? terminalLine(state, options.getTheme())
-						: `${color(options.getTheme(), "accent", "◆")} ${strong(options.getTheme(), `Skill(${state.skillName})`)} · loading`;
+						? terminalLine(state, options.getTheme(), terrificNativeActive)
+						: terrificNativeActive && state.startedAt === undefined
+							? pendingLine(`Skill(${state.skillName})`, options.getTheme())
+							: `${color(options.getTheme(), "accent", terrificNativeActive ? activeGlyphs().running : "◆")} ${strong(options.getTheme(), `Skill(${state.skillName})`)} ${separator(terrificNativeActive)} loading`;
 				} else if (state.name === "bash") {
-					line = bashLine(state, options.getTheme(), options.now());
+					line = bashLine(state, options.getTheme(), options.now(), terrificNativeActive);
 				} else if (EXPLORATION.has(state.name)) {
-					if (state.isError) line = terminalLine(state, options.getTheme());
-					else if (!terminal(state)) line = runningLine(explorationTarget(state), state, options.getTheme(), options.now());
-					else line = `${color(options.getTheme(), "success", "◆")} ${strong(options.getTheme(), "Explored")} · ${explorationTarget(state)}`;
+					if (state.isError) line = terminalLine(state, options.getTheme(), terrificNativeActive);
+					else if (!terminal(state)) line = terrificNativeActive && state.startedAt === undefined
+						? pendingLine(explorationTarget(state), options.getTheme())
+						: runningLine(explorationTarget(state), state, options.getTheme(), options.now(), terrificNativeActive);
+					else line = `${successGlyph(options.getTheme(), terrificNativeActive)} ${strong(options.getTheme(), "Explored")} ${separator(terrificNativeActive)} ${explorationTarget(state)}`;
 				} else {
 					line = terminal(state)
-						? terminalLine(state, options.getTheme())
-						: runningLine(labelFor(state.name), state, options.getTheme(), options.now());
+						? terminalLine(state, options.getTheme(), terrificNativeActive)
+						: terrificNativeActive && state.startedAt === undefined
+							? pendingLine(labelFor(state.name), options.getTheme())
+							: runningLine(labelFor(state.name), state, options.getTheme(), options.now(), terrificNativeActive);
 				}
-				if (line && duplicate && duplicate.count > 1) line += color(options.getTheme(), "muted", ` · ×${duplicate.count}`);
+				if (line && duplicate && duplicate.count > 1) {
+					const divider = separator(terrificNativeActive);
+					line += color(options.getTheme(), "muted", ` ${divider} ${terrificNativeActive && process.env.TERM === "dumb" ? "x" : "×"}${duplicate.count}`);
+				}
 				refreshTimer();
 				return !line || width < 1 ? [] : ["", truncateToWidth(line, width, "…")];
 			} catch {

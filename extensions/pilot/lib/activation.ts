@@ -1,10 +1,7 @@
-export type PilotMode = "ask" | "plan" | "edit" | "auto";
-export type PilotActivationSource = "auto" | "manual" | "inactive";
-
 export const PILOT_ACTIVATION_ENTRY_TYPE = "terrific-pi:pilot:activation-v1";
 
 export interface PilotActivationState {
-	modePolicy: PilotMode;
+	modePolicy: "edit";
 	manualPilotActive: boolean;
 }
 
@@ -12,70 +9,52 @@ export interface PilotActivationEntry extends PilotActivationState {
 	version: 1;
 }
 
+export type PilotActivationSource = "manual" | "inactive";
 export type ActivationResult =
 	| { ok: true; state: PilotActivationState }
 	| { ok: false; reason: string };
 
-export function isPilotMode(value: unknown): value is PilotMode {
-	return value === "ask" || value === "plan" || value === "edit" || value === "auto";
+type LegacyPilotMode = "ask" | "plan" | "edit" | "auto";
+
+function inactive(): PilotActivationState {
+	return { modePolicy: "edit", manualPilotActive: false };
 }
 
 function normalize(state: PilotActivationState): PilotActivationState {
-	return {
-		modePolicy: state.modePolicy,
-		manualPilotActive: state.modePolicy === "auto" ? false : state.manualPilotActive,
-	};
+	return { modePolicy: "edit", manualPilotActive: state.manualPilotActive };
 }
 
 export function isPilotActive(state: PilotActivationState): boolean {
-	return state.modePolicy === "auto" || state.manualPilotActive;
+	return state.manualPilotActive;
 }
 
 export function activationSource(state: PilotActivationState): PilotActivationSource {
-	if (state.modePolicy === "auto") return "auto";
 	return state.manualPilotActive ? "manual" : "inactive";
 }
 
-export function activateManualPilot(state: PilotActivationState): ActivationResult {
-	return { ok: true, state: state.modePolicy === "auto" ? normalize(state) : { ...state, manualPilotActive: true } };
+export function activateManualPilot(_state: PilotActivationState): ActivationResult {
+	return { ok: true, state: { modePolicy: "edit", manualPilotActive: true } };
 }
 
 export function deactivateManualPilot(state: PilotActivationState, options: { safe: boolean }): ActivationResult {
-	if (state.modePolicy === "auto") {
-		return { ok: false, reason: "AUTO is always active; switch to ask, plan, or edit first." };
-	}
-	if (!state.manualPilotActive) return { ok: true, state: normalize(state) };
-	if (!options.safe) {
-		return { ok: false, reason: "Pilot is active; wait, pause, or cancel before deactivating it." };
-	}
-	return { ok: true, state: { ...state, manualPilotActive: false } };
-}
-
-export function changeModePolicy(
-	state: PilotActivationState,
-	next: PilotMode,
-	options: { safeToLeaveAuto: boolean },
-): ActivationResult {
-	if (state.modePolicy === "auto" && next !== "auto" && !options.safeToLeaveAuto) {
-		return { ok: false, reason: "Pilot is active; wait, pause, or cancel before leaving AUTO." };
-	}
-	return {
-		ok: true,
-		state: normalize({
-			modePolicy: next,
-			manualPilotActive: next === "auto" ? false : state.manualPilotActive,
-		}),
-	};
+	if (!state.manualPilotActive) return { ok: true, state: inactive() };
+	if (!options.safe) return { ok: false, reason: "Pilot is active; wait or cancel before deactivating it." };
+	return { ok: true, state: inactive() };
 }
 
 export function toActivationEntry(state: PilotActivationState): PilotActivationEntry {
 	return { version: 1, ...normalize(state) };
 }
 
-function isActivationEntry(value: unknown): value is PilotActivationEntry {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+function legacyMode(value: unknown): value is LegacyPilotMode {
+	return value === "ask" || value === "plan" || value === "edit" || value === "auto";
+}
+
+function legacyEntry(value: unknown): { version: 1; modePolicy: LegacyPilotMode; manualPilotActive: boolean } | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
 	const record = value as Record<string, unknown>;
-	return record.version === 1 && isPilotMode(record.modePolicy) && typeof record.manualPilotActive === "boolean";
+	if (record.version !== 1 || !legacyMode(record.modePolicy) || typeof record.manualPilotActive !== "boolean") return undefined;
+	return { version: 1, modePolicy: record.modePolicy, manualPilotActive: record.manualPilotActive };
 }
 
 export function restoreActivationState(
@@ -86,8 +65,11 @@ export function restoreActivationState(
 		const entry = entries[index];
 		if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
 		const record = entry as { type?: unknown; customType?: unknown; data?: unknown };
-		if (record.type !== "custom" || record.customType !== PILOT_ACTIVATION_ENTRY_TYPE || !isActivationEntry(record.data)) continue;
-		return normalize(record.data);
+		if (record.type !== "custom" || record.customType !== PILOT_ACTIVATION_ENTRY_TYPE) continue;
+		const data = legacyEntry(record.data);
+		if (!data) continue;
+		if (data.modePolicy === "auto") return inactive();
+		return { modePolicy: "edit", manualPilotActive: data.manualPilotActive };
 	}
 	return normalize(fallback);
 }

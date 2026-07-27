@@ -15,10 +15,11 @@ import {
 import { truncateMessagesForBtw } from "../lib/btw-context.ts";
 import { createBtwUsageEntry, resolveBtwCandidates, type BtwCandidate } from "../lib/btw-route.ts";
 import { createIsolatedBtwSession } from "../lib/btw-session.ts";
+import { readAppearanceProfile, withoutOwnedGlobalConfigWarning, type AppearanceProfileResult } from "../lib/appearance-profile.ts";
 import { loadConfig, resolveConfigPaths, updateBtwConfig } from "../lib/config.ts";
 import { formatBtwStatus, parseBtwCommandArgs, type BtwContextMode } from "../lib/command.ts";
-import { TextOverlay, type OverlayAction } from "../lib/overlay.ts";
-import { selectMenu } from "../lib/select-menu.ts";
+import { TextOverlay, type OverlayAction, type TextOverlayStyle } from "../lib/overlay.ts";
+import { selectMenu, type SelectMenuOptions } from "../lib/select-menu.ts";
 import { report } from "../lib/output.ts";
 import { charsToTokens, type ClassifiableMessage } from "../lib/tokens.ts";
 import { BTW_SYSTEM_PROMPT } from "../lib/btw-context.ts";
@@ -100,6 +101,8 @@ async function askQuestion(
 	ctx: ExtensionCommandContext,
 	question: string,
 	contextMode: BtwContextMode,
+	appearanceProfile: AppearanceProfileResult,
+	appearanceAgentDir: string,
 ): Promise<AskResult> {
 	const { config, warnings } = loadConfig(
 		ctx.cwd,
@@ -107,7 +110,9 @@ async function askQuestion(
 		ctx.isProjectTrusted(),
 		CONFIG_DIR_NAME,
 	);
-	for (const warning of warnings) report(ctx, warning, "warning");
+	for (const warning of withoutOwnedGlobalConfigWarning(warnings, appearanceProfile, appearanceAgentDir)) {
+		report(ctx, warning, "warning");
+	}
 
 	const candidates = resolveBtwCandidates({
 		route: config.auxiliaryBtw,
@@ -221,11 +226,12 @@ async function askQuestion(
 	});
 }
 
-async function showAnswer(
+export async function showAnswer(
 	ctx: ExtensionCommandContext,
 	question: string,
 	answer: string,
 	model: string,
+	appearance: Omit<TextOverlayStyle, "getTerminalRows"> = { active: false, ascii: false },
 ): Promise<"close" | "editor" | "retry"> {
 	const lines = [`Q: ${question}`, "", ...answer.split("\n"), "", "(Not written to main session)"];
 	const action = await ctx.ui.custom<OverlayAction>(
@@ -243,6 +249,7 @@ async function showAnswer(
 				},
 				done,
 				() => tui.requestRender(),
+				{ ...appearance, getTerminalRows: () => tui.terminal.rows },
 			),
 		{ overlay: true },
 	);
@@ -262,6 +269,19 @@ async function showAnswer(
 }
 
 export default function (pi: ExtensionAPI) {
+	const currentAppearance = () => {
+		const agentDir = getAgentDir();
+		const profile = readAppearanceProfile(agentDir);
+		return { agentDir, profile, menu: { active: profile.active, ascii: process.env.TERM === "dumb" } };
+	};
+	const openMenu = (ctx: ExtensionCommandContext, title: string, options: string[], settings?: SelectMenuOptions) =>
+		selectMenu(ctx, title, options, settings, currentAppearance().menu);
+	const reportWarnings = (ctx: ExtensionCommandContext, warnings: readonly string[]) => {
+		const { agentDir, profile } = currentAppearance();
+		for (const warning of withoutOwnedGlobalConfigWarning(warnings, profile, agentDir)) {
+			report(ctx, warning, "warning");
+		}
+	};
 	const runBtwConfig = async (ctx: ExtensionCommandContext) => {
 		const paths = resolveConfigPaths(ctx.cwd, getAgentDir(), ctx.isProjectTrusted(), CONFIG_DIR_NAME);
 		const loadScopes = () => ({
@@ -270,17 +290,17 @@ export default function (pi: ExtensionAPI) {
 		});
 		if (!ctx.hasUI || ctx.mode !== "tui") {
 			const { effective } = loadScopes();
-			for (const warning of effective.warnings) report(ctx, warning, "warning");
+			reportWarnings(ctx, effective.warnings);
 			report(ctx, `${formatBtwStatus(effective.config, ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined, paths)}\nUse /btw config in TUI to edit the context budget.`);
 			return;
 		}
 		let scope = "global" as "global" | "project";
 		while (true) {
 			const { global, effective } = loadScopes();
-			for (const warning of effective.warnings) report(ctx, warning, "warning");
+			reportWarnings(ctx, effective.warnings);
 			const targetPath = scope === "project" ? paths[1]! : paths[0]!;
 			const target = scope === "global" ? global.config : effective.config;
-			const choice = await selectMenu(ctx, [
+			const choice = await openMenu(ctx, [
 				"BTW configuration",
 				`write: ${scope} (${targetPath})`,
 				`effective: ${effective.config.btw.maxContextTokens}`,
@@ -295,7 +315,7 @@ export default function (pi: ExtensionAPI) {
 			]);
 			if (!choice || choice === "Done") return;
 			if (choice.startsWith("Scope:")) {
-				const selected = await selectMenu(ctx, "BTW config scope", ["global", "project"], { cancelAction: "back" });
+				const selected = await openMenu(ctx, "BTW config scope", ["global", "project"], { cancelAction: "back" });
 				if (selected === "global" || selected === "project") scope = selected;
 				continue;
 			}
@@ -337,7 +357,7 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			const raw = args.trim();
 			const { config, warnings } = loadConfig(ctx.cwd, getAgentDir(), ctx.isProjectTrusted(), CONFIG_DIR_NAME);
-			for (const warning of warnings) report(ctx, warning, "warning");
+			reportWarnings(ctx, warnings);
 			if (raw.toLowerCase() === "status") {
 				report(ctx, formatBtwStatus(
 					config,
@@ -374,7 +394,8 @@ export default function (pi: ExtensionAPI) {
 			running = true;
 			try {
 				while (true) {
-					const result = await askQuestion(pi, ctx, question, parsed.contextMode);
+					const appearance = currentAppearance();
+					const result = await askQuestion(pi, ctx, question, parsed.contextMode, appearance.profile, appearance.agentDir);
 					if (result.status === "cancelled") {
 						ctx.ui.notify("Cancelled", "info");
 						return;
@@ -384,7 +405,7 @@ export default function (pi: ExtensionAPI) {
 						return;
 					}
 
-					const next = await showAnswer(ctx, question, result.answer, result.model);
+					const next = await showAnswer(ctx, question, result.answer, result.model, appearance.menu);
 					if (next === "editor") {
 						ctx.ui.setEditorText(result.answer);
 						ctx.ui.notify("Answer placed in editor (not sent)", "info");

@@ -14,6 +14,8 @@ import {
 	MINIMAL_WIDGETS,
 	nextWidgetGroup,
 	resolveConfigPath,
+	resolveEffectiveLayout,
+	resolveEffectiveRenderConfig,
 	resolveRuntimeConfigPath,
 	resolveWidgetGroup,
 	saveStatuslineConfig,
@@ -114,6 +116,30 @@ describe("mergeStatuslineConfig", () => {
 		assert.equal(merged.separator, "bar");
 		assert.equal(merged.spacing, 2);
 		assert.equal(merged.toolActivityMode, "compact");
+	});
+
+	it("accepts terrific layout without changing the default", () => {
+		assert.equal(mergeStatuslineConfig({ layout: "terrific" }).layout, "terrific");
+		assert.equal(DEFAULT_CONFIG.layout, "single");
+	});
+
+	it("resolves terrific only when the appearance profile is active", () => {
+		assert.equal(resolveEffectiveLayout("terrific", true), "terrific");
+		assert.equal(resolveEffectiveLayout("terrific", false), "single");
+		for (const layout of ["single", "stacked"] as const) {
+			assert.equal(resolveEffectiveLayout(layout, true), layout);
+			assert.equal(resolveEffectiveLayout(layout, false), layout);
+		}
+	});
+
+	it("uses compact formatter labels only for effective terrific rendering", () => {
+		const configured = { ...DEFAULT_CONFIG, layout: "terrific" as const, minimal: false };
+		const effective = resolveEffectiveRenderConfig(configured, true);
+		assert.equal(effective.layout, "terrific");
+		assert.equal(effective.minimal, true);
+		assert.equal(configured.minimal, false);
+		assert.equal(resolveEffectiveRenderConfig({ ...configured, layout: "single" }, true).minimal, false);
+		assert.equal(resolveEffectiveRenderConfig(configured, false).minimal, false);
 	});
 
 	it("rejects arbitrary separator strings", () => {
@@ -217,6 +243,12 @@ describe("resolveConfigPath", () => {
 });
 
 describe("saveStatuslineConfig", () => {
+	it("round-trips terrific layout", () => {
+		const file = join(mkdtempSync(join(tmpdir(), "pi-statusline-")), "statusline.json");
+		saveStatuslineConfig(file, { ...DEFAULT_CONFIG, layout: "terrific" });
+		assert.equal(loadConfig(file).layout, "terrific");
+	});
+
 	it("writes pretty json and round-trips through load", () => {
 		const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
 		const nested = join(dir, "nested", "statusline.json");

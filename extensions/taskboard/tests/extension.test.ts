@@ -51,6 +51,57 @@ interface HarnessOptions {
 	toolsExpanded?: boolean;
 	choices?: string[];
 	confirmations?: boolean[];
+	terminalRows?: number;
+}
+
+async function withAppearanceProfile<T>(active: boolean, run: () => Promise<T>): Promise<T> {
+	const agentDir = mkdtempSync(join(tmpdir(), "taskboard-profile-"));
+	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+	writeFileSync(join(agentDir, "terrific.json"), JSON.stringify(active
+		? { appearance: { profile: "terrific-native-v1" } }
+		: {}));
+	try {
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		return await run();
+	} finally {
+		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+		rmSync(agentDir, { recursive: true, force: true });
+	}
+}
+
+interface FakeTimer {
+	callback: () => void;
+	ms: number;
+	unref(): void;
+}
+
+async function withFakeIntervals<T>(run: (timers: {
+	active: Set<FakeTimer>;
+	started: FakeTimer[];
+	cleared: FakeTimer[];
+}) => Promise<T>): Promise<T> {
+	const originalSetInterval = globalThis.setInterval;
+	const originalClearInterval = globalThis.clearInterval;
+	const active = new Set<FakeTimer>();
+	const started: FakeTimer[] = [];
+	const cleared: FakeTimer[] = [];
+	globalThis.setInterval = ((callback: () => void, ms: number) => {
+		const timer: FakeTimer = { callback, ms, unref() {} };
+		active.add(timer);
+		started.push(timer);
+		return timer;
+	}) as unknown as typeof setInterval;
+	globalThis.clearInterval = ((timer: FakeTimer) => {
+		active.delete(timer);
+		cleared.push(timer);
+	}) as unknown as typeof clearInterval;
+	try {
+		return await run({ active, started, cleared });
+	} finally {
+		globalThis.setInterval = originalSetInterval;
+		globalThis.clearInterval = originalClearInterval;
+	}
 }
 
 function createHarness(options: HarnessOptions = {}) {
@@ -71,13 +122,18 @@ function createHarness(options: HarnessOptions = {}) {
 	let currentWidget: any;
 	let renderRequests = 0;
 	let toolsExpanded = options.toolsExpanded ?? false;
+	const terminal = { rows: options.terminalRows ?? 24 };
+	const tui = {
+		requestRender: () => { renderRequests += 1; },
+		terminal,
+	};
 
 	const ui = {
 		setWidget(key: string, content: unknown) {
 			if (options.throwWidget) throw new Error("widget unavailable");
 			widgetCalls.push({ key, content });
 			if (typeof content === "function") {
-				currentWidget = content({ requestRender: () => { renderRequests += 1; } }, theme);
+				currentWidget = content(tui, theme);
 			} else if (content === undefined) {
 				currentWidget = undefined;
 			}
@@ -192,6 +248,8 @@ function createHarness(options: HarnessOptions = {}) {
 		get processAlias() { return commands.get("process"); },
 		get currentWidget() { return currentWidget; },
 		get renderRequests() { return renderRequests; },
+		terminal,
+		tui,
 		setFailAppend(value: boolean) { failAppend = value; },
 		setToolsExpanded(value: boolean) { toolsExpanded = value; },
 		async emit(name: string, event: any = {}) {
@@ -214,6 +272,109 @@ function latestSnapshot(entries: any[]): ProcessSnapshot | undefined {
 }
 
 describe("taskboard registration and tool", () => {
+	it("rereads terrific style within one extension generation and keeps tool results baseline", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "taskboard-profile-generation-"));
+		const path = join(agentDir, "terrific.json");
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+		const previousTerm = process.env.TERM;
+		try {
+			process.env.PI_CODING_AGENT_DIR = agentDir;
+			process.env.TERM = "xterm-256color";
+			writeFileSync(path, "{");
+			const malformed = createHarness();
+			await execute(malformed);
+			assert.deepEqual(malformed.notifications, []);
+			assert.doesNotMatch(malformed.currentWidget.render(100).join("\n"), /▶/);
+
+			writeFileSync(path, "{}");
+			const live = createHarness({ terminalRows: 16 });
+			writeFileSync(path, JSON.stringify({ appearance: { profile: "terrific-native-v1" } }));
+			await live.emit("session_start", { reason: "startup" });
+			const result = await execute(live);
+			assert.match(live.currentWidget.render(100).join("\n"), /▶ Implement/);
+			live.setToolsExpanded(true);
+			assert.ok(live.currentWidget.render(100).length <= 10);
+
+			process.env.TERM = "dumb";
+			const ascii = createHarness();
+			await execute(ascii);
+			assert.match(ascii.currentWidget.render(100).join("\n"), /> Implement/);
+
+			await execute(live, completedInput());
+			assert.deepEqual(live.tool.renderResult(
+				result,
+				{ expanded: true },
+				theme,
+				{ isError: false },
+			).render(120).map((line: string) => line.trimEnd()), [
+				"● Running · 1/3 Implement process view",
+				"✓ Inspect",
+				"● Implement · 0s",
+				"○ Verify",
+				"Update: Implementation started",
+				"Runtime: — · 0 turns · ↑0 ↓0 · R0 W0",
+				"Artifacts: process-view.ts",
+			]);
+		} finally {
+			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+			if (previousTerm === undefined) delete process.env.TERM;
+			else process.env.TERM = previousTerm;
+			rmSync(agentDir, { recursive: true, force: true });
+		}
+	});
+
+	it("remounts an active Widget when a command observes a profile edit", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "taskboard-command-profile-"));
+		const path = join(agentDir, "terrific.json");
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		try {
+			writeFileSync(path, JSON.stringify({ appearance: { profile: "terrific-native-v1" } }), "utf8");
+			const harness = createHarness();
+			await execute(harness);
+			assert.match(harness.currentWidget.render(100).join("\n"), /▶ Implement/);
+
+			writeFileSync(path, JSON.stringify({ appearance: { profile: "off" } }), "utf8");
+			await harness.command.handler("default compact", harness.ctx);
+			assert.ok(harness.currentWidget);
+			assert.doesNotMatch(harness.currentWidget.render(100).join("\n"), /▶ Implement/);
+		} finally {
+			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+			rmSync(agentDir, { recursive: true, force: true });
+		}
+	});
+
+	it("resizes the same mounted terrific Widget from live terminal rows", async () => {
+		await withAppearanceProfile(true, async () => {
+			const harness = createHarness({ terminalRows: 24, toolsExpanded: true });
+			await execute(harness, {
+				...runningInput(),
+				steps: [
+					{ text: "Inspect", status: "done" },
+					{ text: "Implement", status: "active" },
+					{ text: "Verify", status: "pending" },
+					{ text: "Review", status: "pending" },
+					{ text: "Report", status: "pending" },
+				],
+				verification: "Focused checks pending",
+			});
+			const widget = harness.currentWidget;
+			const tui = harness.tui;
+			const widgetCallCount = harness.widgetCalls.length;
+			for (const [rows, expectedLines] of [[24, 15], [16, 10], [20, 12], [24, 15]] as const) {
+				harness.terminal.rows = rows;
+				const lines = widget.render(120);
+				assert.equal(lines.length, expectedLines, `${rows} terminal rows`);
+				assert.match(lines.at(-1) ?? "", /╯$/);
+				assert.strictEqual(harness.currentWidget, widget);
+				assert.strictEqual(harness.tui, tui);
+				assert.equal(harness.widgetCalls.length, widgetCallCount);
+			}
+		});
+	});
+
 	it("registers only the canonical taskboard command and keeps process_update", () => {
 		const harness = createHarness();
 		assert.equal(harness.tool.name, "process_update");
@@ -443,45 +604,86 @@ describe("taskboard registration and tool", () => {
 		assert.match(harness.notifications[0]?.message ?? "", /Taskboard UI/i);
 	});
 
-	it("shows the current progress only in the HUD while retaining historical and final receipts", async () => {
-		const harness = createHarness();
-		const running = await execute(harness);
-		assert.deepEqual(harness.tool.renderCall(runningInput(), theme, {}).render(100), []);
-		const runningCollapsed = harness.tool.renderResult(
-			running,
-			{ expanded: false },
-			theme,
-			{ isError: false },
-		);
-		assert.deepEqual(runningCollapsed.render(120), []);
-		assert.match(
-			harness.tool.renderResult(running, { expanded: true }, theme, { isError: false }).render(120).join("\n"),
-			/Implement process view/,
-		);
+	it("suppresses only active-profile current receipts while retaining baseline history", async () => {
+		await withAppearanceProfile(false, async () => {
+			const harness = createHarness();
+			const current = await execute(harness);
+			assert.deepEqual(
+				harness.tool.renderResult(current, { expanded: true }, theme, { isError: false })
+					.render(120).map((line: string) => line.trimEnd()),
+				[
+					"● Running · 1/3 Implement process view",
+					"✓ Inspect",
+					"● Implement · 0s",
+					"○ Verify",
+					"Update: Implementation started",
+					"Runtime: — · 0 turns · ↑0 ↓0 · R0 W0",
+					"Artifacts: process-view.ts",
+				],
+			);
+		});
 
-		const completed = await execute(harness, completedInput());
-		assert.match(runningCollapsed.render(120).join("\n"), /Taskboard 1\/3/);
-		const completedCollapsed = harness.tool.renderResult(
-			completed,
-			{ expanded: false },
-			theme,
-			{ isError: false },
-		);
-		assert.deepEqual(completedCollapsed.render(120), []);
-		await harness.emit("agent_settled");
-		assert.match(completedCollapsed.render(120).join("\n"), /Taskboard done 3\/3/);
+		await withAppearanceProfile(true, async () => {
+			const harness = createHarness();
+			const running = await execute(harness);
+			assert.deepEqual(
+				harness.tool.renderResult(running, { expanded: false }, theme, { isError: false }).render(120),
+				[],
+			);
+			assert.deepEqual(
+				harness.tool.renderResult(running, { expanded: true }, theme, { isError: false }).render(120),
+				[],
+			);
+			for (const expanded of [false, true]) {
+				assert.deepEqual(harness.tool.renderResult(
+					{ ...running, content: [{ type: "text", text: "Invalid update" }] },
+					{ expanded },
+					theme,
+					{ isError: true },
+				).render(120).map((line: string) => line.trimEnd()), ["Invalid update"]);
+			}
 
-		const error = harness.tool.renderResult(
-			{ content: [{ type: "text", text: "Invalid update" }] },
-			{ expanded: false },
-			theme,
-			{ isError: true },
-		).render(120);
-		assert.deepEqual(error.map((line: string) => line.trimEnd()), ["Invalid update"]);
+			const completed = await execute(harness, completedInput());
+			const historical = harness.tool.renderResult(
+				running,
+				{ expanded: true },
+				theme,
+				{ isError: false },
+			).render(120).join("\n");
+			for (const step of ["Inspect", "Implement", "Verify"]) assert.match(historical, new RegExp(step));
+
+			await harness.emit("agent_settled");
+			assert.equal(harness.currentWidget, undefined);
+			const final = harness.tool.renderResult(
+				completed,
+				{ expanded: true },
+				theme,
+				{ isError: false },
+			).render(120).join("\n");
+			for (const step of ["Inspect", "Implement", "Verify"]) assert.match(final, new RegExp(step));
+		});
 	});
 });
 
 describe("request, branch, and context lifecycle", () => {
+	it("rereads activityMode before the next request", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "taskboard-live-config-"));
+		const path = join(agentDir, "terrific.json");
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		try {
+			writeFileSync(path, JSON.stringify({ taskboard: { activityMode: "off" } }), "utf8");
+			const harness = createHarness();
+			await harness.emit("session_start", { reason: "startup" });
+			writeFileSync(path, JSON.stringify({ taskboard: { activityMode: "full" } }), "utf8");
+			await harness.emit("before_agent_start", { prompt: "start" });
+			assert.ok(harness.currentWidget);
+		} finally {
+			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+			rmSync(agentDir, { recursive: true, force: true });
+		}
+	});
 	it("fails closed by persisting a tombstone for corrupt branch state", async () => {
 		const harness = createHarness({
 			branch: [{
@@ -615,6 +817,93 @@ describe("request, branch, and context lifecycle", () => {
 
 		await harness.emit("session_shutdown", { reason: "quit" });
 		assert.deepEqual(harness.statusCalls.at(-1), { key: TASKBOARD_STATUS_KEY, value: undefined });
+	});
+});
+
+describe("duration timer lifecycle", () => {
+	it("runs one 1000ms timer only for a visible running snapshot with active telemetry", async () => {
+		await withFakeIntervals(async ({ active, started, cleared }) => {
+			const harness = createHarness();
+			assert.equal(started.length, 0);
+			await execute(harness);
+			assert.equal(started.length, 1);
+			assert.equal(started[0]?.ms, 1_000);
+			assert.equal(active.size, 1);
+
+			await harness.emit("message_update", { assistantMessageEvent: { type: "text_delta" } });
+			assert.equal(started.length, 1);
+			assert.equal(active.size, 1);
+
+			await execute(harness, { ...runningInput(), status: "waiting" });
+			assert.equal(active.size, 0);
+			assert.equal(cleared.length, 1);
+
+			await execute(harness);
+			assert.equal(active.size, 1);
+			await harness.command.handler("off", harness.ctx);
+			assert.equal(active.size, 0);
+			assert.equal(harness.currentWidget, undefined);
+
+			await harness.command.handler("compact", harness.ctx);
+			assert.equal(active.size, 1);
+			await execute(harness, completedInput());
+			assert.equal(active.size, 0);
+			await harness.emit("agent_settled");
+			assert.equal(harness.currentWidget, undefined);
+
+			const settled = createHarness();
+			await execute(settled);
+			assert.equal(active.size, 1);
+			await settled.emit("agent_settled");
+			assert.equal(active.size, 0);
+
+			const shutdown = createHarness();
+			await execute(shutdown);
+			assert.equal(active.size, 1);
+			const startsBeforeShutdown = started.length;
+			const statusesBeforeShutdown = shutdown.statusCalls.length;
+			await shutdown.emit("session_shutdown", { reason: "reload" });
+			assert.equal(active.size, 0);
+			assert.equal(shutdown.currentWidget, undefined);
+			assert.equal(started.length, startsBeforeShutdown);
+			assert.deepEqual(
+				shutdown.statusCalls.slice(statusesBeforeShutdown).map((call) => call.value),
+				[undefined],
+			);
+
+			const print = createHarness({ mode: "print" });
+			await execute(print);
+			assert.equal(active.size, 0);
+		});
+	});
+
+	it("isolates cleared callbacks and leaves ten extension generations clean", async () => {
+		await withFakeIntervals(async ({ active, started }) => {
+			const stale = createHarness();
+			await execute(stale);
+			const oldTimer = started.at(-1)!;
+			const oldWidget = stale.currentWidget;
+			await stale.command.handler("off", stale.ctx);
+			await stale.command.handler("compact", stale.ctx);
+			assert.notStrictEqual(stale.currentWidget, oldWidget);
+			assert.equal(active.size, 1);
+			const rendersBeforeStaleCallback = stale.renderRequests;
+			oldTimer.callback();
+			assert.equal(stale.renderRequests, rendersBeforeStaleCallback);
+			await stale.emit("session_shutdown", { reason: "reload" });
+
+			const startsBeforeCycles = started.length;
+			for (let generation = 0; generation < 10; generation += 1) {
+				const harness = createHarness();
+				await execute(harness);
+				assert.equal(active.size, 1, `generation ${generation} running`);
+				await harness.emit("session_shutdown", { reason: "reload" });
+				assert.equal(active.size, 0, `generation ${generation} shutdown`);
+				assert.equal(harness.currentWidget, undefined);
+			}
+			assert.equal(started.length - startsBeforeCycles, 10);
+			assert.equal(active.size, 0);
+		});
 	});
 });
 

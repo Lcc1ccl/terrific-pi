@@ -15,6 +15,7 @@
     "../vendor/terrific-pi/extensions/fast",
     "../vendor/terrific-pi/extensions/context",
     "../vendor/terrific-pi/extensions/mode",
+    "../vendor/terrific-pi/extensions/pilot",
     "../vendor/terrific-pi/extensions/btw",
     "../vendor/terrific-pi/extensions/taskboard",
     "../vendor/terrific-pi/extensions/presentation",

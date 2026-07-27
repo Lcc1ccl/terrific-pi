@@ -104,15 +104,54 @@ function body(line: string, width: number, theme: CompatibilityTheme | undefined
 	return background(theme, `${border(theme, "│")} ${content}${padding} ${border(theme, "│")}`);
 }
 
+function nativeBandBackground(theme: CompatibilityTheme | undefined, value: string): string {
+	if (theme?.getBgAnsi) return `${theme.getBgAnsi("userMessageBg")}${value}${BACKGROUND_RESET}`;
+	if (theme?.bg) return theme.bg("userMessageBg", value);
+	throw new Error("userMessageBg is unavailable");
+}
+
+function renderTerrificNativeBand(
+	instance: unknown,
+	width: number,
+	original: (this: unknown, width: number) => string[],
+	theme: CompatibilityTheme | undefined,
+): string[] {
+	const contentWidth = width - 2;
+	const originalLines = original.call(instance, contentWidth);
+	if (!Array.isArray(originalLines) || originalLines.length === 0 || !theme) throw new Error("native user renderer unavailable");
+	const zones = splitPromptZones(originalLines);
+	const firstContent = zones.lines.findIndex((line) => stripBackgroundCodes(line).replace(SGR_PATTERN, "").trim().length > 0);
+	const glyph = process.env.TERM === "dumb" ? ">" : "❯";
+	const rendered = zones.lines.map((line, index) => {
+		const prefix = index === firstContent ? `${theme.fg("accent", glyph)} ` : "  ";
+		const content = truncateToWidth(stripBackgroundCodes(line), contentWidth, "", true);
+		const padding = " ".repeat(Math.max(0, contentWidth - visibleWidth(content)));
+		return nativeBandBackground(theme, `${prefix}${content}${padding}`);
+	});
+	if (rendered.length > 0) {
+		rendered[0] = `${zones.start}${rendered[0]}`;
+		rendered[rendered.length - 1] = `${zones.end}${rendered[rendered.length - 1]}`;
+	}
+	return rendered;
+}
+
 export function renderUserMessageBox(
 	instance: unknown,
 	width: number,
 	original: (this: unknown, width: number) => string[],
 	theme: CompatibilityTheme | undefined,
 	enabled: boolean,
+	terrificNativeActive = false,
 ): string[] {
 	const safeWidth = Math.max(0, Math.floor(width));
 	if (!enabled || safeWidth < MIN_WIDTH) return original.call(instance, safeWidth);
+	if (terrificNativeActive) {
+		try {
+			return renderTerrificNativeBand(instance, safeWidth, original, theme);
+		} catch {
+			return original.call(instance, safeWidth);
+		}
+	}
 	try {
 		const originalLines = original.call(instance, Math.max(1, safeWidth - 4));
 		if (!Array.isArray(originalLines) || originalLines.length === 0) return original.call(instance, safeWidth);

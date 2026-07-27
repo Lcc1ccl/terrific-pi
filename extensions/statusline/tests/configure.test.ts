@@ -358,7 +358,30 @@ describe("setting menus", () => {
 			},
 		}, ["path"]);
 
-		assert.deepEqual(nestedItems, ["stacked [current]", "single [default]", "Back"]);
+		assert.deepEqual(nestedItems, ["stacked [current]", "single [default]", "terrific", "Back"]);
+	});
+
+	it("allows terrific to be selected while profile activation is independent", async () => {
+		let config: StatuslineConfig = {
+			widgets: ["path"], layout: "single", iconMode: "emoji", contextMode: "remaining", contextBarWidth: 10,
+			minimal: false, separator: "dot", spacing: 1, toolActivityMode: "compact",
+		};
+		const main = ["Appearance", "Done"];
+		const appearance = ["Layout", "Back"];
+		await runStatuslineConfigurator({
+			getConfig: () => config,
+			getConfigPath: () => "/tmp/statusline.json",
+			applyConfig: (next) => { config = next; return { ok: true, value: undefined }; },
+			reloadConfig: () => ({ ok: true, value: config }),
+			resetConfig: () => ({ ok: true, value: undefined }),
+			ui: {
+				selectMain: async () => main.shift(),
+				select: async (title) => title.startsWith("Appearance") ? appearance.shift() : "terrific",
+				input: async () => undefined, editWidgets: async () => undefined,
+				confirm: async () => true, notify: () => {},
+			},
+		}, ["path"]);
+		assert.equal(config.layout, "terrific");
 	});
 });
 
