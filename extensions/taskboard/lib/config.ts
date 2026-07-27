@@ -31,7 +31,7 @@ function configPath(agentDir: string): string {
 
 function taskboardConfig(root: Record<string, unknown>): Record<string, unknown> | undefined {
 	if (Object.hasOwn(root, "taskboard")) return isRecord(root.taskboard) ? root.taskboard : undefined;
-	// Compatibility through 0.1.x; remove the processView fallback in 0.2.0.
+	// Read-only migration compatibility; the /process command alias was removed in 0.2.0.
 	return isRecord(root.processView) ? root.processView : undefined;
 }
 

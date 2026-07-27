@@ -53,12 +53,12 @@ terrific-pi/
 | mode | `extensions/mode` | `/mode ask\|plan\|edit\|auto\|config` 工具权限模式与全局默认管理；status key `mode` |
 | pilot | `extensions/pilot` | Phase 0 control-plane spike：双激活状态、direct role contract、AUTO input routing 与 Auxiliary `pilot_router` bridge；未加入 settings，尚不创建 Bundle/Worker/写入授权 |
 | btw | `extensions/btw` | `/btw` 旁路问答（独立内存 session，不写主会话）；`status`/`config` 与单次 `context=none` |
-| taskboard | `extensions/taskboard` | `process_update` 结构化任务里程碑、步骤计时、等待/阻塞与验证；`/taskboard` 管理视图、展开、确认清除与新会话默认模式；`/process` 是兼容别名 |
+| taskboard | `extensions/taskboard` | `process_update` 结构化任务里程碑、步骤计时、等待/阻塞与验证；`/taskboard` 管理视图、展开、确认清除与新会话默认模式 |
 | presentation | `extensions/presentation` | 受控 native render compatibility、用户边框、运行中探索/Skill 身份、单一安全失败行、请求级文件回执与最终答案契约；`/presentation` 管理开关 |
 | docsflow | `extensions/docsflow` | 项目文档流水线：research→product→interface→delivery；裸命令管理器、阶段 model/thinking/timeout 覆盖；默认写 `./docsflow/`，可选 Obsidian vault |
 | model-profile | `extensions/model-profile` | 常用 3–5 套 model+thinking 短列表；`/profile` 快速应用、全局 CRUD、可信项目覆盖编辑、热键、冷启动短列表 |
 
-> 共享插件配置主文件：`~/.pi/agent/terrific.json`。Taskboard 的 canonical 段为 `taskboard`；旧 `/process`、`processView` 与 `process` status 回退仅保留于 Taskboard `0.1.x`，当 `0.2.0` 成为基线时移除；下一次 `/taskboard default <mode>` 会原子迁移配置。`process_update` 与历史 session types 保持稳定。Auxiliary 模型路由只读取 global config，不接受 project override。`pilot` 仍处于 Phase 0，故未列入下方开发机 packages。
+> 共享插件配置主文件：`~/.pi/agent/terrific.json`。Taskboard `0.2.0` 只注册 `/taskboard`；`process_update` 与历史 session types 保持稳定，旧 `processView` 配置和 `process` status 仍只读兼容，并在下一次 `/taskboard default <mode>` 时原子迁移。Auxiliary 模型路由只读取 global config，不接受 project override。`pilot` 仍处于 Phase 0，故未列入下方开发机 packages。
 
 ## 已收录技能
 
@@ -124,6 +124,8 @@ FORCE=1 RESTORE=1 ./install.sh
 | `RESTORE=1` | off | 1:1 覆盖 agent 快照文件 |
 
 ### D. 开发机相对路径
+
+以下是开发机组合示例，不是默认加载清单。实际启用项以目标机 `settings.json` 为准。
 
 ```bash
 # settings.json packages（相对 ~/.pi/agent）

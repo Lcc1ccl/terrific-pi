@@ -124,10 +124,10 @@ test("presentation appends UI-only system events without owning built-in executi
 	}
 });
 
-test("presentation reports canonical taskboard availability with process compatibility fallback", async () => {
+test("presentation reports canonical taskboard availability", async () => {
 	for (const [commands, expected] of [
 		[["taskboard", "process"], "taskboard=available"],
-		[["process"], "taskboard=available"],
+		[["process"], "taskboard=missing"],
 		[["skill:foo"], "taskboard=missing"],
 	] as const) {
 		const harness = createHarness("tui", [], "/workspace/terrific-pi", [...commands]);
@@ -136,6 +136,13 @@ test("presentation reports canonical taskboard availability with process compati
 		assert.match(message, new RegExp(expected));
 		assert.doesNotMatch(message, /process-view/);
 	}
+});
+
+test("presentation rejects unknown arguments with the complete usage", async () => {
+	const harness = createHarness();
+	await harness.commands.get("presentation").handler("unknown", harness.ctx);
+	assert.match(harness.notifications.at(-1)?.message ?? "", /Usage:/);
+	assert.match(harness.notifications.at(-1)?.message ?? "", /workspace on\|workspace off/);
 });
 
 test("presentation keeps tool semantics in native history without durable duplicate summaries", async () => {

@@ -107,10 +107,10 @@ describe("model profile configurator", () => {
 		);
 	});
 
-	it("adds the current session as a persisted profile", async () => {
+	it("creates a profile from the current session", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "mp-configure-add-"));
 		const ui = new ScriptedUi({
-			choices: ["Add current session", "Done"],
+			choices: ["Create profile", "Use current session", "Done"],
 			inputs: ["daily", ""],
 		});
 
@@ -133,14 +133,46 @@ describe("model profile configurator", () => {
 		}]);
 	});
 
-	it("reads the live session after quick apply before adding a profile", async () => {
+	it("creates a profile by choosing its model and thinking independently", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "mp-configure-create-"));
+		const ui = new ScriptedUi({
+			choices: ["Create profile", "Choose model & thinking", "max", "Done"],
+			inputs: ["research", ""],
+			models: ["anthropic/claude-research"],
+		});
+
+		await runProfileConfigurator({
+			agentDir,
+			currentModel: { provider: "openai", id: "gpt-current" },
+			currentThinking: "low",
+			modelRefs: ["openai/gpt-current", "anthropic/claude-research"],
+			getThinkingLevels: (ref: string) => ref === "anthropic/claude-research" ? ["low", "high", "max"] : ["off"],
+			quickApply: async () => assert.fail("create must not apply the profile"),
+			ui,
+		});
+
+		assert.deepEqual(config(agentDir).modelProfile.profiles, [{
+			id: "1",
+			alias: "research",
+			provider: "anthropic",
+			model: "claude-research",
+			thinking: "max",
+			hotkey: "alt+1",
+		}]);
+		assert.deepEqual(
+			ui.dialogs.find(({ title }) => title === "Profile thinking")?.options,
+			["low", "high", "max"],
+		);
+	});
+
+	it("reads the live session after quick apply before creating a profile", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "mp-configure-live-"));
 		let current: { model: { provider: string; id: string }; thinking: ThinkingLevel } = {
 			model: { provider: "openai", id: "old" },
 			thinking: "low",
 		};
 		const ui = new ScriptedUi({
-			choices: ["Quick apply", "Add current session", "Done"],
+			choices: ["Quick apply", "Create profile", "Use current session", "Done"],
 			inputs: ["live", ""],
 		});
 
@@ -302,7 +334,7 @@ describe("model profile configurator", () => {
 		assert.equal(saved.startup, true);
 		assert.equal(saved.startupScope, "global");
 		assert.equal(saved.openHotkey, "ctrl+alt+p");
-		assert.ok(ui.notifications.some(({ message }) => /reload/i.test(message)));
+		assert.ok(ui.notifications.some(({ message }) => /next prompt|\/profile command/i.test(message)));
 	});
 
 	it("creates a project override from an effective global profile", async () => {

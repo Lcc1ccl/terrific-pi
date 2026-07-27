@@ -39,7 +39,7 @@ export type StartupPickerResult =
 	  };
 
 export interface StartupUi {
-	select: (title: string, options: string[]) => Promise<string | undefined>;
+	select: (title: string, options: string[], initialSelectedValue?: string) => Promise<string | undefined>;
 	selectStartup?: (title: string, options: string[]) => Promise<string | undefined>;
 	selectScope?: (title: string, options: string[]) => Promise<string | undefined>;
 	/** Type-to-filter model list (pi /model style). Falls back to select when omitted. */
@@ -54,6 +54,8 @@ export interface AvailableModel {
 	provider: string;
 	id: string;
 	name?: string;
+	reasoning?: boolean;
+	thinkingLevelMap?: Partial<Record<ThinkingLevel, string | null>>;
 }
 
 export interface StartupPickerInput {
@@ -67,14 +69,28 @@ export interface StartupPickerInput {
 	currentThinking?: ThinkingLevel;
 	/** Full registry of available models (auth-ready). */
 	getAvailable: () => readonly AvailableModel[];
+	/** Persist startup=false. Returning true keeps this picker open without the toggle. */
+	disableStartup?: () => boolean;
 	/** When true, after a pick also ask session vs global. Default true. */
 	askScope?: boolean;
 }
 
 const SCOPE_SESSION = "session — this chat only";
 const SCOPE_GLOBAL = "global — also update defaults";
+const DISABLE_STARTUP = "Turn off future startup picker";
 const BROWSE_ALL = "0 · Browse all models…";
+export const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 export const CURRENT_SESSION_ENTRY = "model-profile-current";
+
+export function supportedThinkingLevels(model: AvailableModel): ThinkingLevel[] {
+	if (!model.reasoning) return ["off"];
+	return THINKING_LEVELS.filter((level) => {
+		const mapped = model.thinkingLevelMap?.[level];
+		if (mapped === null) return false;
+		if (level === "xhigh" || level === "max") return mapped !== undefined;
+		return true;
+	});
+}
 
 export function startupDigitChoice(data: string, options: readonly string[]): string | undefined {
 	const key = parseKey(data);
@@ -352,7 +368,7 @@ async function applyManual(
 
 /**
  * Startup /new short-list picker.
- * Order: keep current (first) → configured profiles → numbered Browse (last).
+ * Order: keep current (first) → configured profiles → optional startup toggle → numbered Browse (last).
  */
 export async function runStartupPicker(input: StartupPickerInput): Promise<StartupPickerResult> {
 	if (!STARTUP_PICKER_REASONS.has(input.reason)) {
@@ -375,13 +391,26 @@ export async function runStartupPicker(input: StartupPickerInput): Promise<Start
 		? formatKeepCurrentLabel(input.currentModel, input.currentThinking)
 		: formatKeepDefaultLabel(input.currentModel, input.currentThinking);
 	const labels = listedProfiles.map((p) => profileLabel(p));
-	const options = [keepLabel, ...labels, BROWSE_ALL];
+	let startupEnabled = true;
 
 	const askScope = input.askScope !== false;
 	while (true) {
-		const choice = await (input.ui.selectStartup ?? input.ui.select)("Startup model profile", options);
+		const options = [
+			keepLabel,
+			...labels,
+			...(startupEnabled && input.disableStartup ? [DISABLE_STARTUP] : []),
+			BROWSE_ALL,
+		];
+		const title = startupEnabled
+			? "Startup model profile"
+			: "Startup model profile · future startup off";
+		const choice = await (input.ui.selectStartup ?? input.ui.select)(title, options);
 		if (choice === undefined) {
 			return { action: "cancelled", reason: "dismissed" };
+		}
+		if (choice === DISABLE_STARTUP) {
+			if (input.disableStartup?.()) startupEnabled = false;
+			continue;
 		}
 		if (choice === keepLabel) {
 			if (input.reason !== "new" || !input.currentModel) {
@@ -401,9 +430,16 @@ export async function runStartupPicker(input: StartupPickerInput): Promise<Start
 			if (!picked) {
 				return { action: "cancelled", reason: "browse-cancelled" };
 			}
+			const levels = supportedThinkingLevels(picked);
+			const thinking = await input.ui.select(
+				"Thinking level",
+				levels,
+				levels.includes(input.currentThinking ?? "off") ? input.currentThinking : levels[0],
+			) as ThinkingLevel | undefined;
+			if (!thinking) continue;
 			const scope = await pickScope(input.ui, input.config.startupScope, askScope);
 			if (!scope) continue;
-			return applyManual(picked, scope, input.deps);
+			return applyManual(picked, scope, input.deps, thinking);
 		}
 
 		const index = labels.indexOf(choice);

@@ -283,7 +283,13 @@ export default function statusline(pi: ExtensionAPI) {
 	};
 
 	pi.registerCommand("statusline", {
-		description: "Interactively configure pi statusline (or reload)",
+		description: "Open the statusline manager or reload its config",
+		getArgumentCompletions(prefix) {
+			const query = prefix.trim().toLowerCase();
+			return ["reload"]
+				.filter((value) => value.startsWith(query))
+				.map((value) => ({ value, label: value }));
+		},
 		handler: async (args, ctx) => {
 			quotaContext = ctx;
 			const action = args.trim().toLowerCase();
@@ -294,6 +300,11 @@ export default function statusline(pi: ExtensionAPI) {
 					return;
 				}
 				ctx.ui.notify(`Statusline config reloaded (${reloaded.value.widgets.join(", ")})`, "info");
+				return;
+			}
+
+			if (action) {
+				ctx.ui.notify("Usage: /statusline [reload]", "warning");
 				return;
 			}
 

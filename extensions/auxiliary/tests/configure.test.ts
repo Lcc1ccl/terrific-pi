@@ -123,6 +123,28 @@ describe("auxiliary configurator", () => {
 		assert.deepEqual(saved.docsflow, { vaultEnabled: false });
 	});
 
+	test("hides dormant internal routes and unavailable external commands", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-hidden-routes-"));
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({ auxiliary: {} }), "utf8");
+		const ui = new ScriptedUi(["Done"]);
+
+		await runAuxiliaryConfigurator({
+			agentDir,
+			modelRefs: [],
+			hasVisionHandoff: false,
+			ui,
+		});
+
+		const main = ui.dialogs[0];
+		assert.ok(main);
+		assert.equal(main.options.some((option) => option.startsWith("pilot_router")), false);
+		assert.equal(main.options.some((option) => option.startsWith("Vision:")), false);
+
+		const visionUi = new ScriptedUi(["Done"]);
+		await runAuxiliaryConfigurator({ agentDir, modelRefs: [], hasVisionHandoff: true, ui: visionUi });
+		assert.equal(visionUi.dialogs[0]?.options.some((option) => option.startsWith("Vision:")), true);
+	});
+
 	test("edits a task model, thinking, timeout, and fallback", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-route-"));
 		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
@@ -254,7 +276,7 @@ describe("auxiliary configurator", () => {
 
 		const defaultRoute = ui.dialogs.find((item) => item.title === "Default route");
 		assert.ok(defaultRoute);
-		assert.match(defaultRoute.descriptions["Apply primary model to all tasks"] ?? "", /enable.*all seven/i);
+		assert.match(defaultRoute.descriptions["Apply primary model to all tasks"] ?? "", /enable.*all six/i);
 		const output = defaultRoute.options.find((option) => option.startsWith("Max output tokens"));
 		assert.ok(output);
 		assert.match(defaultRoute.descriptions[output] ?? "", /generated.*not.*input.*context/i);

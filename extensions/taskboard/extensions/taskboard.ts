@@ -445,18 +445,36 @@ export default function taskboard(pi: ExtensionAPI) {
 
 	const taskboardCommand = {
 		description: "Manage Taskboard or use compact | full | off | clear | default <mode>",
+		getArgumentCompletions(prefix: string) {
+			const query = prefix.trimStart().toLowerCase();
+			const options = query.startsWith("default")
+				? ["default compact", "default full", "default off"]
+				: ["compact", "full", "off", "clear", "default"];
+			return options
+				.filter((value) => value.startsWith(query))
+				.map((value) => ({ value, label: value }));
+		},
 		handler: async (args: string, ctx: ExtensionContext) => {
 			const parts = args.trim().toLowerCase().split(/\s+/).filter(Boolean);
 			const action = parts[0];
+			const usage = "Usage: /taskboard [compact|full|off|clear|default <compact|full|off>]";
 			if (!action) {
 				if (ctx.mode === "tui") await runTaskboardManager(ctx);
 				else ctx.ui.notify(`${taskboardSummary(state)} · global default ${loadTaskboardDefault(getAgentDir())}`, "info");
 				return;
 			}
 			if (action === "default") {
+				if (parts.length !== 2) {
+					ctx.ui.notify(`Global default: ${loadTaskboardDefault(getAgentDir())}. Usage: /taskboard default <compact|full|off>`, "warning");
+					return;
+				}
 				const mode = parts[1];
 				if (mode === "compact" || mode === "full" || mode === "off") setGlobalDefaultViewMode(ctx, mode);
 				else ctx.ui.notify(`Global default: ${loadTaskboardDefault(getAgentDir())}. Usage: /taskboard default <compact|full|off>`, "warning");
+				return;
+			}
+			if (parts.length !== 1) {
+				ctx.ui.notify(usage, "warning");
 				return;
 			}
 			if (action === "clear") {
@@ -467,12 +485,10 @@ export default function taskboard(pi: ExtensionAPI) {
 				saveViewMode(action, ctx);
 				return;
 			}
-			ctx.ui.notify("Usage: /taskboard [compact|full|off|clear|default <compact|full|off>]", "warning");
+			ctx.ui.notify(usage, "warning");
 		},
 	};
 	pi.registerCommand("taskboard", taskboardCommand);
-	// Compatibility through 0.1.x; process_update and persisted type strings remain stable.
-	pi.registerCommand("process", taskboardCommand);
 
 	pi.on("session_start", async (_event, ctx) => restore(ctx));
 

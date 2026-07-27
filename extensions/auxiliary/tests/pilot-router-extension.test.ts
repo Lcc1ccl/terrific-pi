@@ -7,7 +7,10 @@ import test from "node:test";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { Model, Usage } from "@earendil-works/pi-ai";
 
-import { requestPilotRoute, resolvePilotRoute } from "../../pilot/lib/aux-router.ts";
+import {
+	PILOT_ROUTER_REQUEST_EVENT,
+	PILOT_ROUTER_RESPONSE_EVENT,
+} from "../lib/pilot-router.ts";
 import auxiliary from "../extensions/auxiliary.ts";
 import { AUXILIARY_USAGE_CHANGED_EVENT, AUXILIARY_USAGE_ENTRY_TYPE } from "../lib/usage.ts";
 
@@ -106,8 +109,19 @@ test("the Auxiliary extension records exactly one usage entry for a Pilot router
 		};
 		for (const handler of hooks.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
 
-		const response = await requestPilotRoute({ events, prompt: "Explain this module" });
-		assert.equal(resolvePilotRoute(response).route, "ask");
+		const response = await new Promise<Record<string, unknown>>((resolve) => {
+			const requestId = "compatibility-test";
+			events.on(PILOT_ROUTER_RESPONSE_EVENT, (value) => {
+				if ((value as { requestId?: unknown }).requestId === requestId) resolve(value as Record<string, unknown>);
+			});
+			events.emit(PILOT_ROUTER_REQUEST_EVENT, {
+				version: 1,
+				requestId,
+				prompt: "Explain this module",
+			});
+		});
+		assert.equal(response.status, "completed");
+		assert.equal((response.decision as { route?: unknown }).route, "ask");
 		assert.equal(calls, 1);
 		assert.equal(entries.length, 1);
 		assert.equal(entries[0]?.customType, AUXILIARY_USAGE_ENTRY_TYPE);
