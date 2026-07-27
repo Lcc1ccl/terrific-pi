@@ -54,6 +54,7 @@ See `examples/config.json`.
 | default hotkey | id `N` (1–9) → `alt+N` unless `hotkey` is set |
 | omitted `alias` | id `1` falls back to `default`; aliases do not affect startup order |
 | delete renumber | TUI delete compacts remaining ids to `1…n` and shifts project overrides accordingly |
+| hotkey order | **Manage profiles → Hotkey order** shows every profile; Up/Down selects, Left/Right reorders, Enter saves and rewrites positions as `id=1…n` + `alt+1…9` |
 
 ## Commands
 
@@ -67,7 +68,7 @@ See `examples/config.json`.
 | `/profile <id\|alias> session\|global` | Apply with explicit scope |
 | `/profile help` | Usage + caveats |
 
-Quick apply keeps the short-list profile picker and `session` / `global` scope choice as the first manager action. **Create profile** can either capture the live session or browse an available model and choose its supported thinking level before saving; it does not activate the new profile. The picker shows `Up/Down` navigate, `Enter` select/activate, and `Esc` action tips: `Esc` cancels from the profile list, while `Esc` on scope returns to the profile list. The manager's effective summary reports the global/project source for every profile. `alt+N` always **session** apply (works with draft text). Profile/model/thinking changes are read from `terrific.json` whenever an already registered hotkey fires, so its target updates immediately and retired bindings no-op. Adding or changing a key binding still requires **`/reload`** because Pi snapshots extension shortcuts when the TUI is initialized and exposes no shortcut unregister/refresh API.
+Quick apply keeps the short-list profile picker and `session` / `global` scope choice as the first manager action. **Create profile** can either capture the live session or browse an available model and choose its supported thinking level before saving; it does not activate the new profile. The picker shows `Up/Down` navigate, `Enter` select/activate, and `Esc` action tips: `Esc` cancels from the profile list, while `Esc` on scope returns to the profile list. The manager's effective summary reports the global/project source for every profile. `alt+N` always **session** apply (works with draft text). The extension pre-registers `alt+1` through `alt+9` and reads their target from the latest `terrific.json`, so newly created default-numbered profiles and Hotkey order changes work immediately in the current session. A newly entered non-default custom binding still requires **`/reload`** because Pi exposes no shortcut unregister/refresh API after the TUI snapshots extension shortcuts.
 
 ## Session vs global vs official /model
 

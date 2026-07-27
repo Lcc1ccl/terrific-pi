@@ -23,7 +23,7 @@ function config(hotkey: string, model: string) {
 	};
 }
 
-test("registered hotkeys dispatch the latest file target and retire stale bindings", async () => {
+test("default alt+1..9 hotkeys dispatch profiles added in the current session", async () => {
 	const agentDir = mkdtempSync(join(tmpdir(), "model-profile-live-hotkeys-"));
 	const configPath = join(agentDir, "terrific.json");
 	const settingsPath = join(agentDir, "settings.json");
@@ -66,15 +66,34 @@ test("registered hotkeys dispatch the latest file target and retire stale bindin
 
 		for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
 		assert.ok(shortcuts.has("alt+1"));
+		assert.ok(shortcuts.has("alt+2"));
 
 		writeFileSync(configPath, JSON.stringify(config("alt+1", "gpt-new")), "utf8");
 		await shortcuts.get("alt+1")!.handler(ctx);
 		assert.deepEqual(applied, ["gpt-new"]);
 
-		writeFileSync(configPath, JSON.stringify(config("alt+2", "gpt-new")), "utf8");
-		await shortcuts.get("alt+1")!.handler(ctx);
-		assert.deepEqual(applied, ["gpt-new"]);
-		assert.equal(shortcuts.has("alt+2"), false);
+		writeFileSync(configPath, JSON.stringify({
+			modelProfile: {
+				...config("alt+1", "gpt-new").modelProfile,
+				profiles: [
+					config("alt+1", "gpt-new").modelProfile.profiles[0],
+					{
+						id: "2",
+						alias: "second",
+						provider: "openai",
+						model: "gpt-second",
+						thinking: "medium",
+						hotkey: "alt+2",
+					},
+				],
+			},
+		}), "utf8");
+		await shortcuts.get("alt+2")!.handler(ctx);
+		assert.deepEqual(applied, ["gpt-new", "gpt-second"]);
+
+		writeFileSync(configPath, JSON.stringify(config("ctrl+alt+2", "gpt-new")), "utf8");
+		await shortcuts.get("alt+2")!.handler(ctx);
+		assert.deepEqual(applied, ["gpt-new", "gpt-second"]);
 		assert.match(notifications.at(-1) ?? "", /no longer bound/i);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
