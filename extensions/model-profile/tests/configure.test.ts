@@ -6,8 +6,10 @@ import { describe, it } from "node:test";
 
 import {
 	nextProfileId,
+	normalizeProfileOrder,
 	renumberProfilesAfterDelete,
 	renumberProjectOverridesAfterDelete,
+	reorderProjectOverrides,
 	runProfileConfigurator,
 	type ProfileConfiguratorUi,
 } from "../lib/configure.ts";
@@ -20,17 +22,20 @@ class ScriptedUi implements ProfileConfiguratorUi {
 	private readonly inputs: string[];
 	private readonly models: string[];
 	private readonly confirmations: boolean[];
+	private readonly reorderedIds: string[][];
 
 	constructor(options: {
 		choices: string[];
 		inputs?: string[];
 		models?: string[];
 		confirmations?: boolean[];
+		reorderedIds?: string[][];
 	}) {
 		this.choices = [...options.choices];
 		this.inputs = [...(options.inputs ?? [])];
 		this.models = [...(options.models ?? [])];
 		this.confirmations = [...(options.confirmations ?? [])];
+		this.reorderedIds = [...(options.reorderedIds ?? [])];
 	}
 
 	async select(title: string, options: string[]): Promise<string | undefined> {
@@ -52,6 +57,12 @@ class ScriptedUi implements ProfileConfiguratorUi {
 
 	async pickModel(): Promise<string | undefined> {
 		return this.models.shift();
+	}
+
+	async reorderProfiles(profiles: readonly ModelProfile[]): Promise<ModelProfile[] | undefined> {
+		const ids = this.reorderedIds.shift();
+		if (!ids) return undefined;
+		return ids.map((id) => profiles.find((profile) => profile.id === id)!);
 	}
 
 	notify(message: string, level?: "info" | "warning" | "error"): void {
@@ -90,6 +101,26 @@ describe("model profile configurator", () => {
 		assert.deepEqual(remaining, [
 			profile({ id: "1", alias: "two", hotkey: "alt+1" }),
 			profile({ id: "2", alias: "three", hotkey: "ctrl+alt+9" }),
+		]);
+	});
+
+	it("normalizes reordered ids/hotkeys and keeps project overrides attached", () => {
+		const ordered = [
+			profile({ id: "3", alias: "three", hotkey: "ctrl+3" }),
+			profile({ id: "1", alias: "one", hotkey: "ctrl+1" }),
+			profile({ id: "2", alias: "two", hotkey: "ctrl+2" }),
+		];
+		assert.deepEqual(normalizeProfileOrder(ordered).map(({ id, alias, hotkey }) => ({ id, alias, hotkey })), [
+			{ id: "1", alias: "three", hotkey: "alt+1" },
+			{ id: "2", alias: "one", hotkey: "alt+2" },
+			{ id: "3", alias: "two", hotkey: "alt+3" },
+		]);
+		assert.deepEqual(reorderProjectOverrides([
+			{ id: "1", thinking: "low" },
+			{ id: "3", thinking: "high" },
+		], ordered), [
+			{ id: "2", thinking: "low" },
+			{ id: "1", thinking: "high" },
 		]);
 	});
 
@@ -190,6 +221,37 @@ describe("model profile configurator", () => {
 		const saved = config(agentDir).modelProfile.profiles[0];
 		assert.equal(`${saved.provider}/${saved.model}`, "anthropic/claude-live");
 		assert.equal(saved.thinking, "high");
+	});
+
+	it("reorders all profile hotkeys and renumbers them as alt+1..9", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "mp-configure-hotkey-order-"));
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
+			modelProfile: {
+				profiles: [
+					profile({ id: "1", alias: "one", hotkey: "ctrl+alt+8" }),
+					profile({ id: "2", alias: "two", hotkey: "alt+7" }),
+					profile({ id: "3", alias: "three", hotkey: "alt+3" }),
+				],
+			},
+		}), "utf8");
+		const ui = new ScriptedUi({
+			choices: ["Manage profiles", "Hotkey order", "Back", "Done"],
+			reorderedIds: [["3", "1", "2"]],
+		});
+
+		await runProfileConfigurator({
+			agentDir,
+			currentThinking: "medium",
+			modelRefs: [],
+			quickApply: async () => {},
+			ui,
+		});
+
+		assert.deepEqual(config(agentDir).modelProfile.profiles, [
+			profile({ id: "1", alias: "three", hotkey: "alt+1" }),
+			profile({ id: "2", alias: "one", hotkey: "alt+2" }),
+			profile({ id: "3", alias: "two", hotkey: "alt+3" }),
+		]);
 	});
 
 	it("edits alias, model, and hotkey", async () => {

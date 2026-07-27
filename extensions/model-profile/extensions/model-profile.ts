@@ -31,6 +31,7 @@ import {
 } from "../lib/config.ts";
 import { findMatchingProfile } from "../lib/match.ts";
 import { report } from "../lib/output.ts";
+import { ProfileOrderComponent } from "../lib/profile-order.ts";
 import {
 	restoreSettingsFile,
 	snapshotSettingsFile,
@@ -419,6 +420,15 @@ export default function (pi: ExtensionAPI) {
 						initialSelectedValue: current && current.startsWith(`${provider}/`) ? current : undefined,
 					});
 				},
+				reorderProfiles: (profiles) => ctx.ui.custom<ModelProfile[] | undefined>((tui, theme, keybindings, done) =>
+					new ProfileOrderComponent({
+						profiles,
+						theme,
+						keybindings,
+						done,
+						requestRender: () => tui.requestRender(),
+					}),
+				),
 				notify: (message, level) => ctx.ui.notify(message, level),
 			},
 		});
@@ -448,6 +458,16 @@ export default function (pi: ExtensionAPI) {
 			pi.registerShortcut(openHotkey as Parameters<ExtensionAPI["registerShortcut"]>[0], {
 				description: "model-profile: open picker",
 				handler: async (shortcutCtx) => dispatchHotkey(shortcutCtx, openHotkey),
+			});
+		}
+
+		for (let digit = 1; digit <= 9; digit += 1) {
+			const hotkey = `alt+${digit}`;
+			if (registeredHotkeys.has(hotkey)) continue;
+			registeredHotkeys.add(hotkey);
+			pi.registerShortcut(hotkey as Parameters<ExtensionAPI["registerShortcut"]>[0], {
+				description: `model-profile: profile ${digit}`,
+				handler: async (shortcutCtx) => dispatchHotkey(shortcutCtx, hotkey),
 			});
 		}
 
@@ -517,7 +537,7 @@ export default function (pi: ExtensionAPI) {
 						"Global apply keeps the new defaults.",
 						"Official /model and Ctrl+P still update global defaults — use /profile for session-only.",
 						"Config: ~/.pi/agent/terrific.json → modelProfile.",
-						"Profile targets are read from terrific.json when a registered hotkey fires; adding or changing key bindings requires /reload.",
+						"Profile targets and the default alt+1..9 bindings update immediately from terrific.json; custom bindings require /reload.",
 					].join("\n"),
 				);
 				return;

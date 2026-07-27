@@ -8,6 +8,7 @@ export interface ProfileConfiguratorUi {
 	input(title: string, initialValue?: string): Promise<string | undefined>;
 	confirm(title: string, message: string): Promise<boolean>;
 	pickModel(title: string, current: string | undefined, modelRefs: readonly string[]): Promise<string | undefined>;
+	reorderProfiles?(profiles: readonly ModelProfile[]): Promise<ModelProfile[] | undefined>;
 	notify(message: string, level?: "info" | "warning" | "error"): void;
 }
 
@@ -42,6 +43,27 @@ function thinkingLevelsFor(deps: ProfileConfiguratorDeps, modelRef: string): Thi
 
 export function nextProfileId(profiles: readonly ModelProfile[]): string {
 	return String(profiles.reduce((max, profile) => Math.max(max, Number(profile.id) || 0), 0) + 1);
+}
+
+export function normalizeProfileOrder(profiles: readonly ModelProfile[]): ModelProfile[] {
+	return profiles.map((profile, index) => {
+		const { hotkey: _hotkey, ...rest } = profile;
+		const id = String(index + 1);
+		const hotkey = defaultHotkeyForId(id);
+		return { ...rest, id, ...(hotkey ? { hotkey } : {}) };
+	});
+}
+
+/** Remap project overrides so they continue to target the same reordered profile. */
+export function reorderProjectOverrides(
+	overrides: readonly ProjectProfileOverride[],
+	orderedProfiles: readonly ModelProfile[],
+): ProjectProfileOverride[] {
+	const idMap = new Map(orderedProfiles.map((profile, index) => [profile.id, String(index + 1)]));
+	return overrides.flatMap((override) => {
+		const id = idMap.get(override.id);
+		return id ? [{ ...override, id }] : [];
+	});
 }
 
 /**
@@ -184,7 +206,8 @@ async function createProfile(deps: ProfileConfiguratorDeps): Promise<void> {
 		...(hotkey ? { hotkey } : {}),
 	};
 	if (persistProfiles(deps, [...config.profiles, profile])) {
-		deps.ui.notify(`Saved ${profileLabel(profile)}. Run /reload to register its hotkey.`, "info");
+		const suffix = hotkey === defaultHotkey ? "Hotkey is ready now." : "Run /reload to register its custom hotkey.";
+		deps.ui.notify(`Saved ${profileLabel(profile)}. ${suffix}`, "info");
 	}
 }
 
@@ -247,7 +270,7 @@ async function editProfile(deps: ProfileConfiguratorDeps, id: string): Promise<"
 					persistProjectProfiles(deps, nextOverrides);
 				}
 			}
-			deps.ui.notify("Profile deleted and ids renumbered. Run /reload to refresh hotkey bindings.", "info");
+			deps.ui.notify("Profile deleted and ids renumbered. Default Alt+1..9 bindings are ready now.", "info");
 			return "deleted";
 		}
 
@@ -262,11 +285,31 @@ async function manageProfiles(deps: ProfileConfiguratorDeps): Promise<void> {
 	while (true) {
 		const { config } = loadGlobal(deps.agentDir);
 		const options = [
+			...(config.profiles.length > 0
+				? [`Hotkey order: ${config.profiles.map((profile) => `${profile.hotkey ?? "none"} ${profile.alias}`).join(" · ")}`]
+				: []),
 			...config.profiles.map((profile) => `${profile.id} · ${profile.alias}: ${profile.provider}/${profile.model} · ${profile.thinking}`),
 			"Back",
 		];
 		const choice = await deps.ui.select("Manage profiles", options);
 		if (!choice || choice === "Back") return;
+		if (choice.startsWith("Hotkey order:")) {
+			if (!deps.ui.reorderProfiles) continue;
+			const reordered = await deps.ui.reorderProfiles(config.profiles);
+			if (!reordered) continue;
+			if (!persistProfiles(deps, normalizeProfileOrder(reordered))) continue;
+			const project = projectContext(deps);
+			if (project) {
+				const local = loadProjectProfileOverrides(project.dir);
+				for (const warning of local.warnings) deps.ui.notify(warning, "warning");
+				const nextOverrides = reorderProjectOverrides(local.overrides, reordered);
+				if (JSON.stringify(nextOverrides) !== JSON.stringify(local.overrides)) {
+					persistProjectProfiles(deps, nextOverrides);
+				}
+			}
+			deps.ui.notify("Profile order and Alt+1..9 hotkeys updated", "info");
+			continue;
+		}
 		const id = choice.split(" ", 1)[0];
 		if (await editProfile(deps, id) === "deleted") return;
 	}
