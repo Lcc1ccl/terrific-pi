@@ -23,6 +23,8 @@ export const CONFIGURABLE_AUXILIARY_TASKS = [
 	"pilot_router",
 ] as const satisfies readonly AuxiliaryTaskKey[];
 
+export const VISIBLE_AUXILIARY_TASKS = CONFIGURABLE_AUXILIARY_TASKS.filter((task) => task !== "pilot_router");
+
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const satisfies readonly ThinkingLevel[];
 
 const NUMBER_FIELDS = {
@@ -68,6 +70,7 @@ export interface AuxiliaryConfiguratorDeps {
 	agentDir: string;
 	currentModel?: string;
 	modelRefs: readonly string[];
+	hasVisionHandoff?: boolean;
 	ui: AuxiliaryConfiguratorUi;
 }
 
@@ -330,7 +333,7 @@ function mainMenuTitle(deps: AuxiliaryConfiguratorDeps, state: ConfiguratorState
 	].join("\n");
 }
 
-function mainMenuItems(state: ConfiguratorState): Array<{ id: string; label: string; description?: string }> {
+function mainMenuItems(deps: AuxiliaryConfiguratorDeps, state: ConfiguratorState): Array<{ id: string; label: string; description?: string }> {
 	const items: Array<{ id: string; label: string; description?: string }> = [
 		{
 			id: "runtime",
@@ -343,7 +346,7 @@ function mainMenuItems(state: ConfiguratorState): Array<{ id: string; label: str
 			description: "Fallback values for route fields without a task-specific preset or override; task-specific values still win.",
 		},
 	];
-	for (const task of CONFIGURABLE_AUXILIARY_TASKS) {
+	for (const task of VISIBLE_AUXILIARY_TASKS) {
 		const enabled = state.config.tasks[task]?.useAuxiliary !== false;
 		const route = configuredTaskRoute(state.config, task);
 		items.push({
@@ -360,7 +363,7 @@ function mainMenuItems(state: ConfiguratorState): Array<{ id: string; label: str
 			label: `Git finalize policy: confirm ${state.config.git.confirm ? "on" : "off"} · headless ${state.config.git.allowHeadless ? "on" : "off"} · push ${state.config.git.allowPush ? "on" : "off"}`,
 			description: "Controls interactive confirmation, headless commits, and permission for normal pushes.",
 		},
-		{ id: "vision", label: "Vision: external · /vision-handoff", description: "Vision routing is configured separately by /vision-handoff." },
+		...(deps.hasVisionHandoff ? [{ id: "vision", label: "Vision: external · /vision-handoff", description: "Vision routing is configured separately by /vision-handoff." }] : []),
 		{ id: "show", label: "Show config", description: "Displays the stored auxiliary section with credential-bearing fields redacted." },
 		{ id: "done", label: "Done" },
 	);
@@ -568,11 +571,11 @@ async function applyDefaultModelToAllTasks(
 ): Promise<void> {
 	const confirmed = await deps.ui.confirm(
 		`Apply ${model} to all auxiliary tasks?`,
-		`Set this primary model and enable auxiliary routing for ${CONFIGURABLE_AUXILIARY_TASKS.join(", ")}. Other task fields stay unchanged; vision is excluded.`,
+		`Set this primary model and enable auxiliary routing for ${VISIBLE_AUXILIARY_TASKS.join(", ")}. Other task fields stay unchanged; internal compatibility and vision routes are excluded.`,
 	);
 	if (!confirmed) return;
 	applyMutation(deps, (auxiliary) => {
-		for (const task of CONFIGURABLE_AUXILIARY_TASKS) {
+		for (const task of VISIBLE_AUXILIARY_TASKS) {
 			editRouteObject(auxiliary, { kind: "task", task }, (route) => {
 				route.model = model;
 				delete route.useAuxiliary;
@@ -661,7 +664,7 @@ async function routeMenu(deps: AuxiliaryConfiguratorDeps, target: RouteTarget): 
 			),
 			...(target.kind === "default" ? [menuItem(
 				"Apply primary model to all tasks",
-				`Copies ${route.model} to every task model and enables auxiliary routing for all seven managed tasks. Other task fields stay unchanged; vision is excluded.`,
+				`Copies ${route.model} to every public task model and enables auxiliary routing for all six managed tasks. Other task fields stay unchanged; internal compatibility and vision routes are excluded.`,
 			)] : []),
 			menuItem(thinkingLabel, "Requested reasoning level; models without reasoning support run with thinking off."),
 			menuItem(timeoutLabel, "Maximum wall time for each model attempt before an eligible fallback is tried."),
@@ -720,7 +723,7 @@ export async function runAuxiliaryConfigurator(deps: AuxiliaryConfiguratorDeps):
 			warned.add(warning);
 			deps.ui.notify(warning, "warning");
 		}
-		const items = mainMenuItems(state);
+		const items = mainMenuItems(deps, state);
 		const choice = await deps.ui.select(
 			mainMenuTitle(deps, state),
 			items.map((item) => item.description ? menuItem(item.label, item.description) : item.label),
@@ -854,7 +857,11 @@ export async function pickAvailableModel(
 	});
 }
 
-export async function runAuxiliaryConfigTui(ctx: ExtensionContext, agentDir: string): Promise<void> {
+export async function runAuxiliaryConfigTui(
+	ctx: ExtensionContext,
+	agentDir: string,
+	hasVisionHandoff = false,
+): Promise<void> {
 	try {
 		await ctx.modelRegistry.refresh();
 	} catch (error) {
@@ -865,6 +872,7 @@ export async function runAuxiliaryConfigTui(ctx: ExtensionContext, agentDir: str
 		agentDir,
 		currentModel: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
 		modelRefs,
+		hasVisionHandoff,
 		ui: {
 			select: (title, options) => selectMenu(ctx, title, options),
 			input: (title, placeholder) => ctx.ui.input(title, placeholder),

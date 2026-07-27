@@ -69,7 +69,7 @@ terrific-pi/
 | 上下文拆解 | `extensions/context` | `/context [summary\|details\|config]`；`c` 复制、`x` 确认压缩 | 不调模型查看占用；压缩为显式动作 | **本仓实现** |
 | 旁路问答 | `extensions/btw` | `/btw …`、`status`、`config`、`context=none` | 独立内存会话问答，不污染主 session | **本仓实现**；模型可走 auxiliary 路由 |
 | 辅助模型 runtime | `extensions/auxiliary` | 裸 `/aux` 管理器、`/aux status`；工具 `aux_summarize`/`web_research`/`git_finalize`；compact/title 钩子 | 任务级旁路模型，不改主会话模型 | **本仓实现**；研究/视觉 **委托外部 pin** |
-| 任务进度 HUD | `extensions/taskboard` | 模型调 `process_update`；`/taskboard` 管理、`default <mode>`；`/process` 兼容别名；`Ctrl+O` 展开 | 多步任务里程碑、等待/阻塞与验证；可提供稳定的运行中活动行 | **本仓实现** |
+| 任务进度 HUD | `extensions/taskboard` | 模型调 `process_update`；`/taskboard` 管理、`default <mode>`；`Ctrl+O` 展开 | 多步任务里程碑、等待/阻塞与验证；可提供稳定的运行中活动行 | **本仓实现** |
 | 低噪音过程流 | `extensions/presentation` | 自动；`/presentation` 管理；`Ctrl+O` 下钻 | 受控兼容 renderer、探索/失败摘要、Skill 身份、系统条和文件回执 | **本仓实现**；不依赖外部 renderer fork |
 | 文档流水线 | `extensions/docsflow` | 裸 `/docsflow` 管理器、`settings`、阶段 override | research→product→interface→delivery | **本仓编排**；执行靠 `pi-subagents` |
 | 模型常用配置 | `extensions/model-profile` | `/profile` 管理/快速应用、可信项目 overrides、`list/status/startup`、`<id\|alias>`、`alt+N`、冷启动/`/new`；见 [计划](./plans/2026-07-20-model-profile-plan.md) | 3–5 套 model+thinking；全局/project 来源；session/global；启动 | **本仓薄封装**；配置 `terrific.json` |
@@ -146,7 +146,7 @@ terrific-pi/
 | 文件 | 谁读 | 内容 |
 |------|------|------|
 | `~/.pi/agent/settings.json` | pi 核心 + 全局默认 | packages、defaultProvider/Model/ThinkingLevel、theme… |
-| `~/.pi/agent/terrific.json` | mode / btw / context / auxiliary / docsflow / model-profile / fast / taskboard / presentation | 本仓插件共享配置；Taskboard 仅在 `0.1.x` 读取旧 `processView`，当 Taskboard `0.2.0` 成为基线时移除回退 |
+| `~/.pi/agent/terrific.json` | mode / btw / context / auxiliary / docsflow / model-profile / fast / taskboard / presentation | 本仓插件共享配置；Taskboard `0.2.0` 不再注册 `/process`，仍可读取并迁移旧 `processView` |
 | `~/.pi/agent/statusline.json` | statusline | widget 布局与 profile |
 | `~/.pi/agent/models.json` | pi + pi-provider-sync | 自定义 provider/models |
 | `~/.pi/agent/auth.json` | pi | **密钥；禁止入库** |
@@ -255,4 +255,4 @@ terrific-pi/
 | 2026-07-22 | presentation 使用受控 native render compatibility layer 恢复用户边框、Bash 三态、Skill/探索与请求级文件回执；移除外部 renderer fork 依赖 |
 | 2026-07-22 | 正式定义个性化 Pi enhancement monorepo；补目录/workflow 边界、历史 session 契约与 dist 保留策略 |
 | 2026-07-22 | Pilot Phase 0：登记双激活、input routing 与 Auxiliary `pilot_router` bridge；未启用 settings 或 legacy cutover |
-| 2026-07-22 | `process-view` 更名为 `taskboard`：canonical package/path/command/config/status key 均迁移，长期保留 `process_update` 与历史 session entry；旧 `/process`、`processView` 和 `process` status 回退仅保留于 `0.1.x` |
+| 2026-07-22 | `process-view` 更名为 `taskboard`：canonical package/path/command/config/status key 均迁移；Taskboard `0.2.0` 移除重复 `/process` 命令，长期保留 `process_update`、历史 session entry 和旧配置/status 的只读迁移兼容 |

@@ -23,6 +23,10 @@ it("labels the global BTW target separately from the effective project value", a
 			registerCommand(_name: string, value: unknown) { command = value; },
 			on() {},
 		} as never);
+		assert.match(command.description, /context=current/);
+		assert.deepEqual(command.getArgumentCompletions("").map((item: { value: string }) => item.value), [
+			"status", "config", "context=current", "context=none",
+		]);
 		let rendered = "";
 		await command.handler("config", {
 			cwd: projectDir,

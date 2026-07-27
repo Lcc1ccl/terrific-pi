@@ -84,9 +84,10 @@ Outside TUI mode, bare `/taskboard` prints the current summary and `/taskboard c
 | Contract | Policy |
 |----------|--------|
 | `process_update`, `process-view-state-v1`, `process-view-context` | Durable tool/session contracts; no planned removal |
-| `/process`, `processView`, legacy `process` status, presentation's `/process` detection | Transitional aliases through Taskboard `0.1.x`; removed when `0.2.0` becomes the baseline |
+| `/process` | Removed in Taskboard `0.2.0`; use `/taskboard` |
+| `processView`, legacy `process` status | Read-only migration compatibility for existing config and sessions |
 
-Use `/taskboard` and the `taskboard` config/status keys for all new integrations. Running `/taskboard default <mode>` or `/process default <mode>` migrates the legacy config object atomically.
+Use `/taskboard` and the `taskboard` config/status keys for all new integrations. Running `/taskboard default <mode>` migrates the legacy config object atomically.
 
 ## Lifecycle
 

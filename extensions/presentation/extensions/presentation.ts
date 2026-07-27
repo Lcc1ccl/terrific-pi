@@ -102,9 +102,7 @@ export default function presentation(pi: ExtensionAPI): void {
 
 	const statusReport = (): string => {
 		const commands = pi.getCommands();
-		const taskboard = commands.some((command) => command.name === "taskboard")
-			// Compatibility through Taskboard 0.1.x; remove the /process probe when 0.2.0 is the baseline.
-			|| commands.some((command) => command.name === "process");
+		const taskboard = commands.some((command) => command.name === "taskboard");
 		const toolMode = compactToolsActive() ? "compatibility renderer active" : "native rows";
 		return [
 			`Presentation: ${config.enabled ? "on" : "off"}`,
@@ -259,7 +257,7 @@ export default function presentation(pi: ExtensionAPI): void {
 				: action === "reset" ? DEFAULT_PRESENTATION_CONFIG
 				: undefined;
 			if (!patch) {
-				report(ctx, "Usage: /presentation [config|on|off|status|reset|tools on|tools off]", "error");
+				report(ctx, "Usage: /presentation [config|status|reset|on|off|workspace on|workspace off|system on|system off|user on|user off|tools on|tools off|artifacts on|artifacts off]", "error");
 				return;
 			}
 			persistConfig(ctx, patch, "Presentation configuration updated");

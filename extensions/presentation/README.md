@@ -56,7 +56,9 @@ Malformed JSON fails closed for this extension and is reported once. `/presentat
 /presentation config          # explicit menu entry
 /presentation status          # effective config and integration state
 /presentation on|off          # master display switch
-/presentation user on|off     # user-message frame
+/presentation workspace on|off # workspace entry
+/presentation system on|off    # system event entries
+/presentation user on|off      # user-message frame
 /presentation tools on|off    # compact tool rows
 /presentation artifacts on|off
 /presentation reset           # restore presentation defaults

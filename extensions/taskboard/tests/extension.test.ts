@@ -214,7 +214,7 @@ function latestSnapshot(entries: any[]): ProcessSnapshot | undefined {
 }
 
 describe("taskboard registration and tool", () => {
-	it("registers taskboard with a process compatibility alias and keeps process_update", () => {
+	it("registers only the canonical taskboard command and keeps process_update", () => {
 		const harness = createHarness();
 		assert.equal(harness.tool.name, "process_update");
 		assert.equal(harness.tool.label, "Taskboard update");
@@ -222,7 +222,13 @@ describe("taskboard registration and tool", () => {
 		assert.equal(harness.tool.renderShell, "self");
 		assert.ok(harness.tool.promptGuidelines.every((line: string) => line.includes("process_update")));
 		assert.ok(harness.command);
-		assert.strictEqual(harness.command, harness.processAlias);
+		assert.equal(harness.processAlias, undefined);
+		assert.deepEqual(harness.command.getArgumentCompletions("").map((item: { value: string }) => item.value), [
+			"compact", "full", "off", "clear", "default",
+		]);
+		assert.deepEqual(harness.command.getArgumentCompletions("default ").map((item: { value: string }) => item.value), [
+			"default compact", "default full", "default off",
+		]);
 		assert.deepEqual(harness.shortcuts, []);
 	});
 
@@ -231,7 +237,7 @@ describe("taskboard registration and tool", () => {
 		assert.equal(TASKBOARD_CONTEXT_TYPE, "process-view-context");
 	});
 
-	it("executes /process default through the canonical config migration", async () => {
+	it("executes the canonical default migration", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "taskboard-process-alias-"));
 		const path = join(agentDir, "terrific.json");
 		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -239,7 +245,7 @@ describe("taskboard registration and tool", () => {
 		try {
 			process.env.PI_CODING_AGENT_DIR = agentDir;
 			const harness = createHarness();
-			await harness.processAlias.handler("default off", harness.ctx);
+			await harness.command.handler("default off", harness.ctx);
 			assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), {
 				taskboard: { activityMode: "task", legacyOnly: true, defaultViewMode: "off" },
 			});
@@ -684,6 +690,8 @@ describe("commands and passive telemetry", () => {
 		await harness.command.handler("unknown", harness.ctx);
 		assert.equal(harness.entries.length, count);
 		assert.match(harness.notifications.at(-1)?.message ?? "", /Usage:/);
+		await harness.command.handler("compact extra", harness.ctx);
+		assert.match(harness.notifications.at(-1)?.message ?? "", /Usage:/);
 	});
 
 	it("requires confirmation before direct clear", async () => {
@@ -696,7 +704,7 @@ describe("commands and passive telemetry", () => {
 
 		const accepted = createHarness({ confirmations: [true] });
 		await execute(accepted);
-		await accepted.processAlias.handler("clear", accepted.ctx);
+		await accepted.command.handler("clear", accepted.ctx);
 		assert.deepEqual(accepted.entries.at(-1)?.data, { version: 1, viewMode: "compact", cleared: true });
 
 		const print = createHarness({ mode: "print" });

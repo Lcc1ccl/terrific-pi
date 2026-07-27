@@ -1,11 +1,10 @@
 import { asAlias, DEFAULT_CONFIG, defaultHotkeyForId, loadConfig, loadConfigWithSources, loadProjectProfileOverrides, profileLabel, resolveConfigPath } from "./config.ts";
 import { patchModelProfileSection } from "./config-write.ts";
+import { THINKING_LEVELS } from "./startup.ts";
 import type { ModelProfile, ModelProfileConfig, ProfileScope, ProjectProfileOverride, ThinkingLevel } from "./types.ts";
 
-const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-
 export interface ProfileConfiguratorUi {
-	select(title: string, options: string[]): Promise<string | undefined>;
+	select(title: string, options: string[], initialSelectedValue?: string): Promise<string | undefined>;
 	input(title: string, initialValue?: string): Promise<string | undefined>;
 	confirm(title: string, message: string): Promise<boolean>;
 	pickModel(title: string, current: string | undefined, modelRefs: readonly string[]): Promise<string | undefined>;
@@ -21,6 +20,7 @@ export interface ProfileConfiguratorDeps {
 	currentModel?: { provider: string; id: string };
 	currentThinking: ThinkingLevel;
 	getCurrentSession?(): { model?: { provider: string; id: string }; thinking: ThinkingLevel };
+	getThinkingLevels?(modelRef: string): readonly ThinkingLevel[];
 	modelRefs: readonly string[];
 	quickApply(): Promise<void>;
 	getEffectiveConfig?(): { config: ModelProfileConfig; source: string; profileSources?: Record<string, "global" | "project"> };
@@ -33,6 +33,11 @@ function loadGlobal(agentDir: string) {
 
 function currentSession(deps: ProfileConfiguratorDeps) {
 	return deps.getCurrentSession?.() ?? { model: deps.currentModel, thinking: deps.currentThinking };
+}
+
+function thinkingLevelsFor(deps: ProfileConfiguratorDeps, modelRef: string): ThinkingLevel[] {
+	const levels = deps.getThinkingLevels?.(modelRef) ?? THINKING_LEVELS;
+	return levels.length > 0 ? [...levels] : ["off"];
 }
 
 export function nextProfileId(profiles: readonly ModelProfile[]): string {
@@ -115,12 +120,37 @@ function persistProjectProfiles(deps: ProfileConfiguratorDeps, profiles: Project
 	return false;
 }
 
-async function addCurrentProfile(deps: ProfileConfiguratorDeps): Promise<void> {
+async function createProfile(deps: ProfileConfiguratorDeps): Promise<void> {
 	const current = currentSession(deps);
-	if (!current.model) {
-		deps.ui.notify("No active model is available to save", "warning");
-		return;
+	const currentRef = current.model ? `${current.model.provider}/${current.model.id}` : undefined;
+	const useCurrent = currentRef
+		? `Use current session · ${currentRef} · ${current.thinking}`
+		: undefined;
+	const source = await deps.ui.select("Create profile", [
+		...(useCurrent ? [useCurrent] : []),
+		"Choose model & thinking...",
+		"Back",
+	]);
+	if (!source || source === "Back") return;
+
+	let selectedModel: { provider: string; model: string } | undefined;
+	let selectedThinking: ThinkingLevel | undefined;
+	if (source === useCurrent && current.model) {
+		selectedModel = { provider: current.model.provider, model: current.model.id };
+		selectedThinking = current.thinking;
+	} else {
+		const ref = await deps.ui.pickModel("Profile model", currentRef, deps.modelRefs);
+		selectedModel = ref ? splitModelRef(ref) : undefined;
+		if (!selectedModel || !ref) return;
+		const levels = thinkingLevelsFor(deps, ref);
+		selectedThinking = await deps.ui.select(
+			"Profile thinking",
+			levels,
+			levels.includes(current.thinking) ? current.thinking : levels[0],
+		) as ThinkingLevel | undefined;
+		if (!selectedThinking) return;
 	}
+
 	const { config } = loadGlobal(deps.agentDir);
 	const id = nextProfileId(config.profiles);
 	const suggestedAlias = id === "1" ? "default" : `p${id}`;
@@ -148,13 +178,13 @@ async function addCurrentProfile(deps: ProfileConfiguratorDeps): Promise<void> {
 	const profile: ModelProfile = {
 		id,
 		alias,
-		provider: current.model.provider,
-		model: current.model.id,
-		thinking: current.thinking,
+		provider: selectedModel.provider,
+		model: selectedModel.model,
+		thinking: selectedThinking,
 		...(hotkey ? { hotkey } : {}),
 	};
 	if (persistProfiles(deps, [...config.profiles, profile])) {
-		deps.ui.notify(`Saved ${profileLabel(profile)}. Run /reload to register its hotkey.`, "info");
+		deps.ui.notify(`Saved ${profileLabel(profile)}. Its hotkey registers on the next prompt or /profile command.`, "info");
 	}
 }
 
@@ -189,7 +219,8 @@ async function editProfile(deps: ProfileConfiguratorDeps, id: string): Promise<"
 			if (!model) continue;
 			replacement = { ...profile, ...model };
 		} else if (choice.startsWith("Thinking:")) {
-			const thinking = await deps.ui.select("Thinking level", THINKING_LEVELS);
+			const levels = thinkingLevelsFor(deps, `${profile.provider}/${profile.model}`);
+			const thinking = await deps.ui.select("Thinking level", levels, profile.thinking);
 			if (!thinking) continue;
 			replacement = { ...profile, thinking: thinking as ThinkingLevel };
 		} else if (choice.startsWith("Hotkey:")) {
@@ -214,7 +245,7 @@ async function editProfile(deps: ProfileConfiguratorDeps, id: string): Promise<"
 					persistProjectProfiles(deps, nextOverrides);
 				}
 			}
-			deps.ui.notify("Profile deleted and ids renumbered. Run /reload to refresh hotkeys.", "info");
+			deps.ui.notify("Profile deleted and ids renumbered. Retired hotkeys now read the updated file.", "info");
 			return "deleted";
 		}
 
@@ -262,7 +293,8 @@ async function editProjectOverride(deps: ProfileConfiguratorDeps, id: string): P
 			if (!model) continue;
 			replacement = { id, ...override, ...model };
 		} else if (choice.startsWith("Thinking:")) {
-			const thinking = await deps.ui.select("Project override thinking", THINKING_LEVELS);
+			const levels = thinkingLevelsFor(deps, `${profile.provider}/${profile.model}`);
+			const thinking = await deps.ui.select("Project override thinking", levels, profile.thinking);
 			if (!thinking) continue;
 			replacement = { id, ...override, thinking: thinking as ThinkingLevel };
 		} else if (choice === "Reset project override") {
@@ -328,7 +360,7 @@ async function configureStartup(deps: ProfileConfiguratorDeps): Promise<void> {
 			}
 			const result = patchModelProfileSection({ openHotkey: hotkey }, deps.agentDir);
 			if (!result.ok) deps.ui.notify(`Failed to update terrific.json: ${result.error}`, "error");
-			else deps.ui.notify("Hotkey saved. Run /reload to register it.", "info");
+			else deps.ui.notify("Hotkey saved. It registers on the next prompt or /profile command.", "info");
 		}
 	}
 }
@@ -346,7 +378,7 @@ export async function runProfileConfigurator(deps: ProfileConfiguratorDeps): Pro
 			`Model profiles · ${config.profiles.length} saved · startup ${config.startup ? "on" : "off"}`,
 			[
 				"Quick apply",
-				"Add current session",
+				"Create profile",
 				"Manage profiles",
 				...(projectContext(deps) ? ["Project overrides"] : []),
 				"Startup & shortcuts",
@@ -356,7 +388,7 @@ export async function runProfileConfigurator(deps: ProfileConfiguratorDeps): Pro
 		);
 		if (!choice || choice === "Done") return;
 		if (choice === "Quick apply") await deps.quickApply();
-		else if (choice === "Add current session") await addCurrentProfile(deps);
+		else if (choice === "Create profile") await createProfile(deps);
 		else if (choice === "Manage profiles") await manageProfiles(deps);
 		else if (choice === "Project overrides") await manageProjectOverrides(deps);
 		else if (choice === "Startup & shortcuts") await configureStartup(deps);

@@ -45,6 +45,7 @@ import {
 	rememberPendingNewSelection,
 	runStartupPicker,
 	startupDigitChoice,
+	supportedThinkingLevels,
 	takePendingNewSelection,
 } from "../lib/startup.ts";
 import type { ModelProfile, ProfileScope, ThinkingLevel } from "../lib/types.ts";
@@ -126,7 +127,11 @@ export function selectTuiOption(
 	ctx: ExtensionContext,
 	title: string,
 	options: string[],
-	settings: { cancelAction: "back" | "cancel"; directChoice?: (data: string, options: readonly string[]) => string | undefined },
+	settings: {
+		cancelAction: "back" | "cancel";
+		directChoice?: (data: string, options: readonly string[]) => string | undefined;
+		initialSelectedValue?: string;
+	},
 ): Promise<string | undefined> {
 	if (options.length === 0) return Promise.resolve(undefined);
 	return ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
@@ -149,7 +154,11 @@ export function selectTuiOption(
 				noMatch: (text) => theme.fg("warning", text),
 			},
 		);
-		let selectedIndex = 0;
+		let selectedIndex = settings.initialSelectedValue
+			? options.indexOf(settings.initialSelectedValue)
+			: 0;
+		if (selectedIndex < 0) selectedIndex = 0;
+		list.setSelectedIndex(selectedIndex);
 		const move = (direction: -1 | 1) => {
 			selectedIndex = (selectedIndex + direction + options.length) % options.length;
 			list.setSelectedIndex(selectedIndex);
@@ -254,10 +263,14 @@ export default function (pi: ExtensionAPI) {
 
 		const head = parts[0]!.toLowerCase();
 		if (head === "list" || head === "status" || head === "help") {
+			if (parts.length !== 1) {
+				return { error: "Usage: /profile [list|status|help|startup [on|off]|<id|alias> [session|global]]" };
+			}
 			return { cmd: head };
 		}
 
 		if (head === "startup") {
+			if (parts.length > 2) return { error: "Usage: /profile startup [on|off]" };
 			if (parts.length === 1) return { cmd: "startup" };
 			const value = parts[1]!.toLowerCase();
 			if (value === "on" || value === "true" || value === "1") {
@@ -347,6 +360,12 @@ export default function (pi: ExtensionAPI) {
 				model: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
 				thinking: pi.getThinkingLevel() as ThinkingLevel,
 			}),
+			getThinkingLevels: (ref) => {
+				const slash = ref.indexOf("/");
+				if (slash <= 0 || slash === ref.length - 1) return ["off"];
+				const model = ctx.modelRegistry.find(ref.slice(0, slash), ref.slice(slash + 1));
+				return model ? supportedThinkingLevels(model) : ["off"];
+			},
 			modelRefs,
 			quickApply: () => interactivePick(ctx),
 			getEffectiveConfig: () => {
@@ -358,7 +377,10 @@ export default function (pi: ExtensionAPI) {
 				};
 			},
 			ui: {
-				select: (title, options) => selectTuiOption(ctx, title, options, { cancelAction: options.includes("Done") ? "cancel" : "back" }),
+				select: (title, options, initialSelectedValue) => selectTuiOption(ctx, title, options, {
+					cancelAction: options.includes("Done") ? "cancel" : "back",
+					...(initialSelectedValue ? { initialSelectedValue } : {}),
+				}),
 				input: (title, placeholder) => ctx.ui.input(title, placeholder),
 				confirm: (title, message) => ctx.ui.confirm(title, message),
 				pickModel: async (title, current, refs) => {
@@ -372,7 +394,10 @@ export default function (pi: ExtensionAPI) {
 						const count = refs.filter((ref) => ref.startsWith(`${provider}/`)).length;
 						return `${provider} (${count})${provider === currentProvider ? " [current]" : ""}`;
 					});
-					const providerChoice = await selectTuiOption(ctx, `${title}: provider`, providerOptions, { cancelAction: "back" });
+					const providerChoice = await selectTuiOption(ctx, `${title}: provider`, providerOptions, {
+						cancelAction: "back",
+						initialSelectedValue: providerOptions.find((option) => option.endsWith("[current]")),
+					});
 					const providerIndex = providerChoice ? providerOptions.indexOf(providerChoice) : -1;
 					if (providerIndex < 0) return undefined;
 					const provider = providers[providerIndex]!;
@@ -399,6 +424,21 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
+	async function dispatchHotkey(ctx: ExtensionContext, hotkey: string): Promise<void> {
+		const { config: latest, warnings } = load(ctx);
+		for (const warning of warnings) report(ctx, warning, "warning");
+		if (latest.openHotkey === hotkey) {
+			await interactivePick(ctx);
+			return;
+		}
+		const target = findProfileByHotkey(latest.profiles, hotkey);
+		if (!target) {
+			report(ctx, `Hotkey ${hotkey} is no longer bound in terrific.json`, "warning");
+			return;
+		}
+		await runApply(ctx, target, "session");
+	}
+
 	async function ensureHotkeys(ctx: ExtensionContext): Promise<void> {
 		const { config } = load(ctx);
 
@@ -407,9 +447,7 @@ export default function (pi: ExtensionAPI) {
 			registeredHotkeys.add(openHotkey);
 			pi.registerShortcut(openHotkey as Parameters<ExtensionAPI["registerShortcut"]>[0], {
 				description: "model-profile: open picker",
-				handler: async (shortcutCtx) => {
-					await interactivePick(shortcutCtx);
-				},
+				handler: async (shortcutCtx) => dispatchHotkey(shortcutCtx, openHotkey),
 			});
 		}
 
@@ -420,28 +458,16 @@ export default function (pi: ExtensionAPI) {
 				if (openHotkey === hotkey || config.profiles.some((p) => p.id !== profile.id && p.hotkey === hotkey)) {
 					report(
 						ctx,
-						`model-profile: hotkey ${hotkey} already bound; profile ${profile.id} (${profile.alias}) skipped. Change hotkey or /reload after config edits.`,
+						`model-profile: hotkey ${hotkey} is assigned more than once; profile ${profile.id} (${profile.alias}) skipped. Fix terrific.json.`,
 						"warning",
 					);
 				}
 				continue;
 			}
 			registeredHotkeys.add(hotkey);
-			const boundId = profile.id;
 			pi.registerShortcut(hotkey as Parameters<ExtensionAPI["registerShortcut"]>[0], {
-				description: `model-profile: ${boundId}`,
-				handler: async (shortcutCtx) => {
-					const { config: latest, warnings: latestWarnings } = load(shortcutCtx);
-					for (const warning of latestWarnings) report(shortcutCtx, warning, "warning");
-					const target =
-						findProfile(latest.profiles, boundId) ??
-						findProfileByHotkey(latest.profiles, hotkey);
-					if (!target) {
-						report(shortcutCtx, `Profile for hotkey ${hotkey} not found in config`, "warning");
-						return;
-					}
-					await runApply(shortcutCtx, target, "session");
-				},
+				description: `model-profile: ${profile.id}`,
+				handler: async (shortcutCtx) => dispatchHotkey(shortcutCtx, hotkey),
 			});
 		}
 	}
@@ -449,6 +475,12 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("profile", {
 		description:
 			"Manage or switch model+thinking profiles. /profile [list|status|startup| <id|alias> [session|global]]",
+		getArgumentCompletions(prefix) {
+			const query = prefix.trimStart().toLowerCase();
+			return ["list", "status", "help", "startup", "startup on", "startup off"]
+				.filter((value) => value.startsWith(query))
+				.map((value) => ({ value, label: value }));
+		},
 		handler: async (args, ctx) => {
 			const { config, warnings } = load(ctx);
 			for (const warning of warnings) report(ctx, warning, "warning");
@@ -472,7 +504,7 @@ export default function (pi: ExtensionAPI) {
 					ctx,
 					[
 						"Usage:",
-						"  /profile                      open manager (Quick apply / CRUD / startup)",
+						"  /profile                      open manager (Quick apply / Create / Edit / startup)",
 						"  /profile list                 list profiles",
 						"  /profile status               current match + startup flag",
 						"  /profile startup [on|off]     cold-start /new short-list picker",
@@ -485,7 +517,7 @@ export default function (pi: ExtensionAPI) {
 						"Global apply keeps the new defaults.",
 						"Official /model and Ctrl+P still update global defaults — use /profile for session-only.",
 						"Config: ~/.pi/agent/terrific.json → modelProfile.",
-						"After editing hotkeys, run /reload.",
+						"New hotkeys are registered on the next prompt or /profile command; retired bindings read the latest file and no-op.",
 					].join("\n"),
 				);
 				return;
@@ -550,6 +582,10 @@ export default function (pi: ExtensionAPI) {
 		pi.appendEntry(CURRENT_SESSION_ENTRY, selection);
 	});
 
+	pi.on("before_agent_start", async (_event, ctx) => {
+		await ensureHotkeys(ctx);
+	});
+
 	pi.on("session_start", async (event: SessionStartEvent, ctx) => {
 		const { config, warnings } = load(ctx);
 		for (const warning of warnings) report(ctx, warning, "warning");
@@ -574,9 +610,23 @@ export default function (pi: ExtensionAPI) {
 						provider: m.provider,
 						id: m.id,
 						name: typeof m.name === "string" ? m.name : undefined,
+						reasoning: Boolean(m.reasoning),
+						thinkingLevelMap: m.thinkingLevelMap,
 					})),
+				disableStartup: () => {
+					const written = patchModelProfileSection({ startup: false }, getAgentDir());
+					if (!written.ok) {
+						report(ctx, `Failed to disable startup picker: ${written.error}`, "error");
+						return false;
+					}
+					report(ctx, `Startup picker disabled for future sessions (${written.path})`);
+					return true;
+				},
 				ui: {
-					select: (title, options) => selectTuiOption(ctx, title, options, { cancelAction: "back" }),
+					select: (title, options, initialSelectedValue) => selectTuiOption(ctx, title, options, {
+						cancelAction: "back",
+						...(initialSelectedValue ? { initialSelectedValue } : {}),
+					}),
 					selectStartup: (title, options) => selectStartupOption(ctx, title, options),
 					selectScope: (title, options) => selectScopeOption(ctx, title, options),
 					selectSearchable: (title, items, settings) =>

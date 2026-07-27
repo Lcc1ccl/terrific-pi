@@ -10,7 +10,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 import { loadAuxiliaryConfig, parseModelRef, resolveAuxiliaryConfigPath, resolveTaskRoute } from "../lib/config.ts";
-import { CONFIGURABLE_AUXILIARY_TASKS, runAuxiliaryConfigTui } from "../lib/configure.ts";
+import { VISIBLE_AUXILIARY_TASKS, runAuxiliaryConfigTui } from "../lib/configure.ts";
 import { buildResearchRequest, delegateResearch, validateResearchOutput } from "../lib/delegation.ts";
 import { createFinalizationToolLock, createGitFinalizeReceipt, finalizeGit, GitFinalizeError, hasSiblingToolCall } from "../lib/git-finalize.ts";
 import {
@@ -137,6 +137,7 @@ function recentAuxiliaryErrors(entries: readonly unknown[]): string[] {
 		const record = entry as { type?: unknown; customType?: unknown; data?: unknown };
 		if (record.type !== "custom" || record.customType !== AUXILIARY_USAGE_ENTRY_TYPE || !isAuxiliaryUsageEntry(record.data)) continue;
 		if (record.data.status !== "error" && record.data.status !== "timeout") continue;
+		if (record.data.task === "pilot_router") continue;
 		if (seen.has(record.data.task)) continue;
 		seen.add(record.data.task);
 		errors.push(`${record.data.task}=${record.data.errorCode ?? record.data.status}`);
@@ -502,7 +503,13 @@ export default function auxiliary(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("aux", {
-		description: "Configure auxiliary models, inspect routes, or summarize text (config|status|tasks|summarize)",
+		description: "Configure auxiliary models, inspect routes, or summarize text (config|status|summarize)",
+		getArgumentCompletions(prefix) {
+			const query = prefix.trim().toLowerCase();
+			return ["config", "status", "summarize"]
+				.filter((value) => value.startsWith(query))
+				.map((value) => ({ value, label: value }));
+		},
 		handler: async (args, ctx) => {
 			const trimmed = args.trim();
 			const [action = ctx.mode === "tui" ? "config" : "status", ...rest] = trimmed ? trimmed.split(/\s+/) : [];
@@ -511,19 +518,23 @@ export default function auxiliary(pi: ExtensionAPI) {
 					ctx.ui.notify("/aux config requires TUI mode", "warning");
 					return;
 				}
-				await runAuxiliaryConfigTui(ctx, getAgentDir());
+				await runAuxiliaryConfigTui(
+					ctx,
+					getAgentDir(),
+					pi.getCommands?.().some((command) => command.name === "vision-handoff") ?? false,
+				);
 				return;
 			}
 
 			const config = load(ctx);
-			if (action === "status" || action === "tasks") {
+			if (action === "status") {
 				const branch = ctx.sessionManager.getBranch();
 				const lines = [
 					`auxiliary: ${config.enabled ? "enabled" : "disabled"}`,
 					`config: ${resolveAuxiliaryConfigPath(getAgentDir())}`,
 					`main: ${ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "none"}`,
 				];
-				for (const task of CONFIGURABLE_AUXILIARY_TASKS) {
+				for (const task of VISIBLE_AUXILIARY_TASKS) {
 					const route = resolveTaskRoute(config, task);
 					const selected = routeModel(route, ctx);
 					const routing = config.tasks[task]?.useAuxiliary === false ? "main" : "aux";
@@ -566,7 +577,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 				}
 				return;
 			}
-			ctx.ui.notify("Usage: /aux [config|status|tasks|summarize <text>]", "warning");
+			ctx.ui.notify("Usage: /aux [config|status|summarize <text>]", "warning");
 		},
 	});
 

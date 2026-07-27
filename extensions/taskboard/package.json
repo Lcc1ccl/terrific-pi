@@ -1,6 +1,6 @@
 {
   "name": "taskboard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Structured task board and live tool activity HUD for Pi",
   "type": "module",
   "keywords": ["pi-package", "pi-extension", "taskboard", "progress", "hud"],

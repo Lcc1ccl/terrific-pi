@@ -56,3 +56,27 @@ it("uses injected bindings for wrapping navigation and selection", async () => {
 	assert.match(rendered, /O select/);
 	assert.match(rendered, /X back/);
 });
+
+it("preselects the requested option", async () => {
+	const value = await selectTuiOption({
+		ui: {
+			custom: async (factory: any) => new Promise<string | undefined>((resolve) => {
+				const component = factory(
+					{ requestRender() {} },
+					{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+					{
+						matches: (data: string, binding: string) => data === "\r" && binding === "tui.select.confirm",
+						getKeys: () => [],
+					},
+					resolve,
+				);
+				component.handleInput("\r");
+			}),
+		},
+	} as never, "Thinking level", ["off", "medium", "high"], {
+		cancelAction: "back",
+		initialSelectedValue: "medium",
+	} as any);
+
+	assert.equal(value, "medium");
+});

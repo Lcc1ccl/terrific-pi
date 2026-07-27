@@ -217,6 +217,81 @@ describe("/new lifecycle", () => {
 	});
 });
 
+describe("startup disable integration", () => {
+	it("persists startup=false and keeps the active picker open", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "mp-startup-disable-"));
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
+			modelProfile: { startup: true, profiles: [] },
+		}), "utf8");
+
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		try {
+			const handlers = new Map<string, Array<(event: any, ctx: any) => Promise<void>>>();
+			modelProfileExtension({
+				on(name: string, handler: (event: any, ctx: any) => Promise<void>) {
+					const list = handlers.get(name) ?? [];
+					list.push(handler);
+					handlers.set(name, list);
+				},
+				registerCommand() {},
+				registerShortcut() {},
+				appendEntry() {},
+				getThinkingLevel: () => "medium",
+				setThinkingLevel() {},
+				setModel: async () => true,
+			} as never);
+
+			let pickerVisits = 0;
+			const notifications: string[] = [];
+			const ctx: any = {
+				cwd: agentDir,
+				hasUI: true,
+				mode: "tui",
+				model: { provider: "openai", id: "gpt-current", reasoning: true },
+				isProjectTrusted: () => false,
+				sessionManager: { getSessionFile: () => undefined },
+				modelRegistry: {
+					find: (provider: string, id: string) => ({ provider, id, reasoning: true }),
+					getAvailable: () => [],
+				},
+				ui: {
+					custom: async (factory: any) => new Promise<string | undefined>((resolve) => {
+						const component = factory(
+							{ requestRender() {} },
+							{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+							{
+								matches: (data: string, binding: string) =>
+									(data === "d" && binding === "tui.select.down")
+									|| (data === "e" && binding === "tui.select.confirm")
+									|| (data === "x" && binding === "tui.select.cancel"),
+								getKeys: () => [],
+							},
+							resolve,
+						);
+						pickerVisits += 1;
+						if (pickerVisits === 1) {
+							component.handleInput("d");
+							component.handleInput("e");
+						} else component.handleInput("x");
+					}),
+					notify: (message: string) => notifications.push(message),
+				},
+			};
+
+			await handlers.get("session_start")?.[0]?.({ reason: "startup" }, ctx);
+
+			const saved = JSON.parse(readFileSync(join(agentDir, "terrific.json"), "utf8"));
+			assert.equal(saved.modelProfile.startup, false);
+			assert.equal(pickerVisits, 2);
+			assert.ok(notifications.some((message) => message.includes("disabled for future sessions")));
+		} finally {
+			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+		}
+	});
+});
+
 describe("readPreviousSessionSelection", () => {
 	it("reads the exact model and thinking captured before /new", () => {
 		const dir = mkdtempSync(join(tmpdir(), "mp-previous-session-"));
@@ -468,6 +543,47 @@ describe("runStartupPicker", () => {
 		assert.deepEqual(result, { action: "skipped", reason: "startup-disabled" });
 	});
 
+	it("turns off future startup and keeps the current picker open", async () => {
+		const titles: string[] = [];
+		const optionSets: string[][] = [];
+		const answers = [
+			"Turn off future startup picker",
+			profileLabel(config.profiles[0]!),
+			"session — this chat only",
+		];
+		let disableCalls = 0;
+		const result = await runStartupPicker({
+			reason: "startup",
+			hasUI: true,
+			config,
+			deps: deps(),
+			currentModel: current,
+			currentThinking: "medium",
+			getAvailable: () => [],
+			disableStartup: () => {
+				disableCalls += 1;
+				return true;
+			},
+			ui: {
+				select: async (title, options) => {
+					titles.push(title);
+					optionSets.push([...options]);
+					return answers.shift();
+				},
+			},
+		});
+
+		assert.equal(disableCalls, 1);
+		assert.equal(result.action, "applied");
+		assert.deepEqual(titles, [
+			"Startup model profile",
+			"Startup model profile · future startup off",
+			"Apply scope",
+		]);
+		assert.ok(optionSets[0]?.includes("Turn off future startup picker"));
+		assert.ok(!optionSets[1]?.includes("Turn off future startup picker"));
+	});
+
 	it("uses the dedicated startup selector only for the main list", async () => {
 		let startupCalls = 0;
 		const nestedTitles: string[] = [];
@@ -538,13 +654,15 @@ describe("runStartupPicker", () => {
 		assert.ok(seen!.some((line) => line.includes("lunamax")));
 	});
 
-	it("browse all still works as last option", async () => {
+	it("browse all asks for thinking before scope and applies the choice", async () => {
 		const answers = [
 			"0 · Browse all models…",
 			"openai",
 			"openai/gpt-5.6-luna",
+			"high",
 			"session — this chat only",
 		];
+		let thinking: "medium" | "high" = "medium";
 		const settings = {
 			defaultProvider: "openai",
 			defaultModel: "gpt-5.6-sol",
@@ -555,7 +673,8 @@ describe("runStartupPicker", () => {
 			hasUI: true,
 			config,
 			deps: deps({
-				getThinkingLevel: () => "max",
+				getThinkingLevel: () => thinking,
+				setThinkingLevel: (level) => { thinking = level as "medium" | "high"; },
 				snapshotSettingsFile: () => ({
 					ok: true,
 					path: "/settings.json",
@@ -577,14 +696,15 @@ describe("runStartupPicker", () => {
 			currentModel: current,
 			currentThinking: "medium",
 			getAvailable: () => [
-				{ provider: "openai", id: "gpt-5.6-luna" },
-				{ provider: "openai", id: "gpt-5.6-sol" },
+				{ provider: "openai", id: "gpt-5.6-luna", reasoning: true },
+				{ provider: "openai", id: "gpt-5.6-sol", reasoning: true },
 			],
 			ui: { select: async () => answers.shift() },
 		});
 		assert.equal(result.action, "applied");
 		if (result.action === "applied" && result.source === "manual") {
 			assert.equal(result.model.id, "gpt-5.6-luna");
+			assert.equal(result.thinking, "high");
 			assert.equal(result.settingsRestored, true);
 		}
 		assert.deepEqual(settings, {
@@ -594,18 +714,21 @@ describe("runStartupPicker", () => {
 		});
 	});
 
-	it("browse all uses searchable model list when provided", async () => {
+	it("browse all uses searchable models and supported thinking levels", async () => {
 		const searchableCalls: Array<{ title: string; values: string[] }> = [];
 		const settings = {
 			defaultProvider: "openai",
 			defaultModel: "gpt-5.6-sol",
 			defaultThinkingLevel: "medium" as const,
 		};
+		let thinking: "medium" | "max" = "medium";
 		const result = await runStartupPicker({
 			reason: "startup",
 			hasUI: true,
 			config,
 			deps: deps({
+				getThinkingLevel: () => thinking,
+				setThinkingLevel: (level) => { thinking = level as "medium" | "max"; },
 				setModel: async (model) => {
 					settings.defaultProvider = model.provider;
 					settings.defaultModel = model.id;
@@ -619,14 +742,18 @@ describe("runStartupPicker", () => {
 			currentModel: current,
 			currentThinking: "medium",
 			getAvailable: () => [
-				{ provider: "openai", id: "gpt-5.6-luna", name: "Luna" },
-				{ provider: "openai", id: "gpt-5.6-sol" },
-				{ provider: "anthropic", id: "claude-fable-5" },
+				{ provider: "openai", id: "gpt-5.6-luna", name: "Luna", reasoning: true, thinkingLevelMap: { max: "max" } },
+				{ provider: "openai", id: "gpt-5.6-sol", reasoning: true },
+				{ provider: "anthropic", id: "claude-fable-5", reasoning: true },
 			],
 			ui: {
-				select: async (title) => {
+				select: async (title, options) => {
 					if (title === "Startup model profile") return "0 · Browse all models…";
 					if (title === "Browse models — provider") return "openai";
+					if (title === "Thinking level") {
+						assert.deepEqual(options, ["off", "minimal", "low", "medium", "high", "max"]);
+						return "max";
+					}
 					if (title === "Apply scope") return "global — also update defaults";
 					return undefined;
 				},
@@ -642,6 +769,7 @@ describe("runStartupPicker", () => {
 		assert.deepEqual(searchableCalls[0]!.values, ["openai/gpt-5.6-luna", "openai/gpt-5.6-sol"]);
 		if (result.action === "applied" && result.source === "manual") {
 			assert.equal(result.model.id, "gpt-5.6-luna");
+			assert.equal(result.thinking, "max");
 		}
 	});
 });

@@ -40,9 +40,12 @@ describe("auxiliary extension registration", () => {
 		assert.deepEqual([...commands.keys()], ["aux"]);
 		const auxCommand = commands.get("aux") as {
 			description: string;
+			getArgumentCompletions(prefix: string): Array<{ value: string }>;
 			handler(args: string, ctx: unknown): Promise<void>;
 		};
 		assert.match(auxCommand.description, /config/);
+		assert.deepEqual(auxCommand.getArgumentCompletions("").map((item) => item.value), ["config", "status", "summarize"]);
+		assert.deepEqual(auxCommand.getArgumentCompletions("st").map((item) => item.value), ["status"]);
 		const notifications: string[] = [];
 		await auxCommand.handler("config", {
 			mode: "print",
@@ -92,6 +95,7 @@ describe("auxiliary command interaction", () => {
 			appendEntry() {},
 			setSessionName() {},
 			getSessionName() { return undefined; },
+			getCommands() { return [{ name: "vision-handoff" }]; },
 			exec: async () => ({ code: 0, stdout: "", stderr: "", killed: false }),
 			getActiveTools() { return ["read", "grep"]; },
 		};
@@ -129,6 +133,7 @@ describe("auxiliary command interaction", () => {
 			else process.env.PI_CODING_AGENT_DIR = previous;
 		}
 		assert.match(titles[0] ?? "", /Auxiliary Models/);
+		assert.match(titles[0] ?? "", /Vision: external/);
 		assert.equal(canConfigureAuxiliary(["read", "grep", "find", "ls"]), true);
 	});
 
@@ -172,6 +177,14 @@ describe("auxiliary command interaction", () => {
 								thinking: "low", status: "timeout", fallbackIndex: 0, startedAt: 3, durationMs: 4, errorCode: "timeout",
 							},
 						},
+						{
+							type: "custom",
+							customType: "terrific-pi:auxiliary-usage-v1",
+							data: {
+								version: 1, id: "internal-failed", task: "pilot_router", executor: "call", provider: "openai", model: "mini",
+								thinking: "off", status: "error", fallbackIndex: 0, startedAt: 5, durationMs: 6, errorCode: "provider_error",
+							},
+						},
 					],
 				},
 				ui: { notify(message: string) { notifications.push(message); } },
@@ -183,8 +196,15 @@ describe("auxiliary command interaction", () => {
 		const message = notifications.at(-1) ?? "";
 		assert.match(message, /text_summary: aux/);
 		assert.match(message, /git finalize: confirm on .*headless off .*push on/);
-		assert.match(message, /usage: 2 calls .*12 tokens .*\$0\.25 .*unknown cost/);
+		assert.match(message, /usage: 3 calls .*12 tokens .*\$0\.25 .*unknown cost/);
 		assert.match(message, /recent auxiliary errors: web_research=timeout/);
+		assert.doesNotMatch(message, /pilot_router/);
+		await commands.get("aux").handler("tasks", {
+			mode: "print",
+			ui: { notify(value: string) { notifications.push(value); } },
+		});
+		assert.match(notifications.at(-1) ?? "", /Usage: \/aux/);
+		assert.doesNotMatch(notifications.at(-1) ?? "", /auxiliary: enabled/);
 	});
 });
 

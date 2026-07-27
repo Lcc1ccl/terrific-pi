@@ -332,7 +332,7 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	pi.registerCommand("btw", {
-		description: "Ask a side question without polluting the main session (status|config|context=none)",
+		description: "Ask a side question without polluting the main session (status|config|context=current|context=none)",
 		getArgumentCompletions: (prefix) => ["status", "config", "context=current", "context=none"].filter((option) => option.startsWith(prefix.trim().toLowerCase())).map((value) => ({ value, label: value })),
 		handler: async (args, ctx) => {
 			const raw = args.trim();
