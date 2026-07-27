@@ -45,7 +45,7 @@ Tool calls execute sequentially. Invalid snapshots throw without changing memory
 
 The Widget key is `terrific-pi:taskboard` and uses Pi theme tokens. Its compact first line keeps the goal, completed/total task count, current step, and current-step active time together. The latest blocker, update, or verification may use one additional line.
 
-`taskboard.activityMode` controls runtime activity independently from task state. Existing `processView` config is read only when `taskboard` is absent; the next `/taskboard default <mode>` migrates it atomically:
+`taskboard.activityMode` controls runtime activity independently from task state and is reread before each request. Existing `processView` config is read only when `taskboard` is absent; the next `/taskboard default <mode>` migrates it atomically:
 
 - `full` (default): show aggregate runtime activity in compact task views and detailed sanitized activity in expanded task views. Compact mode intentionally shows counts/outcomes rather than duplicating native tool-row labels.
 - `task`: hide passive and collapsed runtime activity; expanded task panels still show it for inspection. Use it only when another stable activity surface is enabled.
@@ -63,6 +63,14 @@ When Pi's native tool expansion is enabled, compact mode switches to a live pane
 LLM turn wall-clock (current turn / session) stays in statusline `duration`; Taskboard only shows task/step active time and usage totals.
 
 The panel is responsive, bounded to 15 lines, and `/taskboard full` pins it open. Step time pauses while Waiting, Blocked, or Interrupted and resumes if the same step becomes active again.
+
+### Terrific Appearance Profile
+
+Taskboard reads `appearance.profile` only from `$PI_CODING_AGENT_DIR/terrific.json`. The exact value `terrific-native-v1` enables the Terrific task Widget; missing, `off`, unknown, or invalid values keep the existing renderer unchanged. Parse errors fail closed and stay silent in Taskboard. External edits are reread on session changes, Taskboard commands, and before the next request.
+
+The active compact Widget uses a glyph and literal status label in addition to semantic theme tone. Step glyphs are `□` pending, `▶` active, `✓` done, and `✗` failed. With `TERM=dumb`, they fall back to `[ ]`, `>`, `+`, and `x`. Compact output is capped at two lines below 72 columns and three lines otherwise.
+
+The active expanded Widget keeps one outer pane. Its height cap follows the public terminal row count: 10 lines at 16 rows, 12 lines at 20 rows, and 15 lines at 24 or more rows, with a safe 24-row fallback. Under pressure it retains the current and failed steps plus the blocker before ordinary steps or activity. To roll back, remove `appearance.profile` or set it to `off`; the next request remounts the baseline Widget while task state, receipts, telemetry, and configuration remain intact.
 
 When activity is visible, only `read`, `edit`, `write`, `grep`, `find`, and `ls` may show a sanitized path. Paths outside the workspace show only their basename. `bash` never shows its command, and unknown tools never serialize arguments or results.
 
@@ -127,6 +135,9 @@ Tree navigation and resume reconstruct only the selected branch. Active tool tel
 cd extensions/taskboard
 npm install
 npm run check
+npm run benchmark
 ```
+
+`npm run benchmark` is opt-in and measures 30 batched samples of the pure active Widget render at 160 columns; it fails when p95 is not below 16 ms. It is intentionally outside `npm run check`.
 
 The package has no runtime dependency beyond Pi's peer APIs and TypeBox supplied by Pi.

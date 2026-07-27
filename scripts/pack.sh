@@ -93,8 +93,12 @@ tar -C "$ROOT" \
 			has_pi="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); meta=d.get("terrificPi",{}); print("1" if d.get("pi",{}).get("extensions") and not (isinstance(meta,dict) and meta.get("install") is False) else "0")' "$pkg")"
 			[[ "$has_pi" == "1" ]] || continue
 		fi
-		echo "../vendor/terrific-pi/extensions/$base"
-	done
+		# taskboard must register before presentation; all other package order remains lexical.
+		sort_key="$base"
+		[[ "$base" == "taskboard" ]] && sort_key="taskboard-0"
+		[[ "$base" == "presentation" ]] && sort_key="taskboard-1"
+		printf '%s\t%s\n' "$sort_key" "../vendor/terrific-pi/extensions/$base"
+	done | sort | cut -f2-
 	echo ">>"
 	echo "external_packages<<"
 	if [[ -f "$STAGE/$NAME/agent/required-external-packages.json" ]]; then

@@ -255,6 +255,45 @@ describe("fast global preference", () => {
 		}
 	});
 
+	it("rereads external edits before the next provider request", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "fast-live-config-"));
+		saveFastEnabled(false, agentDir);
+		const { ctx, handlers, restoreEnv, statuses } = createExtensionHarness({ agentDir });
+		try {
+			for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
+			assert.equal(statuses.get("fast"), undefined);
+
+			saveFastEnabled(true, agentDir);
+			for (const handler of handlers.get("before_agent_start") ?? []) await handler({}, ctx);
+			const enabled = { model: "gpt-5.6-sol" } as { model: string; service_tier?: string };
+			for (const handler of handlers.get("before_provider_request") ?? []) handler({ payload: enabled }, ctx);
+			assert.equal(enabled.service_tier, "priority");
+			assert.equal(statuses.get("fast"), "");
+
+			saveFastEnabled(false, agentDir);
+			const disabled = { model: "gpt-5.6-sol" } as { model: string; service_tier?: string };
+			for (const handler of handlers.get("before_provider_request") ?? []) handler({ payload: disabled }, ctx);
+			assert.equal(disabled.service_tier, undefined);
+		} finally {
+			restoreEnv();
+		}
+	});
+
+	it("keeps the file as truth when a command write fails", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "fast-write-failure-"));
+		saveFastEnabled(false, agentDir);
+		writeFileSync(`${join(agentDir, "terrific.json")}.lock`, JSON.stringify({ token: "other" }), "utf8");
+		const { commands, ctx, notifications, restoreEnv, statuses } = createExtensionHarness({ agentDir });
+		try {
+			await commands.get("fast")!.handler("on", ctx);
+			assert.equal(loadFastEnabled(agentDir), false);
+			assert.equal(statuses.get("fast"), undefined);
+			assert.match(notifications.at(-1)?.message ?? "", /failed to write terrific\.json/i);
+		} finally {
+			restoreEnv();
+		}
+	});
+
 	it("injects only for GPT models and skips non-GPT or unknown APIs", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "fast-inject-"));
 		saveFastEnabled(true, agentDir);

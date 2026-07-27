@@ -1,13 +1,15 @@
 {
   "name": "pilot",
-  "version": "0.1.0",
-  "description": "Pilot control-plane activation and Auxiliary routing spike for pi",
+  "version": "0.2.0",
+  "description": "Manual human-in-the-loop Copilot for constrained primary-solo Pi work",
   "type": "module",
   "keywords": ["pi-package", "pi-extension", "pilot", "workflow"],
   "license": "MIT",
-  "terrificPi": { "install": false },
   "pi": {
-    "extensions": ["./extensions/pilot.ts"]
+    "extensions": ["./extensions/pilot.ts"],
+    "subagents": {
+      "agents": ["./agents"]
+    }
   },
   "scripts": {
     "test": "node --test --experimental-strip-types tests/*.test.ts",
@@ -22,5 +24,5 @@
     "@types/node": "^26.0.0",
     "typescript": "^6.0.3"
   },
-  "files": ["extensions", "lib", "package.json", "README.md", "tsconfig.json"]
+  "files": ["agents", "extensions", "lib", "package.json", "README.md", "tsconfig.json"]
 }

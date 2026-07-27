@@ -228,6 +228,7 @@ describe("model profile configurator", () => {
 			thinking: "medium",
 			hotkey: "ctrl+alt+9",
 		});
+		assert.ok(ui.notifications.some(({ message }) => /reload/i.test(message)));
 	});
 
 	it("edits thinking and requires confirmation before delete", async () => {
@@ -334,7 +335,7 @@ describe("model profile configurator", () => {
 		assert.equal(saved.startup, true);
 		assert.equal(saved.startupScope, "global");
 		assert.equal(saved.openHotkey, "ctrl+alt+p");
-		assert.ok(ui.notifications.some(({ message }) => /next prompt|\/profile command/i.test(message)));
+		assert.ok(ui.notifications.some(({ message }) => /reload/i.test(message)));
 	});
 
 	it("creates a project override from an effective global profile", async () => {

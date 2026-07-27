@@ -19,6 +19,7 @@ export interface PresentationCompatibilityOptions {
 	isUserMessageBoxEnabled(): boolean;
 	isCompactToolsEnabled(): boolean;
 	isArtifactProjectionEnabled?(): boolean;
+	isTerrificNativeActive?(): boolean;
 	getTheme(): CompatibilityTheme | undefined;
 	resolveSkillName?(args: unknown, cwd: string): string | undefined;
 	now?(): number;
@@ -37,6 +38,7 @@ const DISABLED_OPTIONS: PresentationCompatibilityOptions = {
 	isUserMessageBoxEnabled: () => false,
 	isCompactToolsEnabled: () => false,
 	isArtifactProjectionEnabled: () => false,
+	isTerrificNativeActive: () => false,
 	getTheme: () => undefined,
 };
 
@@ -46,6 +48,7 @@ export function installPresentationCompatibility(
 	const toolController = createToolRenderController({
 		isEnabled: options.isCompactToolsEnabled,
 		isArtifactProjectionEnabled: options.isArtifactProjectionEnabled,
+		isTerrificNativeActive: options.isTerrificNativeActive,
 		getTheme: options.getTheme,
 		resolveSkillName: options.resolveSkillName,
 		now: options.now ?? Date.now,
@@ -63,6 +66,7 @@ export function installPresentationCompatibility(
 					original as (this: unknown, width: number) => string[],
 					options.getTheme(),
 					options.isUserMessageBoxEnabled(),
+					options.isTerrificNativeActive?.() ?? false,
 				);
 			},
 		),

@@ -1,0 +1,236 @@
+
+===== actual tmux PTY: startup named seed session =====
+
+[1m[38;2;125;207;255mTerrific[0m
+[38;2;88;88;88m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[38;2;224;175;104m[Context][39m
+[38;2;88;88;88m  <PTY_TMP>/pi/agent/AGENTS.md[39m
+
+[38;2;224;175;104m[Extensions][39m
+[38;2;88;88;88m  appearance.ts, btw.ts, mode.ts, presentation.ts, statusline.ts, taskboard.ts[39m
+
+[38;2;224;175;104m[Themes][39m
+[38;2;88;88;88m  terrific-night[39m
+
+
+ [38;2;224;175;104mWarning: No models available. Use /login to log into a provider via OAuth or API key. See:
+[39m [38;2;224;175;104m  <REPO>/extensions/appearance/node_modules/@earendil-works/pi-coding-agent/docs/providers.md
+[39m [38;2;224;175;104m  <REPO>/extensions/appearance/node_modules/@earendil-works/pi-coding-agent/docs/models.md[39m
+
+[38;2;88;88;88m─ ❯ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m [7m [0m
+[38;2;88;88;88m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;2;125;207;255menter[39m submit  ·  [38;2;125;207;255mshift+enter/ctrl+j[39m newline  ·  [38;2;125;207;255mctrl+o[39m tools  ·  [38;2;125;207;255mctrl+t[39m thinking  ·  [38;2;125;207;255mctrl+l[39m model
+  [38;2;108;108;108m<PTY_TMP>/project[39m                                                                                                     [38;2;225;225;225munknown[38;2;88;88;88m · [38;2;225;225;225mEDIT
+[39m  [38;2;88;88;88mReady · [38;2;108;108;108mt [38;2;225;225;225m0s/0s[39m                                                                                                                           [38;2;108;108;108min [38;2;225;225;225m0[38;2;88;88;88m · [38;2;108;108;108mout [38;2;225;225;225m0[38;2;88;88;88m · [38;2;108;108;108mctx [38;2;88;88;88m?
+
+
+===== actual tmux PTY: after Ctrl+O resource expansion =====
+
+[1m[38;2;125;207;255mTerrific[0m
+[38;2;88;88;88m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[38;2;224;175;104m[Context][39m
+[38;2;88;88;88m  <PTY_TMP>/pi/agent/AGENTS.md[39m
+
+[38;2;224;175;104m[Extensions][39m
+  [38;2;125;207;255muser[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/appearance/extensions/appearance.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/btw/extensions/btw.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/mode/extensions/mode.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/presentation/extensions/presentation.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/statusline/extensions/statusline.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/taskboard/extensions/taskboard.ts[39m
+
+[38;2;224;175;104m[Themes][39m
+  [38;2;125;207;255muser[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/appearance/themes/terrific-night.json[39m
+
+
+ [38;2;224;175;104mWarning: No models available. Use /login to log into a provider via OAuth or API key. See:
+[39m [38;2;224;175;104m  <REPO>/extensions/appearance/node_modules/@earendil-works/pi-coding-agent/docs/providers.md
+[39m [38;2;224;175;104m  <REPO>/extensions/appearance/node_modules/@earendil-works/pi-coding-agent/docs/models.md[39m
+
+[38;2;88;88;88m─ ❯ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m [7m [0m
+[38;2;88;88;88m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;2;125;207;255menter[39m submit  ·  [38;2;125;207;255mshift+enter/ctrl+j[39m newline  ·  [38;2;125;207;255mctrl+o[39m tools  ·  [38;2;125;207;255mctrl+t[39m thinking  ·  [38;2;125;207;255mctrl+l[39m model
+  [38;2;108;108;108m<PTY_TMP>/project[39m                                                                                                     [38;2;225;225;225munknown[38;2;88;88;88m · [38;2;225;225;225mEDIT
+[39m  [38;2;88;88;88mReady · [38;2;108;108;108mt [38;2;225;225;225m0s/0s[39m                                                                                                                           [38;2;108;108;108min [38;2;225;225;225m0[38;2;88;88;88m · [38;2;108;108;108mout [38;2;225;225;225m0[38;2;88;88;88m · [38;2;108;108;108mctx [38;2;88;88;88m?
+
+
+===== actual tmux PTY: after /new =====
+
+[1m[38;2;125;207;255mTerrific[0m
+[38;2;88;88;88m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[38;2;224;175;104m[Context][39m
+[38;2;88;88;88m  <PTY_TMP>/pi/agent/AGENTS.md[39m
+
+[38;2;224;175;104m[Extensions][39m
+  [38;2;125;207;255muser[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/appearance/extensions/appearance.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/btw/extensions/btw.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/mode/extensions/mode.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/presentation/extensions/presentation.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/statusline/extensions/statusline.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/taskboard/extensions/taskboard.ts[39m
+
+[38;2;224;175;104m[Themes][39m
+  [38;2;125;207;255muser[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/appearance/themes/terrific-night.json[39m
+
+
+
+ [38;2;125;207;255m✓ New session started[39m
+
+
+[38;2;88;88;88m─ ❯ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m [7m [0m
+[38;2;88;88;88m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;2;125;207;255menter[39m submit  ·  [38;2;125;207;255mshift+enter/ctrl+j[39m newline  ·  [38;2;125;207;255mctrl+o[39m tools  ·  [38;2;125;207;255mctrl+t[39m thinking  ·  [38;2;125;207;255mctrl+l[39m model
+  [38;2;108;108;108m<PTY_TMP>/project[39m                                                                                                     [38;2;225;225;225munknown[38;2;88;88;88m · [38;2;225;225;225mEDIT
+[39m  [38;2;88;88;88mReady · [38;2;108;108;108mt [38;2;225;225;225m0s/0s[39m                                                                                                                           [38;2;108;108;108min [38;2;225;225;225m0[38;2;88;88;88m · [38;2;108;108;108mout [38;2;225;225;225m0[38;2;88;88;88m · [38;2;108;108;108mctx [38;2;88;88;88m?
+
+
+===== actual tmux PTY: after /resume seed selection =====
+
+[1m[38;2;125;207;255mTerrific[0m
+[38;2;88;88;88m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[38;2;224;175;104m[Context][39m
+[38;2;88;88;88m  <PTY_TMP>/pi/agent/AGENTS.md[39m
+
+[38;2;224;175;104m[Extensions][39m
+  [38;2;125;207;255muser[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/appearance/extensions/appearance.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/btw/extensions/btw.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/mode/extensions/mode.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/presentation/extensions/presentation.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/statusline/extensions/statusline.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/taskboard/extensions/taskboard.ts[39m
+
+[38;2;224;175;104m[Themes][39m
+  [38;2;125;207;255muser[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/appearance/themes/terrific-night.json[39m
+
+
+ [38;2;88;88;88mResumed session[39m
+
+[38;2;88;88;88m─ ❯ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m [7m [0m
+[38;2;88;88;88m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;2;125;207;255menter[39m submit  ·  [38;2;125;207;255mshift+enter/ctrl+j[39m newline  ·  [38;2;125;207;255mctrl+o[39m tools  ·  [38;2;125;207;255mctrl+t[39m thinking  ·  [38;2;125;207;255mctrl+l[39m model
+  [38;2;108;108;108m<PTY_TMP>/project[39m                                                                                                     [38;2;225;225;225munknown[38;2;88;88;88m · [38;2;225;225;225mEDIT
+[39m  [38;2;88;88;88mReady · [38;2;108;108;108mt [38;2;225;225;225m0s/0s[39m                                                                                                                           [38;2;108;108;108min [38;2;225;225;225m0[38;2;88;88;88m · [38;2;108;108;108mout [38;2;225;225;225m0[38;2;88;88;88m · [38;2;108;108;108mctx [38;2;88;88;88m?
+
+
+===== actual tmux PTY: after Ctrl+C cleared editor draft =====
+
+[1m[38;2;125;207;255mTerrific[0m
+[38;2;88;88;88m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[38;2;224;175;104m[Context][39m
+[38;2;88;88;88m  <PTY_TMP>/pi/agent/AGENTS.md[39m
+
+[38;2;224;175;104m[Extensions][39m
+  [38;2;125;207;255muser[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/appearance/extensions/appearance.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/btw/extensions/btw.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/mode/extensions/mode.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/presentation/extensions/presentation.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/statusline/extensions/statusline.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/taskboard/extensions/taskboard.ts[39m
+
+[38;2;224;175;104m[Themes][39m
+  [38;2;125;207;255muser[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/appearance/themes/terrific-night.json[39m
+
+
+ [38;2;88;88;88mResumed session[39m
+
+[38;2;88;88;88m─ ❯ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m [7m [0m
+[38;2;88;88;88m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;2;125;207;255menter[39m submit  ·  [38;2;125;207;255mshift+enter/ctrl+j[39m newline  ·  [38;2;125;207;255mctrl+o[39m tools  ·  [38;2;125;207;255mctrl+t[39m thinking  ·  [38;2;125;207;255mctrl+l[39m model
+  [38;2;108;108;108m<PTY_TMP>/project[39m                                                                                                     [38;2;225;225;225munknown[38;2;88;88;88m · [38;2;225;225;225mEDIT
+[39m  [38;2;88;88;88mReady · [38;2;108;108;108mt [38;2;225;225;225m0s/0s[39m                                                                                                                           [38;2;108;108;108min [38;2;225;225;225m0[38;2;88;88;88m · [38;2;108;108;108mout [38;2;225;225;225m0[38;2;88;88;88m · [38;2;108;108;108mctx [38;2;88;88;88m?
+
+
+===== actual tmux PTY: after 10 sequential /reload operations =====
+
+[1m[38;2;125;207;255mTerrific[0m
+[38;2;88;88;88m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[38;2;224;175;104m[Context][39m
+[38;2;88;88;88m  <PTY_TMP>/pi/agent/AGENTS.md[39m
+
+[38;2;224;175;104m[Extensions][39m
+  [38;2;125;207;255muser[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/appearance/extensions/appearance.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/btw/extensions/btw.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/mode/extensions/mode.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/presentation/extensions/presentation.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/statusline/extensions/statusline.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/taskboard/extensions/taskboard.ts[39m
+
+[38;2;224;175;104m[Themes][39m
+  [38;2;125;207;255muser[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/appearance/themes/terrific-night.json[39m
+
+
+ [38;2;88;88;88mReloaded keybindings, extensions, skills, prompts, themes, and context files[39m
+
+[38;2;88;88;88m─ ❯ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m [7m [0m
+[38;2;88;88;88m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;2;125;207;255menter[39m submit  ·  [38;2;125;207;255mshift+enter/ctrl+j[39m newline  ·  [38;2;125;207;255mctrl+o[39m tools  ·  [38;2;125;207;255mctrl+t[39m thinking  ·  [38;2;125;207;255mctrl+l[39m model
+  [38;2;108;108;108m<PTY_TMP>/project[39m                                                                                                     [38;2;225;225;225munknown[38;2;88;88;88m · [38;2;225;225;225mEDIT
+[39m  [38;2;88;88;88mReady · [38;2;108;108;108mt [38;2;225;225;225m0s/0s[39m                                                                                                                           [38;2;108;108;108min [38;2;225;225;225m0[38;2;88;88;88m · [38;2;108;108;108mout [38;2;225;225;225m0[38;2;88;88;88m · [38;2;108;108;108mctx [38;2;88;88;88m?
+
+
+===== actual tmux PTY: after normal /quit terminal restoration =====
+
+[1m[38;2;125;207;255mTerrific[0m
+[38;2;88;88;88m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[38;2;224;175;104m[Context][39m
+[38;2;88;88;88m  <PTY_TMP>/pi/agent/AGENTS.md[39m
+
+[38;2;224;175;104m[Extensions][39m
+  [38;2;125;207;255muser[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/appearance/extensions/appearance.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/btw/extensions/btw.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/mode/extensions/mode.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/presentation/extensions/presentation.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/statusline/extensions/statusline.ts[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/taskboard/extensions/taskboard.ts[39m
+
+[38;2;224;175;104m[Themes][39m
+  [38;2;125;207;255muser[39m
+[38;2;88;88;88m    <PTY_TMP>/pi/vendor/terrific-pi/extensions/appearance/themes/terrific-night.json[39m
+
+
+ [38;2;88;88;88mReloaded keybindings, extensions, skills, prompts, themes, and context files[39m
+
+[38;2;88;88;88m─ ❯ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m
+[38;2;88;88;88m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;2;125;207;255menter[39m submit  ·  [38;2;125;207;255mshift+enter/ctrl+j[39m newline  ·  [38;2;125;207;255mctrl+o[39m tools  ·  [38;2;125;207;255mctrl+t[39m thinking  ·  [38;2;125;207;255mctrl+l[39m model
+  [38;2;108;108;108m<PTY_TMP>/project[39m                                                                                                     [38;2;225;225;225munknown[38;2;88;88;88m · [38;2;225;225;225mEDIT
+[39m  [38;2;88;88;88mReady · [38;2;108;108;108mt [38;2;225;225;225m0s/0s[39m                                                                                                                           [38;2;108;108;108min [38;2;225;225;225m0[38;2;88;88;88m · [38;2;108;108;108mout [38;2;225;225;225m0[38;2;88;88;88m · [38;2;108;108;108mctx [38;2;88;88;88m?
+
+[2m[39mTo resume this session:[0m pi --session-dir <PTY_TMP>/160x50-truecolor/sessions --session 019fa08a-cf16-7bbd-ae58-5fd262dff0c0
+__PI_EXIT__=0
+__STTY_EXACT_MATCH__
+__SHELL_READY__
+TEAM_F_SHELL_INPUT_160x50-truecolor
+__SHELL_ECHO__=TEAM_F_SHELL_INPUT_160x50-truecolor

@@ -517,7 +517,7 @@ export default function (pi: ExtensionAPI) {
 						"Global apply keeps the new defaults.",
 						"Official /model and Ctrl+P still update global defaults — use /profile for session-only.",
 						"Config: ~/.pi/agent/terrific.json → modelProfile.",
-						"New hotkeys are registered on the next prompt or /profile command; retired bindings read the latest file and no-op.",
+						"Profile targets are read from terrific.json when a registered hotkey fires; adding or changing key bindings requires /reload.",
 					].join("\n"),
 				);
 				return;
@@ -580,10 +580,6 @@ export default function (pi: ExtensionAPI) {
 		};
 		rememberPendingNewSelection(event.targetSessionFile, selection);
 		pi.appendEntry(CURRENT_SESSION_ENTRY, selection);
-	});
-
-	pi.on("before_agent_start", async (_event, ctx) => {
-		await ensureHotkeys(ctx);
 	});
 
 	pi.on("session_start", async (event: SessionStartEvent, ctx) => {

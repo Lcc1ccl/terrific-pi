@@ -445,8 +445,8 @@ async function setLayout(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
 	const layout = await selectSetting(
 		deps,
-		"Layout — single line, or stacked HUD rows (project/usage/env/activity)",
-		["single", "stacked"] satisfies readonly StatuslineLayout[],
+		"Layout — single line, stacked HUD rows, or Terrific footer",
+		["single", "stacked", "terrific"] satisfies readonly StatuslineLayout[],
 		config.layout,
 		DEFAULT_CONFIG.layout,
 	);

@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, type Focusable, visibleWidth } from "@earendil-works/pi-tui";
+import { Key, matchesKey, truncateToWidth, type Focusable, visibleWidth } from "@earendil-works/pi-tui";
 
 export type OverlayAction = "close" | "copy" | "enter" | "extra";
 
@@ -10,6 +10,12 @@ export interface TextOverlayOptions {
 	/** Called for c / Enter / extra keys before done. Return true to close. */
 	onAction?: (action: OverlayAction) => boolean | void;
 	extraKeys?: Array<{ key: string; action: OverlayAction; hint: string }>;
+}
+
+export interface TextOverlayStyle {
+	active: boolean;
+	ascii: boolean;
+	getTerminalRows?: () => number;
 }
 
 function stripAnsi(text: string): string {
@@ -33,6 +39,14 @@ function truncateVisible(text: string, width: number): string {
 	return `${out}…`;
 }
 
+function sanitizeDisplay(text: string): string {
+	return text
+		.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
+		.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+		.replace(/[\r\n\t]+/g, " ")
+		.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+}
+
 /** Simple scrollable text overlay. Esc/q close, c copy, Enter primary. */
 export class TextOverlay implements Focusable {
 	focused = false;
@@ -45,12 +59,14 @@ export class TextOverlay implements Focusable {
 	private readonly done: (action: OverlayAction) => void;
 	private readonly requestRender: () => void;
 	private readonly theme: Theme;
+	private readonly style: TextOverlayStyle;
 
 	constructor(
 		theme: Theme,
 		options: TextOverlayOptions,
 		done: (action: OverlayAction) => void,
 		requestRender: () => void = () => {},
+		style: TextOverlayStyle = { active: false, ascii: false },
 	) {
 		this.theme = theme;
 		this.title = options.title;
@@ -60,6 +76,7 @@ export class TextOverlay implements Focusable {
 		this.extraKeys = options.extraKeys ?? [];
 		this.done = done;
 		this.requestRender = requestRender;
+		this.style = style;
 	}
 
 	get plainText(): string {
@@ -115,7 +132,47 @@ export class TextOverlay implements Focusable {
 
 	invalidate(): void {}
 
+	private renderActive(width: number): string[] {
+		if (width <= 0) return [];
+		const title = sanitizeDisplay(this.title);
+		if (width < 4) return [truncateToWidth(title, width, "")];
+		const th = this.theme;
+		const w = Math.min(width, 120);
+		const inner = w - 2;
+		const rows = Math.max(1, this.style.getTerminalRows?.() ?? 24);
+		const glyph = this.style.ascii
+			? { topLeft: "+", topRight: "+", bottomLeft: "+", bottomRight: "+", horizontal: "-", vertical: "|", separator: "..." }
+			: { topLeft: "╭", topRight: "╮", bottomLeft: "╰", bottomRight: "╯", horizontal: "─", vertical: "│", separator: "…" };
+		const border = (left: string, right: string, label = "") => {
+			const clean = truncateToWidth(label, Math.max(0, inner - 2), "…");
+			const prefix = clean ? `${glyph.horizontal} ${clean} ` : "";
+			return th.fg("border", left + prefix + glyph.horizontal.repeat(Math.max(0, inner - visibleWidth(prefix))) + right);
+		};
+		const row = (content: string) => th.fg("border", glyph.vertical)
+			+ truncateToWidth(content, inner, "…", true)
+			+ th.fg("border", glyph.vertical);
+
+		let maxBody = Math.max(1, Math.min(24, this.body.length, rows - 3));
+		let overflows = this.body.length > maxBody;
+		if (overflows) maxBody = Math.max(1, Math.min(maxBody, rows - 4));
+		const maxScroll = Math.max(0, this.body.length - maxBody);
+		if (this.scroll > maxScroll) this.scroll = maxScroll;
+		const slice = this.body.slice(this.scroll, this.scroll + maxBody);
+		overflows = this.body.length > slice.length;
+
+		const lines = [border(glyph.topLeft, glyph.topRight, title)];
+		for (const line of slice) lines.push(row(` ${sanitizeDisplay(line)}`));
+		if (overflows) {
+			lines.push(row(` ${th.fg("dim", `${glyph.separator} ${this.scroll + 1}-${this.scroll + slice.length}/${this.body.length}`)}`));
+		}
+		const footer = overflows ? `Up/Down scroll · ${sanitizeDisplay(this.footer)}` : sanitizeDisplay(this.footer);
+		lines.push(row(` ${th.fg("dim", footer)}`));
+		lines.push(border(glyph.bottomLeft, glyph.bottomRight));
+		return lines.slice(0, rows);
+	}
+
 	render(width: number): string[] {
+		if (this.style.active) return this.renderActive(width);
 		if (width <= 0) return [];
 		if (width < 4) return [truncateVisible(this.title, width)];
 		const th = this.theme;

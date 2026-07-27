@@ -184,7 +184,7 @@ async function createProfile(deps: ProfileConfiguratorDeps): Promise<void> {
 		...(hotkey ? { hotkey } : {}),
 	};
 	if (persistProfiles(deps, [...config.profiles, profile])) {
-		deps.ui.notify(`Saved ${profileLabel(profile)}. Its hotkey registers on the next prompt or /profile command.`, "info");
+		deps.ui.notify(`Saved ${profileLabel(profile)}. Run /reload to register its hotkey.`, "info");
 	}
 }
 
@@ -204,6 +204,7 @@ async function editProfile(deps: ProfileConfiguratorDeps, id: string): Promise<"
 		if (!choice || choice === "Back") return "back";
 
 		let replacement: ModelProfile | undefined;
+		let hotkeyChanged = false;
 		if (choice.startsWith("Alias:")) {
 			const value = await deps.ui.input("Profile alias", profile.alias);
 			if (value === undefined) continue;
@@ -231,6 +232,7 @@ async function editProfile(deps: ProfileConfiguratorDeps, id: string): Promise<"
 				deps.ui.notify(`Hotkey "${hotkey}" is already used`, "warning");
 				continue;
 			}
+			hotkeyChanged = hotkey !== profile.hotkey;
 			replacement = { ...profile, hotkey };
 		} else if (choice === "Delete profile") {
 			if (!await deps.ui.confirm("Delete profile", `Delete ${profileLabel(profile)}? This cannot be undone.`)) continue;
@@ -245,12 +247,13 @@ async function editProfile(deps: ProfileConfiguratorDeps, id: string): Promise<"
 					persistProjectProfiles(deps, nextOverrides);
 				}
 			}
-			deps.ui.notify("Profile deleted and ids renumbered. Retired hotkeys now read the updated file.", "info");
+			deps.ui.notify("Profile deleted and ids renumbered. Run /reload to refresh hotkey bindings.", "info");
 			return "deleted";
 		}
 
 		if (replacement) {
-			persistProfiles(deps, config.profiles.map((candidate) => candidate.id === id ? replacement! : candidate));
+			const saved = persistProfiles(deps, config.profiles.map((candidate) => candidate.id === id ? replacement! : candidate));
+			if (saved && hotkeyChanged) deps.ui.notify("Hotkey saved. Run /reload to refresh the binding.", "info");
 		}
 	}
 }
@@ -360,7 +363,7 @@ async function configureStartup(deps: ProfileConfiguratorDeps): Promise<void> {
 			}
 			const result = patchModelProfileSection({ openHotkey: hotkey }, deps.agentDir);
 			if (!result.ok) deps.ui.notify(`Failed to update terrific.json: ${result.error}`, "error");
-			else deps.ui.notify("Hotkey saved. It registers on the next prompt or /profile command.", "info");
+			else deps.ui.notify("Hotkey saved. Run /reload to register it.", "info");
 		}
 	}
 }
