@@ -254,7 +254,7 @@ describe("model profile configurator", () => {
 		]);
 	});
 
-	it("edits alias, model, and hotkey", async () => {
+	it("edits alias and model without exposing per-profile hotkeys", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "mp-configure-fields-"));
 		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
 			modelProfile: { profiles: [profile()] },
@@ -265,12 +265,11 @@ describe("model profile configurator", () => {
 				"1 · default",
 				"Alias",
 				"Model",
-				"Hotkey",
 				"Back",
 				"Back",
 				"Done",
 			],
-			inputs: ["work", "ctrl+alt+9"],
+			inputs: ["work"],
 			models: ["anthropic/claude-test"],
 		});
 
@@ -288,9 +287,11 @@ describe("model profile configurator", () => {
 			provider: "anthropic",
 			model: "claude-test",
 			thinking: "medium",
-			hotkey: "ctrl+alt+9",
+			hotkey: "alt+1",
 		});
-		assert.ok(ui.notifications.some(({ message }) => /reload/i.test(message)));
+		const profileDialogs = ui.dialogs.filter(({ title }) => title.includes("openai/gpt-test") || title.includes("anthropic/claude-test"));
+		assert.ok(profileDialogs.length > 0);
+		assert.ok(profileDialogs.every(({ options }) => options.every((option) => !option.startsWith("Hotkey:"))));
 	});
 
 	it("edits thinking and requires confirmation before delete", async () => {
