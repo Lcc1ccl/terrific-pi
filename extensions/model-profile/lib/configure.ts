@@ -220,14 +220,12 @@ async function editProfile(deps: ProfileConfiguratorDeps, id: string): Promise<"
 			`Alias: ${profile.alias}`,
 			`Model: ${profile.provider}/${profile.model}`,
 			`Thinking: ${profile.thinking}`,
-			`Hotkey: ${profile.hotkey ?? "none"}`,
 			"Delete profile",
 			"Back",
 		]);
 		if (!choice || choice === "Back") return "back";
 
 		let replacement: ModelProfile | undefined;
-		let hotkeyChanged = false;
 		if (choice.startsWith("Alias:")) {
 			const value = await deps.ui.input("Profile alias", profile.alias);
 			if (value === undefined) continue;
@@ -247,16 +245,6 @@ async function editProfile(deps: ProfileConfiguratorDeps, id: string): Promise<"
 			const thinking = await deps.ui.select("Thinking level", levels, profile.thinking);
 			if (!thinking) continue;
 			replacement = { ...profile, thinking: thinking as ThinkingLevel };
-		} else if (choice.startsWith("Hotkey:")) {
-			const value = await deps.ui.input("Profile hotkey", profile.hotkey ?? "");
-			if (value === undefined || !value.trim()) continue;
-			const hotkey = normalizeHotkey(value);
-			if (config.openHotkey === hotkey || config.profiles.some((candidate) => candidate.id !== id && candidate.hotkey === hotkey)) {
-				deps.ui.notify(`Hotkey "${hotkey}" is already used`, "warning");
-				continue;
-			}
-			hotkeyChanged = hotkey !== profile.hotkey;
-			replacement = { ...profile, hotkey };
 		} else if (choice === "Delete profile") {
 			if (!await deps.ui.confirm("Delete profile", `Delete ${profileLabel(profile)}? This cannot be undone.`)) continue;
 			const renumbered = renumberProfilesAfterDelete(config.profiles, id);
@@ -275,8 +263,7 @@ async function editProfile(deps: ProfileConfiguratorDeps, id: string): Promise<"
 		}
 
 		if (replacement) {
-			const saved = persistProfiles(deps, config.profiles.map((candidate) => candidate.id === id ? replacement! : candidate));
-			if (saved && hotkeyChanged) deps.ui.notify("Hotkey saved. Run /reload to refresh the binding.", "info");
+			persistProfiles(deps, config.profiles.map((candidate) => candidate.id === id ? replacement! : candidate));
 		}
 	}
 }
