@@ -39,7 +39,7 @@ export const DEFAULT_AUXILIARY_CONFIG: AuxiliaryConfig = {
 		compression: { thinking: "low", timeoutMs: 120_000, maxOutputTokens: 12_000, maxRetries: 0 },
 		title_generation: { timeoutMs: 30_000, maxOutputTokens: 96 },
 		text_summary: { maxOutputTokens: 3_000, fallbackModels: ["openai/gpt-5.6-luna"] },
-		commit_message: { timeoutMs: 30_000, maxOutputTokens: 256 },
+		commit_message: { thinking: "off", timeoutMs: 30_000, maxOutputTokens: 256 },
 		btw: { thinking: "low", maxOutputTokens: 2_000 },
 		web_research: {
 			model: "openai/gpt-5.6-luna",

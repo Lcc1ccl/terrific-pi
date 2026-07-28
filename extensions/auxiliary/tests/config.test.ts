@@ -140,6 +140,18 @@ describe("auxiliary config", () => {
 		assert.deepEqual(route.fallbackModels, ["openai/fallback", "grok/a", "grok/b"]);
 	});
 
+	test("keeps commit subjects non-reasoning unless explicitly overridden", () => {
+		const inherited = mergeAuxiliaryConfig({
+			auxiliary: { default: { thinking: "high" }, tasks: { commit_message: { maxOutputTokens: 256 } } },
+		});
+		assert.equal(resolveTaskRoute(inherited.config, "commit_message").thinking, "off");
+
+		const overridden = mergeAuxiliaryConfig({
+			auxiliary: { default: { thinking: "high" }, tasks: { commit_message: { thinking: "low" } } },
+		});
+		assert.equal(resolveTaskRoute(overridden.config, "commit_message").thinking, "low");
+	});
+
 	test("routes a task through the current model when its auxiliary route is disabled", () => {
 		const loaded = mergeAuxiliaryConfig({
 			auxiliary: {
