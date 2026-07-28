@@ -149,6 +149,12 @@ describe("AuxiliaryRuntime", () => {
 		assert.equal(attempts[0]!.status, "error");
 	});
 
+	test("suppresses usage when request ownership expires", async () => {
+		const { runtime, attempts } = harness([response("unused")]);
+		await runtime.call({ ...request, shouldRecordAttempt: () => false }, route);
+		assert.equal(attempts.length, 0);
+	});
+
 	test("rejects an unsupported input modality before a provider call", async () => {
 		const { runtime, attempts } = harness([], [model("openai", "small", ["image"])]);
 		await assert.rejects(runtime.call(request, route), (error: unknown) => error instanceof AuxiliaryError && error.code === "unsupported_input");
@@ -305,7 +311,7 @@ describe("AuxiliaryRuntime", () => {
 		assert.deepEqual(attempts.map((entry) => entry.status), ["error", "ok"]);
 	});
 
-	test("rejects compaction before network when the auxiliary context cannot fit", async () => {
+	test("lets native compaction decide whether serialized input fits", async () => {
 		const tiny = model("openai", "small");
 		tiny.contextWindow = 100;
 		const { runtime, attempts } = harness([], [tiny]);
@@ -320,7 +326,7 @@ describe("AuxiliaryRuntime", () => {
 				settings: { enabled: true, reserveTokens: 100, keepRecentTokens: 20 },
 			},
 			signal: new AbortController().signal,
-		}, route), (error: unknown) => error instanceof AuxiliaryError && error.code === "input_too_large");
-		assert.equal(attempts[0]!.errorCode, "input_too_large");
+		}, route), (error: unknown) => error instanceof AuxiliaryError && error.code === "provider_error");
+		assert.equal(attempts[0]!.errorCode, "provider_error");
 	});
 });

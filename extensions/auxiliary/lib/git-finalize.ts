@@ -242,7 +242,10 @@ export async function finalizeGit(options: FinalizeOptions): Promise<GitFinalize
 	const rechecked = await stagedFingerprint(options.exec, metadata.root, options.signal);
 	if (rechecked !== metadata.fingerprint) throw new GitFinalizeError("staged_changed", "Staged changes changed while preparing the commit");
 	const commit = await runGit(options.exec, metadata.root, ["commit", "-m", subject], options.signal, 120_000);
-	if (commit.code !== 0) throw new GitFinalizeError("commit_failed", "Git commit failed");
+	if (commit.code !== 0) {
+		const detail = sanitizeLine(commit.stderr) || sanitizeLine(commit.stdout);
+		throw new GitFinalizeError("commit_failed", detail ? `Git commit failed: ${detail}` : "Git commit failed");
+	}
 	const hashResult = await runGit(options.exec, metadata.root, ["rev-parse", "HEAD"], options.signal);
 	const hash = hashResult.code === 0 ? hashResult.stdout.trim() : "unknown";
 	if (!options.push) {

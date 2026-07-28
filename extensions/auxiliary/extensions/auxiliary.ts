@@ -30,7 +30,7 @@ import {
 	validateCommitSubject,
 } from "../lib/prompts.ts";
 import { AuxiliaryError, AuxiliaryRuntime } from "../lib/runtime.ts";
-import type { AuxiliaryRouteConfig, AuxiliaryTaskKey, AuxiliaryUsageEntryV1 } from "../lib/types.ts";
+import type { AuxiliaryErrorCode, AuxiliaryRouteConfig, AuxiliaryTaskKey, AuxiliaryUsageEntryV1 } from "../lib/types.ts";
 import {
 	aggregateAuxiliaryUsage,
 	AUXILIARY_USAGE_CHANGED_EVENT,
@@ -159,6 +159,8 @@ export default function auxiliary(pi: ExtensionAPI) {
 	let runtime: AuxiliaryRuntime | undefined;
 	let pilotRouterBridge: ReturnType<typeof createPilotRouterBridge> | undefined;
 	let titleAttempted = false;
+	let titleGeneration = 0;
+	let titleController: AbortController | undefined;
 	const finalizationLock = createFinalizationToolLock(
 		() => pi.getActiveTools(),
 		(tools) => pi.setActiveTools([...tools]),
@@ -169,6 +171,11 @@ export default function auxiliary(pi: ExtensionAPI) {
 
 	const restoreFinalizedTools = (): void => finalizationLock.restore();
 	const lockAfterFinalize = (): void => { finalizationLock.lock(); };
+	const cancelTitleGeneration = (): void => {
+		titleGeneration += 1;
+		titleController?.abort();
+		titleController = undefined;
+	};
 
 	const appendUsage = (entry: AuxiliaryUsageEntryV1) => {
 		if (!isAuxiliaryUsageEntry(entry)) return;
@@ -252,6 +259,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 		if (candidates.length === 0) throw new AuxiliaryError("model_not_found", "No configured web research model is available");
 
 		let lastError = "Web research failed";
+		let lastErrorCode: AuxiliaryErrorCode = "provider_error";
 		for (const [fallbackIndex, model] of candidates.entries()) {
 			const startedAt = Date.now();
 			const thinking = model.reasoning ? route.thinking : "off";
@@ -292,6 +300,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 				if (!auth.ok || !auth.apiKey) {
 					record("error", "auth_unavailable");
 					lastError = `Authentication unavailable for ${model.provider}/${model.id}`;
+					lastErrorCode = "auth_unavailable";
 					continue;
 				}
 				const request = buildResearchRequest({
@@ -311,7 +320,9 @@ export default function auxiliary(pi: ExtensionAPI) {
 						return { output, model: `${model.provider}/${model.id}`, tokens: response.tokens };
 					} catch (error) {
 						record("error", "invalid_output");
-						throw error;
+						lastError = error instanceof Error ? error.message : "Research output failed validation";
+						lastErrorCode = "invalid_output";
+						continue;
 					}
 				}
 				if (response.status === "cancelled" || response.status === "interrupted") {
@@ -321,13 +332,15 @@ export default function auxiliary(pi: ExtensionAPI) {
 				if (response.status === "timed_out") {
 					record("timeout", "timeout");
 					lastError = `Web research timed out for ${model.provider}/${model.id}`;
+					lastErrorCode = "timeout";
 					continue;
 				}
 				record("error", "provider_error");
 				lastError = `Web research failed for ${model.provider}/${model.id}: ${response.status}`;
+				lastErrorCode = "provider_error";
 				if (response.status !== "failed") break;
 			} catch (error) {
-				if (error instanceof AuxiliaryError || /Research output/.test(error instanceof Error ? error.message : "")) throw error;
+				if (error instanceof AuxiliaryError) throw error;
 				if (signal?.aborted) {
 					record("aborted", "aborted");
 					throw new AuxiliaryError("aborted", "Web research was cancelled");
@@ -336,16 +349,18 @@ export default function auxiliary(pi: ExtensionAPI) {
 				if (/timed out/i.test(message)) {
 					record("timeout", "timeout");
 					lastError = `Web research timed out for ${model.provider}/${model.id}`;
+					lastErrorCode = "timeout";
 					continue;
 				}
 				record("error", "provider_error");
 				lastError = /unavailable/i.test(message) ? "pi-subagents delegation is unavailable" : `Web research failed for ${model.provider}/${model.id}`;
+				lastErrorCode = "provider_error";
 				if (/unavailable/i.test(message)) break;
 			} finally {
 				ctx.ui.setStatus("auxiliary", undefined);
 			}
 		}
-		throw new AuxiliaryError("provider_error", lastError);
+		throw new AuxiliaryError(lastErrorCode, lastError);
 	};
 
 	const runPilotRouter = async (ctx: ExtensionContext, prompt: string, signal: AbortSignal) => {
@@ -582,6 +597,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		cancelTitleGeneration();
 		restoreFinalizedTools();
 		latestContext = ctx;
 		pilotRouterBridge?.close();
@@ -598,6 +614,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
+		cancelTitleGeneration();
 		latestContext = ctx;
 		titleAttempted = titleWasAttempted(ctx);
 	});
@@ -630,7 +647,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("agent_settled", async (_event, ctx) => {
+	pi.on("agent_settled", (_event, ctx) => {
 		restoreFinalizedTools();
 		if (titleAttempted || pi.getSessionName()) return;
 		const seed = extractTitleSeed(ctx.sessionManager.getBranch());
@@ -638,31 +655,44 @@ export default function auxiliary(pi: ExtensionAPI) {
 		const config = load(ctx);
 		if (!config.enabled) return;
 		titleAttempted = true;
-		try {
-			const route = resolveTaskRoute(config, "title_generation");
-			const result = await runtimeFor(ctx).call({
-				task: "title_generation",
-				executor: "call",
-				adapter: "title",
-				systemPrompt: TITLE_SYSTEM_PROMPT,
-				messages: [{
-					role: "user",
-					content: [{ type: "text", text: JSON.stringify(seed) }],
-					timestamp: Date.now(),
-				}],
-				requiredInput: "text",
-				validateOutput: (text, response) => {
-					if (response.stopReason === "length") throw new AuxiliaryError("invalid_output", "Title output was truncated");
-					const title = sanitizeTitle(text);
-					if (!title) throw new AuxiliaryError("invalid_output", "Title output was invalid");
-					return title;
-				},
-			}, route);
-			pi.setSessionName(result.text);
-			lastErrors.delete("title_generation");
-		} catch (error) {
-			if (error instanceof AuxiliaryError) lastErrors.set("title_generation", error.code);
-		}
+		const generation = titleGeneration;
+		const controller = new AbortController();
+		titleController?.abort();
+		titleController = controller;
+		void (async () => {
+			try {
+				const route = resolveTaskRoute(config, "title_generation");
+				const result = await runtimeFor(ctx).call({
+					task: "title_generation",
+					executor: "call",
+					adapter: "title",
+					systemPrompt: TITLE_SYSTEM_PROMPT,
+					messages: [{
+						role: "user",
+						content: [{ type: "text", text: JSON.stringify(seed) }],
+						timestamp: Date.now(),
+					}],
+					requiredInput: "text",
+					signal: controller.signal,
+					shouldRecordAttempt: () => generation === titleGeneration && !controller.signal.aborted && latestContext === ctx,
+					validateOutput: (text, response) => {
+						if (response.stopReason === "length") throw new AuxiliaryError("invalid_output", "Title output was truncated");
+						const title = sanitizeTitle(text);
+						if (!title) throw new AuxiliaryError("invalid_output", "Title output was invalid");
+						return title;
+					},
+				}, route);
+				if (generation !== titleGeneration || controller.signal.aborted || latestContext !== ctx || pi.getSessionName()) return;
+				pi.setSessionName(result.text);
+				lastErrors.delete("title_generation");
+			} catch (error) {
+				if (generation === titleGeneration && error instanceof AuxiliaryError && error.code !== "aborted") {
+					lastErrors.set("title_generation", error.code);
+				}
+			} finally {
+				if (titleController === controller) titleController = undefined;
+			}
+		})();
 	});
 
 	eventUnsubscribes.push(pi.events.on(AUXILIARY_USAGE_INGEST_EVENT, (value) => {
@@ -689,6 +719,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 	}));
 
 	pi.on("session_shutdown", async () => {
+		cancelTitleGeneration();
 		restoreFinalizedTools();
 		pilotRouterBridge?.close();
 		pilotRouterBridge = undefined;

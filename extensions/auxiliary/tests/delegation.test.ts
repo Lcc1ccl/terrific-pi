@@ -41,6 +41,7 @@ describe("web research delegation", () => {
 		assert.equal(request.context, "fresh");
 		assert.equal(request.skill, false);
 		assert.deepEqual(request.toolBudget.block, ["bash", "edit", "write", "git_finalize", "subagent"]);
+		assert.match(request.task, /6,000 characters/);
 		assert.match(request.task, /<\\\/task>/);
 		assert.doesNotMatch(request.task, /main session|conversation history/i);
 	});
@@ -85,8 +86,13 @@ describe("research output", () => {
 		assert.equal(validateResearchOutput(output), output);
 	});
 
-	test("rejects oversized or under-sourced output", () => {
+	test("rejects oversized or incorrectly sourced output", () => {
 		assert.throws(() => validateResearchOutput("https://one.example only"), /three source URLs/);
-		assert.throws(() => validateResearchOutput(`${"x".repeat(2501)}\nhttps://a.test\nhttps://b.test\nhttps://c.test`), /2,500/);
+		const medium = `${"x".repeat(2501)}\nhttps://a.test\nhttps://b.test\nhttps://c.test`;
+		assert.equal(validateResearchOutput(medium), medium);
+		assert.throws(() => validateResearchOutput(`${"x".repeat(6001)}\nhttps://a.test\nhttps://b.test\nhttps://c.test`), /6,000/);
+		assert.throws(() => validateResearchOutput(Array.from({ length: 9 }, (_, index) => `https://${index}.test`).join("\n")), /at most eight source URLs/);
+		assert.throws(() => validateResearchOutput("https://same.test\nhttps://same.test.\nhttps://same.test,"), /three source URLs/);
+		assert.throws(() => validateResearchOutput("https://same.test\nhttps://same.test。\nhttps://same.test，"), /three source URLs/);
 	});
 });
