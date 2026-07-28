@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -81,6 +81,89 @@ describe("auxiliary extension registration", () => {
 				}],
 			},
 		}), { block: true, reason: "git_finalize must be the only tool call in its assistant response" });
+	});
+
+	test("falls back when the primary research output violates the result contract", async () => {
+		const tools = new Map<string, any>();
+		const entries: Array<{ type: string; data: any }> = [];
+		const events = new Events();
+		const pi = {
+			events,
+			registerCommand() {},
+			registerTool(value: any) { tools.set(value.name, value); },
+			on() {},
+			appendEntry(type: string, data: unknown) { entries.push({ type, data }); },
+			setSessionName() {},
+			getSessionName() { return undefined; },
+			exec: async () => ({ code: 0, stdout: "", stderr: "", killed: false }),
+		};
+		auxiliary(pi as never);
+		const previous = process.env.PI_CODING_AGENT_DIR;
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-research-"));
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
+			auxiliary: { tasks: { web_research: { model: "test/primary", fallbackModels: ["test/fallback"] } } },
+		}));
+		const attempted: string[] = [];
+		events.on("prompt-template:subagent:request", (value) => {
+			const request = value as { requestId: string; model: string };
+			attempted.push(request.model);
+			events.emit("prompt-template:subagent:started", { version: 1, requestId: request.requestId });
+			const output = request.model === "test/primary"
+				? "invalid research output"
+				: "ok\nhttps://one.test\nhttps://two.test\nhttps://three.test";
+			events.emit("prompt-template:subagent:response", {
+				version: 1, requestId: request.requestId, status: "completed", output,
+			});
+		});
+		try {
+			const result = await tools.get("web_research").execute("research-1", {
+				question: "question", freshness: "any", sourcePreference: "mixed",
+			}, undefined, undefined, {
+				cwd: "/workspace",
+				modelRegistry: {
+					find: (provider: string, id: string) => ({ provider, id, input: ["text"], reasoning: false }),
+					getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "ephemeral" }),
+				},
+				ui: { setStatus() {} },
+			});
+			assert.match(result.content[0].text, /three\.test/);
+			assert.deepEqual(attempted, ["test/primary", "test/fallback"]);
+			assert.deepEqual(entries.map((entry) => entry.data.status), ["error", "ok"]);
+		} finally {
+			if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previous;
+		}
+	});
+
+	test("does not block agent_settled while generating a title", () => {
+		const hooks = new Map<string, any[]>();
+		const pi = {
+			events: new Events(),
+			registerCommand() {},
+			registerTool() {},
+			on(name: string, handler: unknown) { hooks.set(name, [...(hooks.get(name) ?? []), handler]); },
+			appendEntry() {},
+			setSessionName() {},
+			getSessionName() { return undefined; },
+			exec: async () => ({ code: 0, stdout: "", stderr: "", killed: false }),
+		};
+		auxiliary(pi as never);
+		const result = hooks.get("agent_settled")?.[0]({}, {
+			modelRegistry: {
+				find: () => undefined,
+				getRegisteredProviderIds: () => [],
+				getRegisteredProviderConfig: () => undefined,
+			},
+			sessionManager: {
+				getBranch: () => [
+					{ type: "message", message: { role: "user", content: [{ type: "text", text: "fix title hook" }] } },
+					{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "done" }] } },
+				],
+			},
+			ui: { setStatus() {}, notify() {} },
+		});
+		assert.equal(result, undefined);
 	});
 });
 

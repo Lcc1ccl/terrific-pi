@@ -59,6 +59,7 @@ export interface AuxiliaryCallRequest {
 	maxOutputTokens?: number;
 	signal?: AbortSignal;
 	validateOutput?: (text: string, response: import("@earendil-works/pi-ai").AssistantMessage) => string;
+	shouldRecordAttempt?: () => boolean;
 }
 
 export interface AuxiliaryCallResult {

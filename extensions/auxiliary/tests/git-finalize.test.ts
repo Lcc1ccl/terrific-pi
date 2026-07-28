@@ -207,6 +207,41 @@ describe("finalizeGit", () => {
 		assert.ok(result.pushError);
 	});
 
+	test("reports sanitized Git diagnostics when commit fails", async () => {
+		const cwd = repo();
+		writeFileSync(join(cwd, "file.txt"), "changed\n", "utf8");
+		git(cwd, ["add", "file.txt"]);
+		const base = trackedExec();
+		await assert.rejects(finalizeGit({
+			exec: async (command, args, options) => args.includes("commit")
+				? { code: 1, stdout: "", stderr: "\x1b[31mpre-commit failed at https://secret@example.test\x1b[0m\n", killed: false }
+				: base(command, args, options),
+			cwd, config, push: false, hasUI: true,
+			confirm: async () => true,
+			generateSubject: async () => "fix: change file",
+		}), (error: unknown) => error instanceof GitFinalizeError
+			&& error.code === "commit_failed"
+			&& /pre-commit failed at https:\/\/\*\*\*@example\.test/.test(error.message)
+			&& !error.message.includes("\x1b"));
+	});
+
+	test("uses sanitized stdout when commit stderr has no diagnostic text", async () => {
+		const cwd = repo();
+		writeFileSync(join(cwd, "file.txt"), "changed\n", "utf8");
+		git(cwd, ["add", "file.txt"]);
+		const base = trackedExec();
+		await assert.rejects(finalizeGit({
+			exec: async (command, args, options) => args.includes("commit")
+				? { code: 1, stdout: "hook failed on stdout\n", stderr: "\x1b[0m\n", killed: false }
+				: base(command, args, options),
+			cwd, config, push: false, hasUI: true,
+			confirm: async () => true,
+			generateSubject: async () => "fix: change file",
+		}), (error: unknown) => error instanceof GitFinalizeError
+			&& error.code === "commit_failed"
+			&& error.message === "Git commit failed: hook failed on stdout");
+	});
+
 	test("denies headless execution by default", async () => {
 		const cwd = repo();
 		writeFileSync(join(cwd, "file.txt"), "changed\n", "utf8");

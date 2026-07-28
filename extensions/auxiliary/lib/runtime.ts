@@ -13,7 +13,6 @@ import {
 } from "@earendil-works/pi-ai";
 import {
 	compact as nativeCompact,
-	estimateTokens,
 	ModelRuntime,
 	type ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
@@ -176,8 +175,9 @@ export class AuxiliaryRuntime {
 		return selected;
 	}
 
-	private record(entry: AuxiliaryUsageEntryV1): void {
+	private record(entry: AuxiliaryUsageEntryV1, shouldRecord?: () => boolean): void {
 		try {
+			if (shouldRecord?.() === false) return;
 			this.options.onAttempt?.(entry);
 		} catch {
 			// Usage reporting must not change task behavior.
@@ -264,7 +264,7 @@ export class AuxiliaryRuntime {
 						startedAt,
 						durationMs,
 						usage: response.usage,
-					});
+					}, request.shouldRecordAttempt);
 					return { status: "ok", text, provider, model, thinking, fallbackIndex, durationMs, usage: response.usage, stopReason: response.stopReason };
 				} catch (error) {
 					let failure: AuxiliaryError;
@@ -288,7 +288,7 @@ export class AuxiliaryRuntime {
 						durationMs: Date.now() - startedAt,
 						...(response?.usage ? { usage: response.usage } : {}),
 						errorCode: failure.code,
-					});
+					}, request.shouldRecordAttempt);
 					if (!FALLBACK_CODES.has(failure.code) || fallbackIndex === candidates.length - 1) throw failure;
 				}
 			}
@@ -317,16 +317,6 @@ export class AuxiliaryRuntime {
 					const selectedKey = modelIdentity(selected);
 					if (seenModels.has(selectedKey)) continue;
 					seenModels.add(selectedKey);
-					const estimatedInput = [
-						...request.preparation.messagesToSummarize,
-						...request.preparation.turnPrefixMessages,
-					].reduce((total, message) => total + estimateTokens(message), 0)
-						+ Math.ceil((request.preparation.previousSummary?.length ?? 0) / 4)
-						+ route.maxOutputTokens
-						+ 2_048;
-					if (estimatedInput > selected.contextWindow) {
-						throw new AuxiliaryError("input_too_large", "Compression input does not fit the auxiliary model", true);
-					}
 					const auth = await this.options.registry.getApiKeyAndHeaders(selected);
 					if (!auth.ok) throw new AuxiliaryError("auth_unavailable", "Compression model authentication is unavailable", true);
 					const runtime = await this.getRuntime();

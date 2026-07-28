@@ -5,7 +5,7 @@ Task-scoped auxiliary model runtime for Pi. It runs bounded side calls without c
 ## Capabilities
 
 - Native Pi compaction through `session_before_compact`
-- First-settled-turn session title generation
+- First-settled-turn session title generation (detached so it does not delay idle)
 - `aux_summarize` for explicit text or the latest text tool result
 - `web_research` through the public `pi-subagents` delegation v1 contract
 - `git_finalize` for already staged changes, with exact confirmation and optional normal push
@@ -95,7 +95,7 @@ Most routes expose `maxOutputTokens` and `maxRetries`. Compression and BTW do no
 
 `aux_summarize` accepts either explicit text or `source=last_tool_result`. Long input uses at most eight chunks with at most two concurrent calls; any chunk failure cancels the whole summary.
 
-`web_research` always requests the fixed `researcher` agent with fresh context, no inherited skills, and blocked mutation/subagent tools. Its result must fit 2,500 characters and include at least three source URLs.
+`web_research` always requests the fixed `researcher` agent with fresh context, no inherited skills, and blocked mutation/subagent tools. Its result must fit 6,000 characters and include 3-8 distinct source URLs. Contract-invalid primary output is recorded and advances to the configured fallback.
 
 `git_finalize`:
 
