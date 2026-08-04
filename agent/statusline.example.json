@@ -1,6 +1,4 @@
 {
-  "layout": "terrific",
-  "iconMode": "plain",
   "widgets": [
     "path",
     "model",

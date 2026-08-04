@@ -246,10 +246,8 @@ retired = (
 )
 for agent in (default_agent, restore_agent):
     packages = json.loads((agent / "settings.json").read_text(encoding="utf-8"))["packages"]
-    assert "../vendor/terrific-pi/extensions/appearance" in packages, "appearance package missing"
     assert "../vendor/terrific-pi/extensions/presentation" in packages, "presentation package missing"
     assert "../vendor/terrific-pi/extensions/taskboard" in packages, "taskboard package missing"
-    assert packages.index("../vendor/terrific-pi/extensions/taskboard") < packages.index("../vendor/terrific-pi/extensions/presentation"), "taskboard must load before presentation"
     assert "../vendor/terrific-pi/extensions/process-view" not in packages, "legacy process-view package survived migration"
     assert "../vendor/terrific-pi/extensions/mode" in packages, "standalone mode package missing"
     assert "../vendor/terrific-pi/extensions/pilot" in packages, "manual Pilot package missing"
@@ -285,9 +283,6 @@ assert "external_packages<<" in manifest, "manifest has no external package bloc
 assert subagents_pin in manifest, "manifest has no fixed pi-subagents pin"
 assert "retired_external_packages<<" in manifest, "manifest has no retired package block"
 assert "../vendor/terrific-pi/extensions/pilot" in manifest, "manifest does not enable manual Pilot"
-assert "../vendor/terrific-pi/extensions/appearance" in manifest, "manifest does not enable appearance"
-manifest_packages = manifest.split("packages<<\n", 1)[1].split("\n>>", 1)[0].splitlines()
-assert manifest_packages.index("../vendor/terrific-pi/extensions/taskboard") < manifest_packages.index("../vendor/terrific-pi/extensions/presentation"), "manifest must load taskboard before presentation"
 assert "npm:pi-subagents" in manifest, "manifest does not retire npm pi-subagents"
 assert "workflows<<" in manifest, "manifest has no workflows block"
 for relative in (
@@ -300,60 +295,11 @@ for relative in (
     "extensions/pilot/tests/fixtures/worker-policy-child.ts",
 ):
     assert any(name.endswith("/" + relative) for name in names), f"Pilot archive resource missing: {relative}"
-for relative in (
-    "extensions/appearance/extensions/appearance.ts",
-    "extensions/appearance/themes/terrific-night.json",
-    "extensions/appearance/package.json",
-):
-    assert any(name.endswith("/" + relative) for name in names), f"appearance archive resource missing: {relative}"
-appearance_package_name = next(name for name in names if name.endswith("/extensions/appearance/package.json"))
-appearance_package = json.loads(members[appearance_package_name])
-appearance_root = appearance_package_name.rsplit("/", 1)[0]
-for extension in appearance_package["pi"]["extensions"]:
-    member = appearance_root + "/" + extension.removeprefix("./")
-    assert member in names, f"appearance pi.extensions path missing: {extension}"
-for theme_path in appearance_package["pi"]["themes"]:
-    prefix = appearance_root + "/" + theme_path.removeprefix("./").rstrip("/") + "/"
-    assert any(name.startswith(prefix) for name in names), f"appearance pi.themes path missing: {theme_path}"
-
-production = {
-    name: content.decode("utf-8", errors="replace")
-    for name, content in members.items()
-    if "/extensions/" in name
-    and name.endswith(".ts")
-    and "/tests/" not in name
-    and "/benchmarks/" not in name
-}
-def packages_with(pattern):
-    return {
-        name.split("/extensions/", 1)[1].split("/", 1)[0]
-        for name, source in production.items()
-        if pattern.search(source)
-    }
-assert packages_with(__import__("re").compile(r"\.setHeader\s*\(")) == {"appearance"}, "setHeader owner is not appearance-only"
-assert packages_with(__import__("re").compile(r"\.setEditorComponent\s*\(")) == {"appearance"}, "setEditorComponent owner is not appearance-only"
-assert packages_with(__import__("re").compile(r"\.setFooter\s*\(")) == {"statusline"}, "setFooter owner is not statusline-only"
-appearance_sources = "\n".join(source for name, source in production.items() if "/extensions/appearance/" in name)
-assert not __import__("re").search(r"\.setStatus\s*\(", appearance_sources), "appearance must not call setStatus"
-for literal, owner in (
-    ("terrific-pi:taskboard", "taskboard"),
-    ("terrific-pi:appearance-shortcuts", "appearance"),
-):
-    owners = {
-        name.split("/extensions/", 1)[1].split("/", 1)[0]
-        for name, source in production.items()
-        if literal in source
-    }
-    assert owners == {owner}, f"widget key {literal} is not owned only by {owner}: {owners}"
-compat_name = next(name for name in production if name.endswith("/extensions/presentation/lib/compat/index.ts"))
-targets = __import__("re").findall(r"patchPrototypeMethod\s*\(\s*([A-Za-z]+Component\.prototype)", production[compat_name])
-assert targets == ["UserMessageComponent.prototype", "ToolExecutionComponent.prototype"], f"unexpected presentation patch targets: {targets}"
-
 assert not any("pi-tool-display/config.json" in name or "pi-compact-transcript/config.json" in name for name in names), "retired renderer config shipped"
 assert "source_root=" not in manifest and "/home/" not in manifest, "manifest leaked a local source path"
 PY
 
-HOST_PI_PACKAGE="$ROOT/extensions/appearance/node_modules/@earendil-works/pi-coding-agent"
+HOST_PI_PACKAGE="$ROOT/extensions/presentation/node_modules/@earendil-works/pi-coding-agent"
 HOST_PI_TUI="$HOST_PI_PACKAGE/node_modules/@earendil-works/pi-tui"
 [[ -d "$HOST_PI_PACKAGE" && -d "$HOST_PI_TUI" ]] || { echo "missing Pi 0.81.1 peers for installed payload tests" >&2; exit 1; }
 [[ "$(node -p "require('$HOST_PI_PACKAGE/package.json').version")" == "0.81.1" ]] \
@@ -368,221 +314,5 @@ if [[ -d "$HOST_SUBAGENTS" ]]; then
 fi
 PI_CODING_AGENT_DIR="$RESTORE_PI_HOME/agent" npm --prefix "$RESTORE_PI_HOME/vendor/terrific-pi/extensions/pilot" test
 
-NATIVE_AGENT="$TMP/native-agent"
-NATIVE_PROJECT="$TMP/native-project"
-NATIVE_BACKUP="$NATIVE_AGENT/backups/terrific-native-v1-baseline"
-mkdir -p "$NATIVE_AGENT" "$NATIVE_PROJECT"
-python3 - "$NATIVE_AGENT" <<'PY'
-import json, sys
-from pathlib import Path
-agent = Path(sys.argv[1])
-packages = [
-    "../vendor/terrific-pi/extensions/taskboard",
-    "../vendor/terrific-pi/extensions/presentation",
-    "../vendor/terrific-pi/extensions/statusline",
-    "../vendor/terrific-pi/extensions/mode",
-    "../vendor/terrific-pi/extensions/btw",
-]
-(agent / "settings.json").write_text(json.dumps({"packages": packages, "theme": "dark"}, indent=2) + "\n", encoding="utf-8")
-(agent / "terrific.json").write_text(json.dumps({"appearance": {"profile": "off"}}, indent=2) + "\n", encoding="utf-8")
-PY
-install -d -m 700 "$NATIVE_BACKUP"
-: >"$NATIVE_BACKUP/SHA256SUMS"
-: >"$NATIVE_BACKUP/ABSENT_FILES"
-for name in settings.json terrific.json statusline.json; do
-	if [[ -f "$NATIVE_AGENT/$name" ]]; then
-		cp -a "$NATIVE_AGENT/$name" "$NATIVE_BACKUP/$name"
-		( cd "$NATIVE_BACKUP" && sha256sum "$name" ) >>"$NATIVE_BACKUP/SHA256SUMS"
-	else
-		printf '%s\n' "$name" >>"$NATIVE_BACKUP/ABSENT_FILES"
-	fi
-done
-[[ "$(wc -l <"$NATIVE_BACKUP/SHA256SUMS")" -eq 2 ]] || { echo "rollback baseline present-file count mismatch" >&2; exit 1; }
-[[ "$(cat "$NATIVE_BACKUP/ABSENT_FILES")" == "statusline.json" ]] || { echo "rollback baseline absent-file record mismatch" >&2; exit 1; }
-python3 - "$NATIVE_AGENT" <<'PY'
-import json, sys
-from pathlib import Path
-agent = Path(sys.argv[1])
-packages = [
-    "../vendor/terrific-pi/extensions/taskboard",
-    "../vendor/terrific-pi/extensions/presentation",
-    "../vendor/terrific-pi/extensions/appearance",
-    "../vendor/terrific-pi/extensions/statusline",
-    "../vendor/terrific-pi/extensions/mode",
-    "../vendor/terrific-pi/extensions/btw",
-]
-(agent / "settings.json").write_text(json.dumps({
-    "packages": packages,
-    "theme": "terrific-night",
-    "editorPaddingX": 1,
-    "outputPad": 1,
-}, indent=2) + "\n", encoding="utf-8")
-(agent / "terrific.json").write_text(json.dumps({"appearance": {"profile": "terrific-native-v1"}}, indent=2) + "\n", encoding="utf-8")
-(agent / "statusline.json").write_text(json.dumps({"layout": "terrific", "iconMode": "plain"}, indent=2) + "\n", encoding="utf-8")
-PY
-mkdir -p "$NATIVE_AGENT/../vendor"
-ln -s "$RESTORE_PI_HOME/vendor/terrific-pi" "$NATIVE_AGENT/../vendor/terrific-pi"
-cat >"$TMP/native-integration.mjs" <<'JS'
-import assert from "node:assert/strict";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-
-const [agentDir, projectDir, installedRoot, piModule] = process.argv.slice(2);
-const { DefaultResourceLoader, SettingsManager } = await import(pathToFileURL(piModule));
-const settings = SettingsManager.create(projectDir, agentDir, { projectTrusted: false });
-const loader = new DefaultResourceLoader({
-  cwd: projectDir,
-  agentDir,
-  settingsManager: settings,
-  noSkills: true,
-  noPromptTemplates: true,
-  noContextFiles: true,
-});
-const expectedPackages = ["taskboard", "presentation", "appearance", "statusline", "mode", "btw"];
-function assertResources(currentLoader, packages, expectedThemeCount, label) {
-  const extensionResult = currentLoader.getExtensions();
-  const themeResult = currentLoader.getThemes();
-  assert.deepEqual(extensionResult.errors, [], `${label} extension diagnostics: ${JSON.stringify(extensionResult.errors)}`);
-  assert.deepEqual(themeResult.diagnostics, [], `${label} theme diagnostics: ${JSON.stringify(themeResult.diagnostics)}`);
-  const extensionPaths = extensionResult.extensions.map((item) => item.path);
-  assert.equal(extensionPaths.length, packages.length, `${label} extension count`);
-  assert.equal(new Set(extensionPaths).size, extensionPaths.length, `${label} duplicate extension resource paths`);
-  assert.deepEqual(extensionPaths.map((path) => path.split("/extensions/")[1].split("/")[0]), packages, `${label} extension order`);
-  const terrificThemes = themeResult.themes.filter((theme) => theme.name === "terrific-night");
-  assert.equal(terrificThemes.length, expectedThemeCount, `${label} terrific-night theme count`);
-  const themePaths = themeResult.themes.map((theme) => theme.path).filter(Boolean);
-  assert.equal(new Set(themePaths).size, themePaths.length, `${label} duplicate theme resource paths`);
-}
-for (let cycle = 1; cycle <= 10; cycle++) {
-  await loader.reload();
-  assertResources(loader, expectedPackages, 1, `reload cycle ${cycle}`);
-  console.log(`Pi 0.81.1 six-package loader reload cycle ${cycle}/10 passed`);
-}
-const globalSettings = settings.getGlobalSettings();
-assert.equal(globalSettings.theme, "terrific-night");
-assert.equal(globalSettings.editorPaddingX, 1);
-assert.equal(globalSettings.outputPad, 1);
-assert.deepEqual(JSON.parse(await readFile(join(agentDir, "terrific.json"), "utf8")), { appearance: { profile: "terrific-native-v1" } });
-assert.deepEqual(JSON.parse(await readFile(join(agentDir, "statusline.json"), "utf8")), { layout: "terrific", iconMode: "plain" });
-
-const parserSpecs = [
-  ["appearance", "lib/config.ts", "readAppearanceConfig"],
-  ["presentation", "lib/profile.ts", "readTerrificNativeProfile"],
-  ["statusline", "lib/appearance-profile.ts", "readAppearanceProfile"],
-  ["taskboard", "lib/appearance-profile.ts", "readAppearanceProfile"],
-  ["mode", "lib/appearance-profile.ts", "readAppearanceProfile"],
-  ["btw", "lib/appearance-profile.ts", "readAppearanceProfile"],
-];
-const parsers = await Promise.all(parserSpecs.map(async ([pkg, file, exported]) => {
-  const module = await import(pathToFileURL(join(installedRoot, "extensions", pkg, file)));
-  return [pkg, module[exported]];
-}));
-const vectors = [
-  [undefined, false, false, false],
-  ["{}", false, false, false],
-  ['{"appearance":{"profile":"terrific-native-v1"}}', true, false, false],
-  ['{"appearance":{"profile":"off"}}', false, false, false],
-  ['{"appearance":{"profile":7}}', false, false, false],
-  ['{"appearance":"on"}', false, true, false],
-  ["{", false, true, false],
-  ["{}", false, false, true],
-];
-const vectorRoot = resolve(agentDir, "..", "parser-vectors");
-for (const [index, [source, active, error, projectOverride]] of vectors.entries()) {
-  const globalDir = join(vectorRoot, `global-${index + 1}`);
-  const cwd = join(vectorRoot, `project-${index + 1}`);
-  await rm(globalDir, { recursive: true, force: true });
-  await rm(cwd, { recursive: true, force: true });
-  await mkdir(globalDir, { recursive: true });
-  await mkdir(join(cwd, ".pi"), { recursive: true });
-  if (source !== undefined) await writeFile(join(globalDir, "terrific.json"), source + "\n");
-  if (projectOverride) await writeFile(join(cwd, ".pi", "terrific.json"), '{"appearance":{"profile":"terrific-native-v1"}}\n');
-  process.chdir(cwd);
-  const results = parsers.map(([pkg, parser]) => {
-    const result = parser(globalDir);
-    return [pkg, result.active, Boolean(result.error)];
-  });
-  assert.ok(results.every(([, gotActive, gotError]) => gotActive === active && gotError === error), `profile vector ${index + 1} diverged: ${JSON.stringify(results)}`);
-}
-console.log("Pi 0.81.1 native loader 10-cycle gate and six parser vectors passed");
-JS
-node --experimental-strip-types "$TMP/native-integration.mjs" \
-	"$NATIVE_AGENT" "$NATIVE_PROJECT" "$RESTORE_PI_HOME/vendor/terrific-pi" \
-	"$HOST_PI_PACKAGE/dist/index.js"
-
-while read -r _ name; do
-	cp -a "$NATIVE_BACKUP/$name" "$NATIVE_AGENT/$name"
-done <"$NATIVE_BACKUP/SHA256SUMS"
-while read -r name; do
-	[[ -n "$name" ]] && rm -f "$NATIVE_AGENT/$name"
-done <"$NATIVE_BACKUP/ABSENT_FILES"
-( cd "$NATIVE_AGENT" && sha256sum -c "$NATIVE_BACKUP/SHA256SUMS" ) >/dev/null
-while read -r name; do
-	[[ -z "$name" || ! -e "$NATIVE_AGENT/$name" ]] || { echo "rollback failed to remove baseline-absent file: $name" >&2; exit 1; }
-done <"$NATIVE_BACKUP/ABSENT_FILES"
-echo "TEMP-HOME rollback hash round-trip passed: SHA256SUMS exact; ABSENT_FILES deletion exact"
-
-cat >"$TMP/native-rollback.mjs" <<'JS'
-import assert from "node:assert/strict";
-import { readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-
-const [agentDir, projectDir, installedRoot, piModule] = process.argv.slice(2);
-const { DefaultResourceLoader, SettingsManager } = await import(pathToFileURL(piModule));
-const rollbackPackages = ["taskboard", "presentation", "statusline", "mode", "btw"];
-const expectedSettings = {
-  packages: rollbackPackages.map((pkg) => `../vendor/terrific-pi/extensions/${pkg}`),
-  theme: "dark",
-};
-const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: false });
-const loader = new DefaultResourceLoader({
-  cwd: projectDir,
-  agentDir,
-  settingsManager: manager,
-  noSkills: true,
-  noPromptTemplates: true,
-  noContextFiles: true,
-});
-await loader.reload();
-const extensionResult = loader.getExtensions();
-const themeResult = loader.getThemes();
-assert.deepEqual(extensionResult.errors, [], `rollback extension diagnostics: ${JSON.stringify(extensionResult.errors)}`);
-assert.deepEqual(themeResult.diagnostics, [], `rollback theme diagnostics: ${JSON.stringify(themeResult.diagnostics)}`);
-const extensionPaths = extensionResult.extensions.map((item) => item.path);
-assert.equal(extensionPaths.length, 5, "rollback extension count");
-assert.equal(new Set(extensionPaths).size, 5, "rollback duplicate extension resource paths");
-assert.deepEqual(extensionPaths.map((item) => item.split("/extensions/")[1].split("/")[0]), rollbackPackages, "rollback extension order");
-assert.equal(themeResult.themes.filter((theme) => theme.name === "terrific-night").length, 0, "rollback retained terrific-night theme");
-const settings = manager.getGlobalSettings();
-assert.equal(settings.theme, "dark", "rollback builtin theme");
-assert.equal(manager.getEditorPaddingX(), 0, "rollback editorPaddingX default");
-assert.equal(manager.getOutputPad(), 1, "rollback outputPad default");
-assert.ok(!("editorPaddingX" in settings), "rollback settings retained editorPaddingX");
-assert.ok(!("outputPad" in settings), "rollback settings retained outputPad");
-assert.deepEqual(JSON.parse(await readFile(join(agentDir, "settings.json"), "utf8")), expectedSettings, "rollback settings baseline");
-assert.deepEqual(JSON.parse(await readFile(join(agentDir, "terrific.json"), "utf8")), { appearance: { profile: "off" } }, "rollback terrific baseline");
-await assert.rejects(stat(join(agentDir, "statusline.json")), (error) => error?.code === "ENOENT", "rollback statusline baseline absence");
-const parserSpecs = [
-  ["presentation", "lib/profile.ts", "readTerrificNativeProfile"],
-  ["statusline", "lib/appearance-profile.ts", "readAppearanceProfile"],
-  ["taskboard", "lib/appearance-profile.ts", "readAppearanceProfile"],
-  ["mode", "lib/appearance-profile.ts", "readAppearanceProfile"],
-  ["btw", "lib/appearance-profile.ts", "readAppearanceProfile"],
-];
-const inactive = await Promise.all(parserSpecs.map(async ([pkg, file, exported]) => {
-  const module = await import(pathToFileURL(join(installedRoot, "extensions", pkg, file)));
-  return [pkg, module[exported](agentDir)];
-}));
-assert.ok(inactive.every(([, result]) => result.active === false && result.error === undefined), `rollback parser state: ${JSON.stringify(inactive)}`);
-console.log("TEMP-HOME restored baseline loader passed: no appearance/theme, five packages, default padding, five parsers inactive");
-JS
-node --experimental-strip-types "$TMP/native-rollback.mjs" \
-	"$NATIVE_AGENT" "$NATIVE_PROJECT" "$RESTORE_PI_HOME/vendor/terrific-pi" \
-	"$HOST_PI_PACKAGE/dist/index.js"
-
-AUDIT_UI_OWNERS_SETTINGS="$ROOT/agent/settings.packages.example.json" "$ROOT/scripts/audit-ui-owners.sh"
-echo "proposed Terrific native settings owner audit passed"
 
 echo "install smoke passed"

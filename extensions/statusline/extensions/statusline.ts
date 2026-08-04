@@ -4,8 +4,6 @@ import { Container, Input, Text, truncateToWidth, visibleWidth } from "@earendil
 import {
 	DEFAULT_CONFIG,
 	loadStatuslineConfigResult,
-	resolveEffectiveLayout,
-	resolveEffectiveRenderConfig,
 	resolveRuntimeConfigPath,
 	saveStatuslineConfig,
 	WIDGET_IDS,
@@ -16,10 +14,9 @@ import {
 	type MutationResult,
 } from "../lib/configure.ts";
 import { selectMenu } from "../lib/select-menu.ts";
-import { readAppearanceProfile } from "../lib/appearance-profile.ts";
 import { AgentDurationTracker } from "../lib/duration.ts";
 import { QuotaMonitor } from "../lib/quota.ts";
-import { renderStatusLine, withTerrificStateSpinner } from "../lib/render.ts";
+import { renderStatusLine } from "../lib/render.ts";
 import { WidgetsSetupComponent } from "../lib/widgets-setup.ts";
 import type {
 	BranchChangeStats,
@@ -55,16 +52,6 @@ function parseNumstat(output: string): BranchChangeStats {
 }
 
 const AUXILIARY_USAGE_CHANGED_EVENT = "terrific-pi:auxiliary-usage:changed-v1";
-const TERRIFIC_TICK_MS = 133;
-const DEFAULT_TICK_MS = 250;
-const FOOTER_OWNER_KEY = Symbol.for("terrific-pi.statusline.footer-owner.v1");
-const ownerGlobal = globalThis as typeof globalThis & Record<symbol, unknown>;
-const footerOwners = ownerGlobal[FOOTER_OWNER_KEY] instanceof WeakMap
-	? ownerGlobal[FOOTER_OWNER_KEY] as WeakMap<object, symbol>
-	: new WeakMap<object, symbol>();
-if (ownerGlobal[FOOTER_OWNER_KEY] === undefined) {
-	Object.defineProperty(ownerGlobal, FOOTER_OWNER_KEY, { value: footerOwners });
-}
 
 function displayKey(key: string): string {
 	return ({ up: "Up", down: "Down", enter: "Enter", escape: "Esc" }[key] ?? key.replace(/\b[a-z]/g, (char) => char.toUpperCase()));
@@ -97,9 +84,6 @@ export default function statusline(pi: ExtensionAPI) {
 	let branchChanges: BranchChangeStats | undefined;
 	let gitRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 	let durationTickTimer: ReturnType<typeof setInterval> | undefined;
-	let durationTickCadence: number | undefined;
-	let durationTickGeneration = 0;
-	let renderTick = 0;
 	let renderRequest: (() => void) | undefined;
 	let lifecycleGeneration = 0;
 	let gitRequestGeneration = 0;
@@ -114,9 +98,6 @@ export default function statusline(pi: ExtensionAPI) {
 	const toolCallNames = new Map<string, string>();
 	const toolStats: Record<string, ToolActivity> = {};
 	let environment: EnvironmentCounts | undefined;
-	let activeOwner: { ui: object & { setWorkingVisible(value: boolean): void }; token: symbol } | undefined;
-	let profileActive = false;
-	let syncPresentation = () => {};
 	const defaultBranchCache = new Map<string, string | null>();
 	const durationTracker = new AgentDurationTracker();
 	const quotaMonitor = new QuotaMonitor({
@@ -142,17 +123,13 @@ export default function statusline(pi: ExtensionAPI) {
 
 	const reloadConfig = (): MutationResult<StatuslineConfig> => {
 		configPath = resolveRuntimeConfigPath();
-		profileActive = readAppearanceProfile().active;
 		const loaded = loadStatuslineConfigResult(configPath);
 		if (!loaded.ok) {
 			configLoadError = loaded.error;
-			syncPresentation();
-			requestRender();
 			return loaded;
 		}
 		config = loaded.value;
 		configLoadError = undefined;
-		syncPresentation();
 		requestRender();
 		requestQuotaSync();
 		return { ok: true, value: cloneConfig(config) };
@@ -182,7 +159,6 @@ export default function statusline(pi: ExtensionAPI) {
 			saveStatuslineConfig(configPath, candidate);
 			config = candidate;
 			configLoadError = undefined;
-			syncPresentation();
 			requestRender();
 			requestQuotaSync();
 			return { ok: true, value: undefined };
@@ -269,46 +245,21 @@ export default function statusline(pi: ExtensionAPI) {
 	};
 
 	const stopDurationTick = () => {
-		durationTickGeneration += 1;
 		if (durationTickTimer) {
 			clearInterval(durationTickTimer);
 			durationTickTimer = undefined;
 		}
-		durationTickCadence = undefined;
 	};
 
-	const effectiveLayout = () => resolveEffectiveLayout(config.layout, profileActive);
-
 	const startDurationTick = () => {
-		const cadence = effectiveLayout() === "terrific" ? TERRIFIC_TICK_MS : DEFAULT_TICK_MS;
-		if (durationTickTimer && durationTickCadence === cadence) return;
-		stopDurationTick();
-		durationTickCadence = cadence;
-		const generation = ++durationTickGeneration;
+		if (durationTickTimer) return;
 		durationTickTimer = setInterval(() => {
-			if (generation !== durationTickGeneration) return;
 			if (!durationTracker.isRunning()) {
 				stopDurationTick();
 				return;
 			}
-			if (cadence === TERRIFIC_TICK_MS) renderTick += 1;
 			requestRender();
-		}, cadence);
-	};
-
-	const restoreWorkingVisibility = (ui: object & { setWorkingVisible(value: boolean): void }, token: symbol) => {
-		if (footerOwners.get(ui) !== token) return;
-		footerOwners.delete(ui);
-		ui.setWorkingVisible(true);
-		if (activeOwner?.token === token) activeOwner = undefined;
-	};
-
-	syncPresentation = () => {
-		const owner = activeOwner;
-		if (owner && footerOwners.get(owner.ui) === owner.token) {
-			owner.ui.setWorkingVisible(effectiveLayout() !== "terrific");
-		}
-		if (durationTracker.isRunning()) startDurationTick();
+		}, 250);
 	};
 
 	const ensureTool = (name: string): ToolActivity => {
@@ -450,7 +401,6 @@ export default function statusline(pi: ExtensionAPI) {
 		clearActiveTools();
 		for (const name of Object.keys(toolStats)) delete toolStats[name];
 		durationTracker.reset();
-		renderTick = 0;
 		stopDurationTick();
 		refreshUsage(ctx);
 		const loaded = reloadConfig();
@@ -459,9 +409,6 @@ export default function statusline(pi: ExtensionAPI) {
 			requestQuotaSync();
 		}
 
-		const owner = { ui: ctx.ui, token: Symbol("statusline-footer") };
-		footerOwners.set(owner.ui, owner.token);
-		activeOwner = owner;
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			const localRenderRequest = () => tui.requestRender();
 			renderRequest = localRenderRequest;
@@ -473,11 +420,6 @@ export default function statusline(pi: ExtensionAPI) {
 			return {
 				dispose() {
 					unsubscribeBranch();
-					if (footerOwners.get(owner.ui) === owner.token) {
-						stopDurationTick();
-						durationTracker.reset();
-						restoreWorkingVisibility(owner.ui, owner.token);
-					}
 					if (renderRequest === localRenderRequest) renderRequest = undefined;
 				},
 				invalidate() {},
@@ -518,39 +460,24 @@ export default function statusline(pi: ExtensionAPI) {
 							: undefined,
 					};
 
-					const effectiveConfig = resolveEffectiveRenderConfig(config, profileActive);
-					const builtSegments = buildWidgetSegments(snapshot, effectiveConfig);
-					const segments = effectiveConfig.layout === "terrific"
-						? withTerrificStateSpinner(
-							builtSegments,
-							snapshot.runState,
-							renderTick,
-							process.env.TERM === "dumb",
-						)
-						: builtSegments;
-					const terminalRows = (tui as unknown as { terminal?: { rows?: number } }).terminal?.rows
-						?? process.stdout.rows
-						?? 24;
+					const segments = buildWidgetSegments(snapshot, config);
 					const rendered = renderStatusLine(
 						segments,
-						effectiveConfig,
+						config,
 						theme,
 						width,
 						truncateToWidth,
 						visibleWidth,
-						terminalRows,
 					);
 					return Array.isArray(rendered) ? rendered : [rendered];
 				},
 			};
 		});
-		syncPresentation();
 
 		scheduleGitRefresh(ctx.cwd, 0);
 	});
 
 	pi.on("before_agent_start", async (event) => {
-		reloadConfig();
 		const options = event.systemPromptOptions;
 		if (!options) return;
 		environment = {
@@ -563,7 +490,6 @@ export default function statusline(pi: ExtensionAPI) {
 
 	pi.on("agent_start", async () => {
 		resetToolActivity();
-		renderTick = 0;
 		durationTracker.startRound();
 		startDurationTick();
 		setRunState("Thinking");
@@ -581,7 +507,6 @@ export default function statusline(pi: ExtensionAPI) {
 	pi.on("agent_settled", async (_event, ctx) => {
 		clearActiveTools();
 		durationTracker.endRound();
-		renderTick = 0;
 		stopDurationTick();
 		refreshUsage(ctx);
 		setRunState("Ready");
@@ -629,13 +554,12 @@ export default function statusline(pi: ExtensionAPI) {
 	pi.on("thinking_level_select", async () => requestRender());
 	pi.on("session_compact", async (_event, ctx) => refreshUsage(ctx));
 	pi.on("session_info_changed", async () => requestRender());
-	pi.on("session_shutdown", async (_event, ctx) => {
+	pi.on("session_shutdown", async () => {
 		lifecycleGeneration += 1;
 		gitRequestGeneration += 1;
 		if (gitRefreshTimer) clearTimeout(gitRefreshTimer);
 		gitRefreshTimer = undefined;
 		stopDurationTick();
-		renderTick = 0;
 		durationTracker.reset();
 		renderRequest = undefined;
 		clearActiveTools();
@@ -645,7 +569,5 @@ export default function statusline(pi: ExtensionAPI) {
 		usage = aggregateSessionUsage([]);
 		auxiliaryUsage = aggregateAuxiliaryUsage([]);
 		environment = undefined;
-		const owner = activeOwner;
-		if (owner && ctx.mode === "tui") restoreWorkingVisibility(owner.ui, owner.token);
 	});
 }

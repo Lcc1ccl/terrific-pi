@@ -3,7 +3,7 @@ import { it } from "node:test";
 import type { Message, Model } from "@earendil-works/pi-ai";
 import { createIsolatedBtwSession } from "../lib/btw-session.ts";
 
-it("creates an in-memory role-preserving no-tool, no-extension session", async () => {
+it("creates an in-memory role-preserving no-tool session", async () => {
 	const model = {
 		id: "btw-test-model",
 		name: "BTW Test Model",
@@ -26,7 +26,6 @@ it("creates an in-memory role-preserving no-tool, no-extension session", async (
 	try {
 		assert.equal(session.sessionFile, undefined);
 		assert.deepEqual(session.agent.state.tools, []);
-		assert.deepEqual(session.resourceLoader.getExtensions().extensions, []);
 		assert.deepEqual(session.agent.state.messages.map((message) => message.role), ["user"]);
 		assert.match(session.agent.state.systemPrompt, /旁路解释器/);
 	} finally {

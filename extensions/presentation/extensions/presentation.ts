@@ -9,7 +9,6 @@ import {
 	updatePresentationConfig,
 } from "../lib/config.ts";
 import { renderSystemEntry } from "../lib/render.ts";
-import { readTerrificNativeProfile } from "../lib/profile.ts";
 import { selectMenu } from "../lib/select-menu.ts";
 import {
 	EntryDeduper,
@@ -43,7 +42,6 @@ function modelRef(model: { provider?: unknown; id?: unknown } | undefined): stri
 export default function presentation(pi: ExtensionAPI): void {
 	const bootstrap = loadPresentationConfig(getAgentDir());
 	let config: PresentationConfig = bootstrap.config;
-	let terrificNativeActive = false;
 	const compactToolsActive = () => config.enabled && config.compactTools;
 	let configErrorNotified = false;
 	let latestContext: ExtensionContext | undefined;
@@ -59,7 +57,6 @@ export default function presentation(pi: ExtensionAPI): void {
 		isUserMessageBoxEnabled: () => config.enabled && config.userMessageBox,
 		isCompactToolsEnabled: compactToolsActive,
 		isArtifactProjectionEnabled: () => config.enabled && config.artifacts,
-		isTerrificNativeActive: () => terrificNativeActive,
 		getTheme: () => latestContext?.ui.theme,
 		resolveSkillName,
 	});
@@ -71,11 +68,10 @@ export default function presentation(pi: ExtensionAPI): void {
 	const journal = new ArtifactJournal();
 	let unsubscribeEvent: (() => void) | undefined;
 
-	const reloadConfig = (ctx: ExtensionContext, reportError = false): void => {
-		terrificNativeActive = readTerrificNativeProfile().active;
+	const reloadConfig = (ctx: ExtensionContext): void => {
 		const loaded = loadPresentationConfig(getAgentDir());
 		config = loaded.config;
-		if (reportError && loaded.error && !configErrorNotified) {
+		if (loaded.error && !configErrorNotified) {
 			configErrorNotified = true;
 			report(ctx, `Presentation disabled: ${loaded.error}`, "warning");
 		}
@@ -236,7 +232,7 @@ export default function presentation(pi: ExtensionAPI): void {
 				.map((value) => ({ value, label: value }));
 		},
 		handler: async (args, ctx) => {
-			reloadConfig(ctx, true);
+			reloadConfig(ctx);
 			const action = args.trim().toLowerCase();
 			if (action === "" || action === "config") {
 				await runConfiguration(ctx);

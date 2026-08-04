@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-import { DEFAULT_CONFIG, resolveEffectiveRenderConfig } from "../lib/config.ts";
+import { DEFAULT_CONFIG } from "../lib/config.ts";
 import {
 	fitSegmentsToWidth,
 	groupSegmentsBySemantics,
 	plainVisibleWidth,
 	renderStatusLine,
-	withTerrificStateSpinner,
 } from "../lib/render.ts";
 import { buildWidgetSegments } from "../lib/widgets.ts";
 import type { StatusSnapshot, StatuslineConfig, WidgetSegment } from "../lib/types.ts";
@@ -221,98 +219,6 @@ describe("host theme", () => {
 		assert.ok(calls.some(([color, text]) => color === "thinkingHigh" && text === " high"));
 		assert.ok(calls.some(([color, text]) => color === "muted" && text === "/home/user/proj"));
 		assert.ok(calls.some(([color, text]) => color === "dim" && text === "Ready"));
-	});
-});
-
-describe("renderStatusLine terrific", () => {
-	const widgets = [
-		"path", "session", "model", "mode", "fast", "tokens", "cache", "cost", "context",
-		"contextBar", "branch", "branchDiff", "progress", "duration", "state", "quota",
-		"environment", "toolActivity",
-	] as const;
-	const config: StatuslineConfig = { ...DEFAULT_CONFIG, layout: "terrific", widgets: [...widgets] };
-
-	it("renders all state/width/height combinations within the two-line contract", () => {
-		for (const state of ["Ready", "Thinking", "Working", "Waiting"] as const) {
-			const built = buildWidgetSegments({ ...hudSnapshot, runState: state }, config);
-			for (const width of [40, 80, 120, 160]) {
-				for (const rows of [16, 20, 24]) {
-					const rendered = renderStatusLine(built, config, TEST_THEME, width, truncateToWidth, visibleWidth, rows);
-					const lines = Array.isArray(rendered) ? rendered : [rendered];
-					assert.ok(lines.length <= 2, `${state}/${width}/${rows}: ${lines.length} lines`);
-					assert.equal(lines.length, width < 80 || rows < 20 ? 1 : 2, `${state}/${width}/${rows}`);
-					for (const line of lines) assert.ok(visibleWidth(line) <= width, `${state}/${width}/${rows}: ${visibleWidth(line)}`);
-					if (lines.length === 1) {
-						assert.match(lines[0]!, new RegExp(state));
-						assert.match(lines[0]!, /gpt-5/);
-						if (width >= 80) assert.match(lines[0]!, /Context/);
-					}
-				}
-			}
-		}
-	});
-
-	it("retains every frozen zone item at 120x24", () => {
-		const active = { ...hudSnapshot, runState: "Working" as const };
-		const effective = resolveEffectiveRenderConfig(config, true);
-		const segments = withTerrificStateSpinner(buildWidgetSegments(active, effective), active.runState, 0, false);
-		const lines = renderStatusLine(segments, effective, TEST_THEME, 120, truncateToWidth, visibleWidth, 24) as string[];
-		assert.equal(lines.length, 2);
-		assert.match(lines[0]!, /\/home\/user\/proj.*(?:main|🏠).*gpt-5.*high.*EDIT.*/);
-		assert.match(lines[1]!, /⠋ Working.*12s.*task.*12\.5K.*ctx.*\$0\.42.*5h/);
-		assert.equal((lines[1]!.match(/ctx/g) ?? []).length, 1);
-		for (const line of lines) assert.ok(visibleWidth(line) <= 120);
-	});
-
-	it("uses only the approved zones and one context representation", () => {
-		const rendered = renderStatusLine(buildWidgetSegments(hudSnapshot, config), config, TEST_THEME, 160, truncateToWidth, visibleWidth, 24);
-		assert.ok(Array.isArray(rendered));
-		const [line1, line2] = rendered as string[];
-		assert.match(line1!, /\/home\/user\/proj.*(?:main|🏠).*gpt-5.*EDIT.*/);
-		assert.doesNotMatch(line1!, /demo|\+12 -3|Ready|12\.5K|Context/);
-		assert.match(line2!, /Ready.*12s.*task.*12\.5K.*Context.*\$0\.42.*5h/);
-		assert.doesNotMatch(line2!, /gpt-5|demo|🎯|cache \d|context files|skills|tools|Read x|Bash x/);
-		assert.equal((line2!.match(/Context/g) ?? []).length, 1);
-		assert.equal(visibleWidth(line1!), 160);
-		assert.equal(visibleWidth(line2!), 160);
-	});
-
-	it("falls back to contextBar only when context is absent", () => {
-		const onlyBar = { ...config, widgets: config.widgets.filter((id) => id !== "context") };
-		const lines = renderStatusLine(buildWidgetSegments(hudSnapshot, onlyBar), onlyBar, TEST_THEME, 160, truncateToWidth, visibleWidth, 24) as string[];
-		assert.match(lines[1]!, /Context \[/);
-		assert.equal((lines[1]!.match(/Context/g) ?? []).length, 1);
-	});
-
-	it("decorates only actual non-Ready state with changing active spinner frames", () => {
-		const state: WidgetSegment[] = [{ id: "state", accent: "state", text: "Thinking", parts: [{ text: "Thinking", tone: "thinkingHigh" }], priority: 5 }];
-		const first = withTerrificStateSpinner(state, "Thinking", 0, false)[0]!;
-		const second = withTerrificStateSpinner(state, "Thinking", 1, false)[0]!;
-		assert.notEqual(first.text, second.text);
-		assert.equal(first.parts?.[0]?.tone, "active");
-		assert.equal(withTerrificStateSpinner(state, "Thinking", 0, true)[0]!.text, "* Thinking");
-		assert.deepEqual(withTerrificStateSpinner(state, "Ready", 3, false), state);
-		assert.equal(state[0]!.text, "Thinking");
-		for (const width of [7, 40, 80]) {
-			const rendered = renderStatusLine(withTerrificStateSpinner(state, "Thinking", 2, false), config, TEST_THEME, width, truncateToWidth, visibleWidth, 24);
-			for (const line of Array.isArray(rendered) ? rendered : [rendered]) assert.ok(visibleWidth(line) <= width);
-		}
-	});
-
-	it("is ANSI-safe with hostile CJK segments and tiny widths", () => {
-		const hostile: WidgetSegment[] = [
-			{ id: "state", accent: "state", text: "工作中", parts: [{ text: "\x1b[31m工作中\x1b[0m" }], priority: 5 },
-			{ id: "model", accent: "model", text: "模型超长", priority: 8 },
-			{ id: "context", accent: "usage", text: "上下文 99%", priority: 20 },
-		];
-		const ansiTheme = { fg: (_color: string, text: string) => `\x1b[31m${text}\x1b[0m` };
-		for (const width of [1, 7, 40, 80]) {
-			const rendered = renderStatusLine(hostile, config, ansiTheme, width, truncateToWidth, visibleWidth, 24);
-			for (const line of Array.isArray(rendered) ? rendered : [rendered]) {
-				assert.ok(visibleWidth(line) <= width);
-				assert.doesNotMatch(line, /\x1b\[[^m]*$/);
-			}
-		}
 	});
 });
 

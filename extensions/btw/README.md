@@ -54,25 +54,8 @@ The legacy `btw` block still controls the maximum context snapshot. If the globa
 - Authentication is resolved from Pi's model registry into an in-memory credential store; `auth.json` is not read by the sidecar.
 - Print/JSON modes return an explicit unsupported-mode error without calling a model.
 
-## Appearance
-
-Package-owned config menus and answer overlays opt into the Terrific native profile only when `$PI_CODING_AGENT_DIR/terrific.json` contains the exact global value:
-
-```json
-{
-  "appearance": { "profile": "terrific-native-v1" }
-}
-```
-
-The profile is reread whenever a BTW command starts. An in-flight request keeps its initial visual snapshot through the answer overlay. Missing, malformed, non-object, `off`, unknown, and project-local appearance values fail closed without a BTW notification. Active config menus use one compact responsive boundary, accented selection, muted em-dash descriptions, rebound-key hints, circular navigation, and filtering only for lists longer than 10 items. The active answer overlay changes only chrome, spacing, glyphs, and live terminal-row geometry; scrolling, copy, editor, retry, and cancel actions are unchanged. `TERM=dumb` uses ASCII chrome.
-
-Rollback by setting `appearance.profile` to `off` or removing it; the next BTW command uses the original menu and overlay renderers.
-
 ## Verify
 
 ```bash
 npm run check
-npm run benchmark
 ```
-
-The opt-in benchmark measures exactly 30 timed samples of 100 active pure renders per surface at 160 columns, reports nearest-rank per-render p95, and requires menu and overlay p95 below 16 ms.

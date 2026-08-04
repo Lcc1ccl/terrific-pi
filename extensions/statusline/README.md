@@ -7,7 +7,7 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 ## Features
 
 - Configurable widget order, `·` / `│` separator, and numeric spacing
-- `layout: "single" | "stacked" | "terrific"`; Terrific uses a profile-gated two-line turn-status footer
+- `layout: "single" | "stacked"` with canonical project/usage/environment/activity lines (`session`/`mode` share the environment line)
 - **Minimal profile**: pi built-in footer core + mode/fast/state, with abbreviated labels (`ctx`/`CH`, keep `in`/`out`/`$`)
 - `toolActivityMode: "detailed" | "compact"` for per-tool or core_tools/aux_tools aggregates
 - `iconMode: "emoji" | "plain"` (plugin-owned glyphs only; bars/colors unchanged)
@@ -60,17 +60,6 @@ Optional config file:
 `contextBarWidth` is an integer terminal-cell width. Default: `10`; minimum: `4`; maximum: `40`.
 
 Single-line layout follows the configured order exactly. Stacked layout uses canonical project/usage/environment/activity lines and preserves configured order within each line.
-
-`layout: "terrific"` is a configured opt-in and becomes effective only when the global `$PI_CODING_AGENT_DIR/terrific.json` contains exactly `appearance.profile: "terrific-native-v1"`. With that profile active it renders at most two left/right-aligned lines and owns the visible turn state:
-
-```text
-line 1 left:  path · branch                 line 1 right: model + thinking · mode · fast
-line 2 left:  state/spinner · duration · progress  line 2 right: tokens · context · cost · quota
-```
-
-The zones are strict. `session`, `branchDiff`, `toolActivity`, `environment`, and `cache` are not rendered in Terrific layout even when enabled; they remain unchanged in `single` and `stacked`. The context zone renders `context` when available, otherwise `contextBar`, never both. Effective Terrific rendering uses the existing compact minimal formatter labels (for example `t` and `ctx`) so every frozen zone remains visible at 120 columns; this render-only override does not change the configured or saved `minimal` value. Non-Ready states use the existing 133ms duration timer for the spinner (`*` when `TERM=dumb`); `Ready` has no spinner. Below 80 columns or 20 terminal rows Terrific falls back to one real state/model/context line. If the profile is missing, inactive, or malformed, the effective layout safely remains `single` without an additional notification. `terrific.json` profile and `statusline.json` layout edits are reread before the next request; `/statusline reload` remains available for an immediate manual refresh.
-
-Rollback is configuration-only: choose `single` or `stacked` in `/statusline` (or edit `statusline.json`). Either layout restores pi's built-in working row immediately and does not depend on the appearance profile.
 
 ```json
 {

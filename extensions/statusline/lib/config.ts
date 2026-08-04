@@ -146,24 +146,7 @@ function asContextMode(value: unknown): ContextMode | undefined {
 }
 
 function asLayout(value: unknown): StatuslineLayout | undefined {
-	return value === "single" || value === "stacked" || value === "terrific" ? value : undefined;
-}
-
-export function resolveEffectiveLayout(
-	configured: StatuslineLayout,
-	profileActive: boolean,
-): StatuslineLayout {
-	return configured === "terrific" ? (profileActive ? "terrific" : "single") : configured;
-}
-
-export function resolveEffectiveRenderConfig(
-	configured: StatuslineConfig,
-	profileActive: boolean,
-): StatuslineConfig {
-	const layout = resolveEffectiveLayout(configured.layout, profileActive);
-	return layout === "terrific"
-		? { ...configured, layout, minimal: true }
-		: { ...configured, layout };
+	return value === "single" || value === "stacked" ? value : undefined;
 }
 
 function asIconMode(value: unknown): IconMode | undefined {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { it } from "node:test";
@@ -38,16 +38,11 @@ it("shows the global write target separately from a trusted project's effective 
 	const projectDir = join(root, "project");
 	mkdirSync(agentDir, { recursive: true });
 	mkdirSync(join(projectDir, ".pi"), { recursive: true });
-	writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
-		appearance: { profile: "off" },
-		mode: { default: "edit", persistPerSession: true },
-	}));
+	writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({ mode: { default: "edit", persistPerSession: true } }));
 	writeFileSync(join(projectDir, ".pi", "terrific.json"), JSON.stringify({ mode: { default: "ask" } }));
 
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-	const previousTerm = process.env.TERM;
 	process.env.PI_CODING_AGENT_DIR = agentDir;
-	process.env.TERM = "xterm-256color";
 	try {
 		let tools = ["read", "bash", "edit", "write"];
 		let command: { handler: (args: string, ctx: any) => Promise<void> } | undefined;
@@ -59,10 +54,6 @@ it("shows the global write target separately from a trusted project's effective 
 			appendEntry() {},
 		} as never);
 
-		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
-			appearance: { profile: "terrific-native-v1" },
-			mode: { default: "edit", persistPerSession: true },
-		}));
 		let rendered = "";
 		await command!.handler("config", {
 			cwd: projectDir,
@@ -90,7 +81,6 @@ it("shows the global write target separately from a trusted project's effective 
 			},
 		});
 
-		assert.match(rendered, /^╭─ Mode configuration/);
 		assert.match(rendered, /write: global/);
 		assert.match(rendered, /effective: ask/);
 		assert.match(rendered, /Global default mode: edit/);
@@ -98,64 +88,5 @@ it("shows the global write target separately from a trusted project's effective 
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-		if (previousTerm === undefined) delete process.env.TERM;
-		else process.env.TERM = previousTerm;
 	}
-});
-
-it("keeps mode transitions and tool arrays identical across visual profiles", async () => {
-	async function run(profile: "off" | "terrific-native-v1") {
-		const agentDir = mkdtempSync(join(tmpdir(), `mode-visual-${profile}-`));
-		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({
-			appearance: { profile },
-			mode: { default: "edit", persistPerSession: false },
-		}));
-		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-		process.env.PI_CODING_AGENT_DIR = agentDir;
-		try {
-			let tools = ["read", "grep", "find", "ls", "bash", "edit", "write"];
-			const transitions: string[][] = [];
-			const handlers = new Map<string, Array<(event: unknown, ctx: any) => unknown>>();
-			let command: any;
-			modeExtension({
-				registerCommand(_name: string, value: unknown) { command = value; },
-				on(name: string, handler: any) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
-				getActiveTools: () => [...tools],
-				setActiveTools(next: string[]) { tools = [...next]; transitions.push([...next]); },
-				appendEntry() {},
-			} as never);
-			const ctx = {
-				cwd: "/workspace", hasUI: true, mode: "tui", isProjectTrusted: () => false,
-				sessionManager: { getBranch: () => [] },
-				ui: {
-					notify() {}, setStatus() {}, select: async () => undefined,
-					custom: async (factory: any) => new Promise<string | undefined>((resolve) => {
-						const component = factory(
-							{ terminal: { rows: 24 }, requestRender() {} },
-							{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
-							{
-								matches: (data: string, binding: string) => ({ "\x1b[B": "tui.select.down", "\r": "tui.select.confirm" } as Record<string, string>)[data] === binding,
-								getKeys: () => [],
-							},
-							resolve,
-						);
-						component.handleInput("\x1b[B");
-						component.handleInput("\r");
-					}),
-				},
-			};
-			for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
-			await command.handler("", ctx);
-			return { tools, transitions };
-		} finally {
-			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-			rmSync(agentDir, { recursive: true, force: true });
-		}
-	}
-
-	const inactive = await run("off");
-	const active = await run("terrific-native-v1");
-	assert.deepEqual(active, inactive);
-	assert.deepEqual(active.tools, ["read", "grep", "find", "ls"]);
 });

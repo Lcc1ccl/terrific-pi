@@ -64,7 +64,6 @@ test("ten compatibility generations unload unordered and reverse without patch o
 			handles.push(installPresentationCompatibility({
 				isUserMessageBoxEnabled: () => false,
 				isCompactToolsEnabled: () => true,
-				isTerrificNativeActive: () => true,
 				getTheme: () => undefined,
 				now: () => 1_000,
 			}));

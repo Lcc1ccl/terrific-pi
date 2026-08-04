@@ -2,10 +2,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
 
-import { initTheme, UserMessageComponent } from "@earendil-works/pi-coding-agent";
 import presentation from "../extensions/presentation.ts";
 import {
 	PRESENTATION_ARTIFACT_STATE_ENTRY_TYPE,
@@ -33,11 +31,6 @@ function createHarness(
 		hasUI: mode === "tui",
 		model: { provider: "openai", id: "gpt-test" },
 		ui: {
-			theme: {
-				fg(_color: string, text: string) { return text; },
-				getBgAnsi() { return ""; },
-				bold(text: string) { return text; },
-			},
 			notify(message: string, level?: string) { notifications.push({ message, level }); },
 			async custom() { customCalls += 1; return menuChoices.shift(); },
 			async input() { return undefined; },
@@ -90,59 +83,6 @@ function createHarness(
 		},
 	};
 }
-
-test("profile is reread within one extension generation", async () => {
-	initTheme("dark", false);
-	const agentDir = mkdtempSync(join(tmpdir(), "presentation-profile-generation-"));
-	const previous = process.env.PI_CODING_AGENT_DIR;
-	try {
-		process.env.PI_CODING_AGENT_DIR = agentDir;
-		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({ appearance: { profile: "terrific-native-v1" } }), "utf8");
-		const harness = createHarness();
-		try {
-			await harness.emit("session_start");
-			const active = new UserMessageComponent("active", undefined, 0);
-			assert.match(active.render(40).map(stripVTControlCharacters).join("\n"), /❯ active/);
-
-			writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({ appearance: { profile: "off" } }), "utf8");
-			await harness.emit("before_agent_start", { systemPrompt: "base", systemPromptOptions: { contextFiles: [] } });
-			const inactive = new UserMessageComponent("baseline", undefined, 0);
-			const output = inactive.render(40).map(stripVTControlCharacters).join("\n");
-			assert.match(output, /╭ user /);
-			assert.doesNotMatch(output, /❯ baseline/);
-		} finally {
-			await harness.emit("session_shutdown");
-		}
-	} finally {
-		if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = previous;
-		rmSync(agentDir, { recursive: true, force: true });
-	}
-});
-
-test("malformed shared config is silent during normal presentation activation", async () => {
-	const agentDir = mkdtempSync(join(tmpdir(), "presentation-profile-silent-"));
-	const previous = process.env.PI_CODING_AGENT_DIR;
-	try {
-		process.env.PI_CODING_AGENT_DIR = agentDir;
-		writeFileSync(join(agentDir, "terrific.json"), "{", "utf8");
-		const harness = createHarness();
-		try {
-			await harness.emit("session_start");
-			await harness.emit("before_agent_start", { systemPrompt: "base", systemPromptOptions: { contextFiles: [] } });
-			assert.equal(harness.notifications.length, 0);
-			await harness.commands.get("presentation").handler("status", harness.ctx);
-			assert.equal(harness.notifications.length, 2, "explicit command may report config error and status");
-			assert.match(harness.notifications[0]?.message ?? "", /Presentation disabled:.*parse/i);
-		} finally {
-			await harness.emit("session_shutdown");
-		}
-	} finally {
-		if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = previous;
-		rmSync(agentDir, { recursive: true, force: true });
-	}
-});
 
 test("presentation appends UI-only system events without owning built-in execution tools", async () => {
 	const agentDir = mkdtempSync(join(tmpdir(), "presentation-extension-"));

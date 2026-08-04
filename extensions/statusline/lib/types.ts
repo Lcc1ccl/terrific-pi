@@ -1,6 +1,6 @@
 export type RunState = "Ready" | "Working" | "Thinking" | "Waiting";
 
-export type StatuslineLayout = "single" | "stacked" | "terrific";
+export type StatuslineLayout = "single" | "stacked";
 export type IconMode = "emoji" | "plain";
 export type StatuslineSeparator = "dot" | "bar";
 export type ToolActivityMode = "detailed" | "compact";
