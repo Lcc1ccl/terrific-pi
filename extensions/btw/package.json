@@ -17,8 +17,7 @@
   "scripts": {
     "test": "node --test --experimental-strip-types tests/*.test.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "check": "npm run typecheck && npm test",
-    "benchmark": "node --experimental-strip-types benchmarks/render.bench.ts"
+    "check": "npm run typecheck && npm test"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",
@@ -27,10 +26,10 @@
     "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-agent-core": "0.81.1",
-    "@earendil-works/pi-ai": "0.81.1",
-    "@earendil-works/pi-coding-agent": "0.81.1",
-    "@earendil-works/pi-tui": "0.81.1",
+    "@earendil-works/pi-agent-core": "0.80.10",
+    "@earendil-works/pi-ai": "0.80.10",
+    "@earendil-works/pi-coding-agent": "0.80.10",
+    "@earendil-works/pi-tui": "0.80.10",
     "@types/node": "^26.0.0",
     "typescript": "^6.0.3"
   },

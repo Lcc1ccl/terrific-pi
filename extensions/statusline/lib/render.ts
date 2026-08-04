@@ -116,7 +116,6 @@ function colorizeSegments(
 	segments: WidgetSegment[],
 	config: StatuslineConfig,
 	theme: HostTheme,
-	indent = "  ",
 ): string {
 	const separator = colorizeText(
 		theme,
@@ -125,7 +124,7 @@ function colorizeSegments(
 		"dim",
 	);
 	const colored = segments.map((segment) => colorizeSegment(theme, segment));
-	return `${indent}${colored.join(separator)}`;
+	return `  ${colored.join(separator)}`;
 }
 
 function cloneSegments(segments: WidgetSegment[]): WidgetSegment[] {
@@ -222,94 +221,6 @@ function renderSingleLine(
 	return truncate(line, Math.max(1, width), separatorEllipsis);
 }
 
-const TERRIFIC_LINE_1: readonly [readonly WidgetSegment["id"][], readonly WidgetSegment["id"][]] = [
-	["path", "branch"],
-	["model", "mode", "fast"],
-];
-const TERRIFIC_LINE_2_LEFT: readonly WidgetSegment["id"][] = ["state", "duration", "progress"];
-const TERRIFIC_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"] as const;
-
-export function withTerrificStateSpinner(
-	segments: WidgetSegment[],
-	runState: "Ready" | "Working" | "Thinking" | "Waiting",
-	frame: number,
-	dumbTerminal: boolean,
-): WidgetSegment[] {
-	if (runState === "Ready") return segments;
-	const spinner = dumbTerminal
-		? "*"
-		: TERRIFIC_SPINNER_FRAMES[Math.abs(Math.floor(frame)) % TERRIFIC_SPINNER_FRAMES.length]!;
-	return segments.map((segment) => segment.id !== "state" ? segment : {
-		...segment,
-		text: `${spinner} ${segment.text}`,
-		parts: [{ text: `${spinner} `, tone: "active" }, ...(segment.parts ?? [{ text: segment.text }])],
-	});
-}
-
-function orderedSegments(segments: WidgetSegment[], ids: readonly WidgetSegment["id"][]): WidgetSegment[] {
-	return ids.flatMap((id) => segments.filter((segment) => segment.id === id));
-}
-
-function renderTerrificZoneLine(
-	segments: WidgetSegment[],
-	leftIds: readonly WidgetSegment["id"][],
-	rightIds: readonly WidgetSegment["id"][],
-	config: StatuslineConfig,
-	theme: HostTheme,
-	width: number,
-	truncate: (text: string, maxWidth: number, ellipsis: string) => string,
-	measure: (text: string) => number,
-): string {
-	const leftSource = orderedSegments(segments, leftIds);
-	const rightSource = orderedSegments(segments, rightIds);
-	const fitted = fitSegmentsToWidth([...leftSource, ...rightSource], config, theme, width, measure);
-	const included = new Set(fitted.map((segment) => segment.id));
-	const left = fitted.filter((segment) => included.has(segment.id) && leftIds.includes(segment.id));
-	const right = fitted.filter((segment) => included.has(segment.id) && rightIds.includes(segment.id));
-	const leftText = colorizeSegments(left, config, theme, left.length > 0 ? "  " : "");
-	const rightText = colorizeSegments(right, config, theme, "");
-	const leftWidth = measure(leftText);
-	const rightWidth = measure(rightText);
-	const gap = right.length > 0 ? " ".repeat(Math.max(1, width - leftWidth - rightWidth)) : "";
-	const aligned = left.length > 0 ? `${leftText}${gap}${rightText}` : `${" ".repeat(Math.max(0, width - rightWidth))}${rightText}`;
-	return truncate(aligned, Math.max(1, width), colorizeText(theme, "dim", "…", "dim"));
-}
-
-function renderTerrific(
-	segments: WidgetSegment[],
-	config: StatuslineConfig,
-	theme: HostTheme,
-	width: number,
-	terminalRows: number,
-	truncate: (text: string, maxWidth: number, ellipsis: string) => string,
-	measure: (text: string) => number,
-): string | string[] {
-	if (width < 80 || terminalRows < 20) {
-		const state = orderedSegments(segments, ["state"]);
-		const model = orderedSegments(segments, ["model"]);
-		const context = orderedSegments(segments, ["context"]);
-		const contextFallback = context.length > 0 ? context : orderedSegments(segments, ["contextBar"]);
-		return renderSingleLine([...state, ...model, ...contextFallback], config, theme, width, truncate, measure);
-	}
-	const [line1Left, line1Right] = TERRIFIC_LINE_1;
-	const contextId: WidgetSegment["id"] = segments.some((segment) => segment.id === "context")
-		? "context"
-		: "contextBar";
-	return [
-		renderTerrificZoneLine(segments, line1Left, line1Right, config, theme, width, truncate, measure),
-		renderTerrificZoneLine(
-			segments,
-			TERRIFIC_LINE_2_LEFT,
-			["tokens", contextId, "cost", "quota"],
-			config,
-			theme,
-			width,
-			truncate,
-			measure,
-		),
-	];
-}
-
 export function renderStatusLine(
 	segments: WidgetSegment[],
 	config: StatuslineConfig,
@@ -317,11 +228,7 @@ export function renderStatusLine(
 	width: number,
 	truncate: (text: string, maxWidth: number, ellipsis: string) => string,
 	measure: (text: string) => number = plainVisibleWidth,
-	terminalRows = 24,
 ): string | string[] {
-	if (config.layout === "terrific") {
-		return renderTerrific(segments, config, theme, width, terminalRows, truncate, measure);
-	}
 	if (config.layout !== "stacked") {
 		return renderSingleLine(segments, config, theme, width, truncate, measure);
 	}

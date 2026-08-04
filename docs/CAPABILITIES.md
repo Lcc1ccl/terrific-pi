@@ -33,7 +33,7 @@ terrific-pi/
 └── dist/                # 可再生成的离线包，默认仅保留最新 5 个
 ```
 
-`terrific-pi` 是产品与治理边界，不是根级 runtime：每个 extension 可独立安装、启用和测试；兼容扩展才通过 Pi 的公共 API 和明确配置/status 契约组合。`appearance` 已提供当前可选的中性 `terrific-night` theme，以及 opt-in `terrific-native-v1` header/editor/shortcuts shell；它与 `statusline`、`taskboard`、`presentation` 可组合，但各包仍可独立安装且互不构成安装前提。
+`terrific-pi` 是产品与治理边界，不是根级 runtime：每个 extension 可独立安装、启用和测试；兼容扩展才通过 Pi 的公共 API 和明确配置/status 契约组合。
 
 **加载关系（开发机典型）**：
 
@@ -48,10 +48,7 @@ terrific-pi/
        ▼
    pi 启动加载 extensions
        │
-       ├─ taskboard 注册任务 HUD（必须先于 presentation）
-       ├─ presentation 安装仅有的 user/tool render patches
-       ├─ appearance 提供 theme/header/editor/shortcuts
-       ├─ statusline 接管 footer HUD（与 appearance 顺序无关）
+       ├─ statusline 接管 footer HUD
        ├─ mode / fast / … 注册 slash 与 status
        ├─ auxiliary 提供旁路 runtime + 工具
        └─ skills 另路径：~/.agents/skills（install/snapshot 同步）
@@ -65,8 +62,7 @@ terrific-pi/
 
 | 能力 | 包路径 | 怎么调用 | 解决什么 | 实现性质 |
 |------|--------|----------|----------|----------|
-| 原生外观 shell | `extensions/appearance` | 选择 `terrific-night`；配置 `appearance.profile: terrific-native-v1` | 公共 theme、startup header、保留原生输入模型的 editor 与动态 shortcuts | **本仓实现**；不拥有 footer/transcript/status |
-| 底栏 HUD | `extensions/statusline` | 自动 footer；`/statusline` 配置 | single/stacked/terrific layout；path/model/tokens/mode/fast/turn status | **本仓实现**（唯一 footer owner） |
+| 底栏 HUD | `extensions/statusline` | 自动 footer；`/statusline` 配置 | 一眼看 path/model/tokens/mode/fast/状态；仅相关 widget 启用时显示 Context & usage | **本仓实现**（可配置 widget） |
 | 工具权限模式 | `extensions/mode` | `/mode ask\|plan\|edit\|auto\|config` | 会话内限制可写/可执行工具，并管理全局默认 | **本仓实现** |
 | Pilot Copilot | `extensions/pilot` | `/pilot` 激活；提交目标；`/pilot work` 审阅；TUI Authorize 或 headless exact digest | 手动人机共驾：完整 plan、trusted clean-Git primary-solo、Pilot one-shot policy + child write-root guard、package lifecycle-script 验证、actual-diff fresh review、acceptance evidence 和 receipt | **本仓实现**；默认 inactive，只使用 `pi-subagents` 公开 V1 前台传输，失败回人类，不自动修复/提交 |
 | OpenAI Priority | `extensions/fast` | `/fast [on\|off\|toggle\|status]` | 仅 GPT 模型 + openai 家族 Responses 时注入 `service_tier=priority` | **本仓实现**（窄注入） |
@@ -135,8 +131,7 @@ terrific-pi/
 
 | 层 | 谁负责 | 内容 |
 |----|--------|------|
-| Theme/header/editor/shortcuts | **appearance** | `terrific-night` palette、startup 标识、输入边界、实际 keybinding hints；不显示 path/model/mode/tokens |
-| Footer 常驻 | **statusline** | path、branch、model+thinking、cache、cost、mode、fast、progress/state/duration；terrific layout 可作为 turn status |
+| Footer 常驻 | **statusline** | path、branch、model+thinking、cache、cost、mode、fast、progress/state/duration；默认不启用 `toolActivity`、tokens、session、branchDiff |
 | 任务 HUD | **taskboard** | 多步任务目标、步骤、blocker、等待/阻塞与验证；`activityMode: full` 在紧凑 HUD 提供聚合运行态、在展开面板提供详情 |
 | 过程历史 | **presentation** | 受控折叠原生工具行；运行中探索/Skill 身份与单一安全失败行，`app.tools.expand` 恢复 Pi 原生细节 |
 | 扩展 status key | 各插件 `setStatus` | mode / fast / taskboard / auxiliary 等；statusline 对部分 key **排除重复展示**（见 `EXCLUDED_PROGRESS_KEYS`） |
@@ -150,8 +145,8 @@ terrific-pi/
 
 | 文件 | 谁读 | 内容 |
 |------|------|------|
-| `~/.pi/agent/settings.json` | pi 核心 + 全局默认 | packages（`taskboard` 在 `presentation` 前）、theme、editorPaddingX、outputPad、defaultProvider/Model/ThinkingLevel… |
-| `~/.pi/agent/terrific.json` | mode / btw / context / auxiliary / docsflow / model-profile / fast / taskboard / presentation / appearance | 本仓共享配置；`appearance.profile` 由 appearance/presentation/statusline/taskboard/mode/btw 各自只读 global 文件，不接受 project-local override；Taskboard `0.2.0` 不再注册 `/process`，仍可读取并迁移旧 `processView` |
+| `~/.pi/agent/settings.json` | pi 核心 + 全局默认 | packages、defaultProvider/Model/ThinkingLevel、theme… |
+| `~/.pi/agent/terrific.json` | mode / btw / context / auxiliary / docsflow / model-profile / fast / taskboard / presentation | 本仓插件共享配置；Taskboard `0.2.0` 不再注册 `/process`，仍可读取并迁移旧 `processView` |
 | `~/.pi/agent/statusline.json` | statusline | widget 布局与 profile |
 | `~/.pi/agent/models.json` | pi + pi-provider-sync | 自定义 provider/models |
 | `~/.pi/agent/auth.json` | pi | **密钥；禁止入库** |
@@ -172,15 +167,6 @@ terrific-pi/
 
 \* 计划中，见 §5。
 
-### 3.5 Terrific native v1 激活与边界
-
-公开 examples 是 opt-in，不是 rollout 默认：`settings.packages.example.json` 选择 `terrific-night`、padding `1/1` 并加载 appearance；`terrific.example.json` 选择 `terrific-native-v1`；`statusline.example.json` 选择 `terrific` + `plain`。live `~/.pi` 与 snapshot 在视觉 rollout 获批前保持不变。
-
-- `taskboard` 必须先于 `presentation`；appearance/statusline 无顺序依赖，但生产源码和 enabled 第三方包必须先通过 setter owner audit。未知 `setHeader`/`setEditorComponent`/`setFooter` owner 阻塞启用。
-- `pi-vision-handoff@0.8.1` 的 paste-time `PrewarmEditor` 与 `TerrificEditor` 共用 editor slot，因此 native profile example 明确不启用前者。完整 Terrific editor 与 Vision prewarm editor 必须二选一；live rollout 前对 proposed settings 运行 owner audit，不以 package 顺序掩盖冲突。
-- 同一事实只有一个 renderer：appearance 不复制 footer facts，taskboard 独占完整 steps，presentation 只呈现过程历史，statusline 只做摘要，Pi core 保留 assistant/thinking/dialog。
-- 回滚为移除 appearance 或 profile `off`、恢复原 theme/padding/statusline layout 后 `/reload`；无需 session migration。Windows Terminal/VS Code 的尺寸、色深、editor、reload、`Ctrl+O` 与真实 working/error/edit/blocked/BTW 流程仍需按 README checklist 人工验收。
-
 ---
 
 ## 4. 插件决策账本
@@ -189,8 +175,7 @@ terrific-pi/
 
 | 名称 | 状态 | 为何要有 | 解决的问题 | 实现策略 | 明确不做什么 |
 |------|------|----------|------------|----------|--------------|
-| appearance | 已收录，opt-in | Theme JSON 不能提供 header/editor/dynamic shortcuts，第三方 UI 包会重复 footer/transcript owner | `terrific-night` + 公共 UI appearance shell | 本仓零 runtime dependency package | 不接管 footer、transcript、task/status，不自动修改用户 theme |
-| statusline | 已收录 | 官方 footer 不够密/不可配 | 可配置 HUD、quota、stacked/minimal/terrific | 本仓实现 | 不替代 taskboard 任务面板 |
+| statusline | 已收录 | 官方 footer 不够密/不可配 | 可配置 HUD、quota、stacked/minimal | 本仓实现 | 不替代 taskboard 任务面板 |
 | mode | 已收录 | 需要会话级工具策略 | ask/plan/edit/auto | 本仓实现 | 不切换模型/thinking |
 | fast | 已收录 | Priority 无一键开关 | `service_tier` 注入 | 本仓窄实现 | 不控制 thinking、不通用 header 框架 |
 | context | 已收录 | 需要可解释上下文占用 | `/context` 拆解 | 本仓实现 | 不压缩、不调模型 |
@@ -271,5 +256,4 @@ terrific-pi/
 | 2026-07-22 | 正式定义个性化 Pi enhancement monorepo；补目录/workflow 边界、历史 session 契约与 dist 保留策略 |
 | 2026-07-22 | Pilot Phase 0：登记双激活、input routing 与 Auxiliary `pilot_router` bridge；未启用 settings 或 legacy cutover |
 | 2026-07-23 | Pilot Copilot scope：默认 inactive，仅 `/pilot` 手动接管；完整知情 Work Gate、trusted clean-Git single Worker、resolved package scripts、actual-diff review、acceptance evidence、final-state receipt；加入离线 packages，并保留独立 mode/docsflow |
-| 2026-07-26 | `appearance` 与 `terrific-night` 已交付为 opt-in；登记 renderer owner、global-only profile、taskboard-before-presentation、回滚与人工 terminal gate；未执行 live/snapshot rollout |
 | 2026-07-22 | `process-view` 更名为 `taskboard`：canonical package/path/command/config/status key 均迁移；Taskboard `0.2.0` 移除重复 `/process` 命令，长期保留 `process_update`、历史 session entry 和旧配置/status 的只读迁移兼容 |

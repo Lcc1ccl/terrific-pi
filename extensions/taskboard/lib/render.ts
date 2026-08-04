@@ -21,12 +21,6 @@ export interface ProcessTheme {
 	bold(text: string): string;
 }
 
-export interface TaskboardRenderOptions {
-	variant?: "baseline" | "terrific";
-	ascii?: boolean;
-	terminalRows?: number;
-}
-
 interface ToolResultLike {
 	content: Array<{ type: string; text?: string }>;
 	details?: unknown;
@@ -38,19 +32,6 @@ const STATUS_META: Record<ProcessStatus, { symbol: string; label: string; tone: 
 	blocked: { symbol: "!", label: "Blocked", tone: "error" },
 	completed: { symbol: "✓", label: "Done", tone: "success" },
 	interrupted: { symbol: "!", label: "Interrupted", tone: "warning" },
-};
-
-const TERRIFIC_STATUS_META: Record<ProcessStatus, {
-	symbol: string;
-	asciiSymbol: string;
-	label: string;
-	tone: ProcessTone;
-}> = {
-	running: { symbol: "●", asciiSymbol: "*", label: "Running", tone: "accent" },
-	waiting: { symbol: "◷", asciiSymbol: "|", label: "Waiting", tone: "muted" },
-	blocked: { symbol: "!", asciiSymbol: "!", label: "Blocked", tone: "error" },
-	completed: { symbol: "✓", asciiSymbol: "+", label: "Completed", tone: "success" },
-	interrupted: { symbol: "×", asciiSymbol: "!", label: "Interrupted", tone: "warning" },
 };
 
 const STAGE_LABELS: Partial<Record<RuntimeStage, string>> = {
@@ -203,59 +184,6 @@ function compactLines(state: TaskboardRenderState, width: number, theme: Process
 	return lines.slice(0, width < 72 ? 2 : 3);
 }
 
-function terrificStepMeta(step: ProcessStep, ascii: boolean): { marker: string; tone: ProcessTone } {
-	if (step.status === "done") return { marker: ascii ? "+" : "✓", tone: "success" };
-	if (step.status === "active") return { marker: ascii ? ">" : "▶", tone: "accent" };
-	if (step.status === "failed") return { marker: ascii ? "x" : "✗", tone: "error" };
-	return { marker: ascii ? "[ ]" : "□", tone: "dim" };
-}
-
-function terrificCompactLines(
-	state: TaskboardRenderState,
-	width: number,
-	theme: ProcessTheme,
-	options: TaskboardRenderOptions,
-): string[] {
-	const snapshot = state.snapshot!;
-	const meta = TERRIFIC_STATUS_META[snapshot.status];
-	const symbol = options.ascii ? meta.asciiSymbol : meta.symbol;
-	const status = theme.fg(meta.tone, `${symbol} ${meta.label}`);
-	const progress = `${doneCount(snapshot)}/${snapshot.steps.length}`;
-	const current = currentStep(snapshot);
-	const elapsed = formatElapsed(stepElapsedMs(telemetryForStep(snapshot, state.telemetry, current), state.now));
-	const step = current ? terrificStepMeta(current, Boolean(options.ascii)) : undefined;
-	const focus = current
-		? `${theme.fg(step!.tone, step!.marker)} ${current.text}`
-		: snapshot.title;
-	if (width < 72) {
-		const separator = " · ";
-		const available = Math.max(0, width - visibleWidth(separator));
-		const titleWidth = Math.floor(available * 0.45);
-		const focusWidth = Math.max(0, available - titleWidth);
-		return fit([
-			`${status} · ${progress} · ${elapsed}`,
-			`${truncateToWidth(snapshot.title, titleWidth, "…")}${separator}${truncateToWidth(focus, focusWidth, "…")}`,
-		], width).slice(0, 2);
-	}
-	const fixed = `${status} ·  · ${progress} · ${elapsed}`;
-	const title = truncateToWidth(snapshot.title, Math.max(0, width - visibleWidth(fixed)), "…");
-	const lines = [
-		`${status} · ${title} · ${progress} · ${elapsed}`,
-		`${focus}`,
-	];
-	const detail = detailLine(snapshot);
-	if (detail) lines.push(detail);
-	else if (state.activityMode === "full") {
-		const activity = formatActivity(state.activity);
-		if (activity.text) lines.push(activity.text);
-		else {
-			const stage = STAGE_LABELS[state.activity.stage];
-			if (stage) lines.push(stage);
-		}
-	}
-	return fit(lines, width).slice(0, 3);
-}
-
 function modelSummary(models: readonly string[]): string {
 	if (models.length === 0) return "—";
 	return models.length === 1 ? truncateToWidth(models[0]!, 32, "…") : `${models.length} models`;
@@ -359,108 +287,13 @@ function detailPanelLines(state: TaskboardRenderState, width: number, theme: Pro
 	return lines.slice(0, 15);
 }
 
-function terrificPanelBudget(terminalRows: number | undefined): number {
-	const rows = Number.isFinite(terminalRows) && (terminalRows ?? 0) > 0 ? Math.floor(terminalRows!) : 24;
-	if (rows <= 16) return 10;
-	if (rows <= 20) return 12;
-	return 15;
-}
-
-function prioritizedStepIndexes(snapshot: ProcessSnapshot): number[] {
-	const current = currentStep(snapshot);
-	const currentIndex = current ? snapshot.steps.indexOf(current) : -1;
-	return [...new Set([
-		currentIndex,
-		...snapshot.steps.map((step, index) => step.status === "failed" ? index : -1),
-	].filter((index) => index >= 0))];
-}
-
-function terrificFactLines(snapshot: ProcessSnapshot): string[] {
-	const lines: string[] = [];
-	if (snapshot.blocker) lines.push(`Need: ${snapshot.blocker}`);
-	if (snapshot.status === "completed" && snapshot.verification) lines.push(`Verification: ${snapshot.verification}`);
-	if (snapshot.update) lines.push(`Update: ${snapshot.update}`);
-	if (snapshot.status !== "completed" && snapshot.verification) lines.push(`Verification: ${snapshot.verification}`);
-	if (snapshot.artifacts.length > 0) {
-		lines.push(`Artifacts: ${snapshot.artifacts.map((artifact) => artifact.label).join(" · ")}`);
-	}
-	return lines;
-}
-
-function terrificDetailPanelLines(
-	state: TaskboardRenderState,
-	width: number,
-	theme: ProcessTheme,
-	options: TaskboardRenderOptions,
-): string[] {
-	if (width < 1) return [];
-	const snapshot = state.snapshot!;
-	const meta = TERRIFIC_STATUS_META[snapshot.status];
-	const statusSymbol = options.ascii ? meta.asciiSymbol : meta.symbol;
-	const status = theme.fg(meta.tone, `${statusSymbol} ${meta.label}`);
-	const facts = terrificFactLines(snapshot);
-	const budget = terrificPanelBudget(options.terminalRows);
-	let availableRows = budget - 6;
-	const selectedFacts: string[] = [];
-	const blocker = facts.find((line) => line.startsWith("Need: "));
-	if (blocker && availableRows > 0) {
-		selectedFacts.push(blocker);
-		availableRows -= 1;
-	}
-	const priorityIndexes = prioritizedStepIndexes(snapshot).slice(0, availableRows);
-	availableRows -= priorityIndexes.length;
-	for (const fact of facts) {
-		if (availableRows <= 0) break;
-		if (selectedFacts.includes(fact)) continue;
-		selectedFacts.push(fact);
-		availableRows -= 1;
-	}
-	const prioritySet = new Set(priorityIndexes);
-	const ordinaryIndexes = snapshot.steps
-		.map((_step, index) => index)
-		.filter((index) => !prioritySet.has(index))
-		.slice(0, availableRows);
-	const stepIndexes = [...priorityIndexes, ...ordinaryIndexes];
-	availableRows -= ordinaryIndexes.length;
-	const activity = state.activityMode === "off" ? undefined : detailedActivity(state);
-	const includeTime = availableRows > 0;
-	const includeActivity = Boolean(activity) && availableRows > 1;
-	const current = currentStep(snapshot);
-	const currentMetric = telemetryForStep(snapshot, state.telemetry, current);
-	const lines = [boxBorder("top", width, theme)];
-	lines.push(boxRow(` ${theme.bold("Taskboard")} · ${status} · ${doneCount(snapshot)}/${snapshot.steps.length} · ${snapshot.title}`, width, theme));
-	if (includeTime) {
-		lines.push(boxRow(` Time: total ${formatElapsed(totalElapsedMs(state.telemetry, state.now))} · current ${formatElapsed(stepElapsedMs(currentMetric, state.now))}`, width, theme));
-	}
-	lines.push(boxBorder("section", width, theme, "Tasks"));
-	for (const index of stepIndexes) {
-		const step = snapshot.steps[index]!;
-		const stepMeta = terrificStepMeta(step, Boolean(options.ascii));
-		const left = ` ${theme.fg(stepMeta.tone, stepMeta.marker)} ${step.text}`;
-		const right = taskMetrics(state.telemetry?.steps[index], state.now, width);
-		lines.push(boxRow(alignColumns(left, right, Math.max(0, width - 2)), width, theme));
-	}
-	lines.push(boxBorder("section", width, theme, "Runtime"));
-	lines.push(boxRow(` ${runtimeLine(state.telemetry)}`, width, theme));
-	if (includeActivity) lines.push(boxRow(` ${activity}`, width, theme));
-	for (const fact of selectedFacts) lines.push(boxRow(` ${fact}`, width, theme));
-	lines.push(boxBorder("bottom", width, theme));
-	return lines;
-}
-
 export function formatTaskboardLines(
 	state: TaskboardRenderState,
 	width: number,
 	theme: ProcessTheme,
-	options: TaskboardRenderOptions = {},
 ): string[] {
 	if (state.viewMode === "off") return [];
 	if (!state.snapshot) return state.activityMode === "full" ? fit(passiveLines(state, theme), width) : [];
-	if (options.variant === "terrific") {
-		return state.viewMode === "full" || state.expanded
-			? terrificDetailPanelLines(state, width, theme, options)
-			: terrificCompactLines(state, width, theme, options);
-	}
 	return state.viewMode === "full" || state.expanded
 		? detailPanelLines(state, width, theme)
 		: fit(compactLines(state, width, theme), width);
@@ -469,26 +302,14 @@ export function formatTaskboardLines(
 export class TaskboardWidget implements Component {
 	private readonly getState: () => TaskboardRenderState;
 	private readonly theme: ProcessTheme;
-	private readonly options: TaskboardRenderOptions;
-	private readonly getTerminalRows?: () => number | undefined;
 
-	constructor(
-		getState: () => TaskboardRenderState,
-		theme: ProcessTheme,
-		options: TaskboardRenderOptions = {},
-		getTerminalRows?: () => number | undefined,
-	) {
+	constructor(getState: () => TaskboardRenderState, theme: ProcessTheme) {
 		this.getState = getState;
 		this.theme = theme;
-		this.options = options;
-		this.getTerminalRows = getTerminalRows;
 	}
 
 	render(width: number): string[] {
-		const terminalRows = this.getTerminalRows?.();
-		return formatTaskboardLines(this.getState(), width, this.theme, terminalRows === undefined
-			? this.options
-			: { ...this.options, terminalRows });
+		return formatTaskboardLines(this.getState(), width, this.theme);
 	}
 
 	invalidate(): void {}

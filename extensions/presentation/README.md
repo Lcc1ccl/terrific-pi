@@ -16,11 +16,6 @@ No external transcript or tool-display fork is required.
 
 ## Behavior
 
-The global `appearance.profile` selects only the transcript visual variant; it does not enable or disable this package, and theme selection remains independent.
-
-- With `appearance.profile: "terrific-native-v1"`, user messages use a full-width `userMessageBg` band with a `❯` prompt (`>` for `TERM=dumb`). Native Markdown, foreground ANSI, and OSC 133/633 prompt markers remain owned by Pi. Collapsed tool rows use the Terrific pending/running/success/failure glyph contract.
-- With the profile absent, off, invalid, or unknown, presentation keeps its compatibility baseline byte-for-byte: the current framed user message and compact tool summaries still follow `/presentation` toggles.
-- Profile selection is read only from global `$PI_CODING_AGENT_DIR/terrific.json` and is reread before each request or presentation command. Project-local config is ignored, and profile parse errors are silent here so the appearance package remains the single warning owner.
 - User messages use a full-width `user` frame by default. The renderer calls Pi's original Markdown renderer first, preserves its ANSI and OSC 133/633 markers, then adds the frame. Narrow widths or compatibility failures fall back to Pi's original output.
 - Collapsed built-in rows have one display owner. Bash has running, success, and error states; command text stays out of collapsed history. `Ctrl+O` (or the configured `app.tools.expand` binding) always restores Pi's native call and result detail.
 - Exact `read` matches for `systemPromptOptions.skills[].filePath` show `Skill(name) - loading/loaded`; ordinary files named `SKILL.md` are not inferred as skills.
@@ -50,7 +45,7 @@ Configuration shares `$PI_CODING_AGENT_DIR/terrific.json` (normally `~/.pi/agent
 }
 ```
 
-`userMessageBox` and `compactTools` both default to `true`. Runtime toggles and external file edits are dynamic at the next request boundary: disabled features pass through to Pi's original renderer; file receipts remain available when compact tools are disabled.
+`userMessageBox` and `compactTools` both default to `true`. Runtime toggles are dynamic: disabled features pass through to Pi's original renderer; file receipts remain available when compact tools are disabled.
 
 Malformed JSON fails closed for this extension and is reported once. `/presentation` changes only the `presentation` section atomically.
 
