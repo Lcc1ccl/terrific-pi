@@ -1,7 +1,11 @@
+import type { RuntimeInfo } from "./runtime-info.ts";
+import type { TurnPerformanceView } from "./telemetry.ts";
+import type { WorktreeInfo } from "./worktree.ts";
+
 export type RunState = "Ready" | "Working" | "Thinking" | "Waiting";
 
 export type StatuslineLayout = "single" | "stacked";
-export type IconMode = "emoji" | "plain";
+export type IconMode = "emoji" | "plain" | "nerd" | "ascii" | "auto";
 export type StatuslineSeparator = "dot" | "bar";
 export type ToolActivityMode = "detailed" | "compact";
 
@@ -23,7 +27,10 @@ export type WidgetId =
 	| "state"
 	| "quota"
 	| "environment"
-	| "toolActivity";
+	| "toolActivity"
+	| "worktree"
+	| "runtime"
+	| "performance";
 
 export type ContextMode = "remaining" | "used";
 
@@ -89,10 +96,13 @@ export const WIDGET_GROUPS: Record<WidgetId, WidgetGroup> = {
 	session: "environment",
 	mode: "environment",
 	environment: "environment",
+	runtime: "environment",
 	toolActivity: "activity",
 	progress: "activity",
 	duration: "activity",
 	state: "activity",
+	worktree: "project",
+	performance: "usage",
 };
 
 /** Drop order: higher first. Keep model/branch/current-context/state longer. */
@@ -115,6 +125,9 @@ export const WIDGET_PRIORITY: Record<WidgetId, number> = {
 	branch: 10,
 	model: 8,
 	state: 5,
+	worktree: 28,
+	runtime: 75,
+	performance: 78,
 };
 
 export type QuotaProvider = "codex" | "claude";
@@ -182,6 +195,16 @@ export interface AuxiliaryUsageView {
 	hasUnknownCost?: boolean;
 }
 
+export interface TelemetryConfig {
+	display: "off" | "widget" | "notification";
+	tps: boolean;
+	ttft: boolean;
+	duration: boolean;
+	tokens: boolean;
+	stalls: boolean;
+	cost: boolean;
+}
+
 export interface StatusSnapshot {
 	cwd: string;
 	sessionName?: string;
@@ -208,6 +231,9 @@ export interface StatusSnapshot {
 	environment?: EnvironmentCounts;
 	/** Aggregated by tool name. */
 	toolActivity?: Record<string, ToolActivity>;
+	worktree?: WorktreeInfo;
+	runtime?: RuntimeInfo;
+	performance?: TurnPerformanceView;
 }
 
 export interface StatuslineConfig {
@@ -221,6 +247,7 @@ export interface StatuslineConfig {
 	spacing: number;
 	/** detailed = per-tool; compact = core_tools + aux_tools aggregates. */
 	toolActivityMode: ToolActivityMode;
+	telemetry?: TelemetryConfig;
 	/** Optional stacked-line group overrides (defaults live in WIDGET_GROUPS). */
 	widgetGroups?: Partial<Record<WidgetId, WidgetGroup>>;
 }

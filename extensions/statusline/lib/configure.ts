@@ -258,9 +258,9 @@ export function buildWidgetEditorItems(
 	// Any catalog id missing from order (shouldn't happen) append by group defaults.
 	for (const group of WIDGET_GROUP_ORDER) {
 		for (const id of allWidgets) {
-			if (seen.has(id)) continue;
+			if (seen.has(id as WidgetId)) continue;
 			if (resolveWidgetGroup(id as WidgetId, overrides) !== group) continue;
-			seen.add(id);
+			seen.add(id as WidgetId);
 			items.push({ id: id as WidgetId, enabled: enabledSet.has(id) });
 		}
 	}
@@ -382,6 +382,7 @@ export function formatConfigSummary(config: StatuslineConfig, configPath: string
 		`contextMode: ${config.contextMode}`,
 		`contextBarWidth: ${config.contextBarWidth} (default ${DEFAULT_CONTEXT_BAR_WIDTH}, min ${MIN_CONTEXT_BAR_WIDTH}, max ${MAX_CONTEXT_BAR_WIDTH})`,
 		`minimal: ${config.minimal}${isMinimalProfile(config) ? " (profile)" : config.minimal ? " (abbr labels)" : ""}`,
+		`telemetry: ${(config.telemetry ?? DEFAULT_CONFIG.telemetry!).display}`,
 		`toolActivityMode: ${config.toolActivityMode}`,
 		`separator: ${separatorLabel(config.separator)}`,
 		`spacing: ${config.spacing} (default ${DEFAULT_WIDGET_SPACING}, min ${MIN_WIDGET_SPACING}, max ${MAX_WIDGET_SPACING})`,
@@ -462,8 +463,8 @@ async function setIconMode(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
 	const iconMode = await selectSetting(
 		deps,
-		"Icon mode — emoji glyphs, or plain text labels (bars/colors unchanged)",
-		["emoji", "plain"] satisfies readonly IconMode[],
+		"Icon mode — emoji/plain compatibility, Nerd Font, ASCII, or auto detection",
+		["emoji", "plain", "nerd", "ascii", "auto"] satisfies readonly IconMode[],
 		config.iconMode,
 		DEFAULT_CONFIG.iconMode,
 	);
@@ -681,6 +682,38 @@ async function runContextUsageMenu(deps: ConfigureDeps): Promise<void> {
 	}
 }
 
+async function runTelemetryMenu(deps: ConfigureDeps): Promise<void> {
+	while (true) {
+		const config = deps.getConfig();
+		const telemetry = config.telemetry ?? DEFAULT_CONFIG.telemetry!;
+		const items = [
+			`Display: ${telemetry.display}`,
+			...(["tps", "ttft", "duration", "tokens", "stalls", "cost"] as const)
+				.map((key) => `${key}: ${telemetry[key] ? "on" : "off"}`),
+			"Back",
+		];
+		const choice = await deps.ui.select("Telemetry — one renderer per settled run", items);
+		if (!choice || choice === "Back") return;
+		if (choice.startsWith("Display:")) {
+			const display = await selectSetting(
+				deps,
+				"Telemetry display",
+				["off", "widget", "notification"],
+				telemetry.display,
+				DEFAULT_CONFIG.telemetry!.display,
+			);
+			if (!display) continue;
+			let widgets: WidgetId[] = config.widgets.filter((id) => id !== "performance");
+			if (display === "widget") widgets = [...widgets, "performance"];
+			applyOrNotify(deps, { ...config, widgets, telemetry: { ...telemetry, display } }, `telemetry: ${display}`);
+			continue;
+		}
+		const key = (["tps", "ttft", "duration", "tokens", "stalls", "cost"] as const)
+			.find((name) => choice.startsWith(`${name}:`));
+		if (key) applyOrNotify(deps, { ...config, telemetry: { ...telemetry, [key]: !telemetry[key] } }, `${key}: ${!telemetry[key]}`);
+	}
+}
+
 export async function runStatuslineConfigurator(
 	deps: ConfigureDeps,
 	allWidgets: readonly WidgetId[],
@@ -691,6 +724,7 @@ export async function runStatuslineConfigurator(
 		const choice = await deps.ui.selectMain(mainMenuTitle(config, configPath), [
 			"Widgets",
 			"Appearance",
+			"Telemetry",
 			...(contextUsageItems(config).length > 0 ? ["Context & usage"] : []),
 			"Show config",
 			"Reload from file",
@@ -706,6 +740,9 @@ export async function runStatuslineConfigurator(
 				break;
 			case "Appearance":
 				await runAppearanceMenu(deps);
+				break;
+			case "Telemetry":
+				await runTelemetryMenu(deps);
 				break;
 			case "Context & usage":
 				await runContextUsageMenu(deps);

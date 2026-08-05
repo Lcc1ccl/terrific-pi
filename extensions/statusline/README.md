@@ -7,7 +7,7 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 ## Features
 
 - Configurable widget order, `·` / `│` separator, and numeric spacing
-- `layout: "single" | "stacked"` with canonical project/usage/environment/activity lines (`session`/`mode` share the environment line)
+- `layout: "single" | "stacked"` with canonical project/usage/environment/activity lines (`session`/`mode` share the environment line); the new units do not add another layout
 - **Minimal profile**: pi built-in footer core + mode/fast/state, with abbreviated labels (`ctx`/`CH`, keep `in`/`out`/`$`)
 - `toolActivityMode: "detailed" | "compact"` for per-tool or core_tools/aux_tools aggregates
 - `iconMode: "emoji" | "plain"` (plugin-owned glyphs only; bars/colors unchanged)
@@ -24,6 +24,9 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 - Environment counts (context files / skills / tools) after first agent start
 - Current agent-run tool activity aggregates (per-tool active/success + total errors)
 - Git branch (`main`/`master` is `🏠` in emoji mode) + committed branch diff (`+N -M`)
+- Optional `worktree` unit for porcelain-v2 branch/ahead/behind/stash/conflict/staged/modified/untracked state
+- Optional `runtime` unit for deterministic project runtime/version detection
+- Optional settled-run `performance` unit (TPS, TTFT, duration, tokens, stalls, and rate); it can render as a widget or one notification, never both
 - Extension statuses (dedicated mode, fast, and ponytail statuses excluded)
 - Agent duration: current request / current process active total (includes tools and child pi processes)
 - Run state: Thinking / Working / Waiting / Ready
@@ -139,7 +142,7 @@ Example:
   - cache → `CH …%` (pi-style)
   - context / contextBar → `ctx …`
   - duration → `t …`
-- omitted from the profile (still available via Widgets): `branchDiff`, `contextBar`, `duration`, `quota`, `environment`, `toolActivity`
+- omitted from the profile (still available via Widgets): `branchDiff`, `contextBar`, `duration`, `quota`, `environment`, `toolActivity`, `worktree`, `runtime`, `performance`
 
 ### Recommended stacked HUD
 
@@ -213,6 +216,9 @@ The footer follows the active pi theme rather than maintaining separate RGB pale
 | `quota` | native OAuth Claude/Codex usage windows, including loading/first-load error state |
 | `environment` | context files / skills / tools counts (low-contrast / dim) |
 | `toolActivity` | current agent-run tool counts; `detailed` keeps per-tool rows, `compact` shows error total + `core_tools` (bash/edit/read/write) + `aux_tools` (web_research/aux_summarize/git_finalize); metadata-only `process_update` is excluded |
+| `worktree` | porcelain-v2 branch/ahead/behind/stash/conflict/rename/delete/staged/modified/untracked summary; disabled means no Git status command |
+| `runtime` | project-marker runtime and optional version; ambiguous projects render `runtime ?`; disabled means no version command |
+| `performance` | one settled agent-run snapshot: configurable TPS/TTFT/run duration/tokens/stalls/cost rate; `telemetry.display` chooses widget, notification, or off |
 | `progress` | extension status texts (excludes dedicated badges and `auxiliary`, which lives in Taskboard) |
 | `duration` | current-request / current-process active time (`🕒` prefix in emoji mode); includes tools and child pi processes, excludes idle between requests |
 | `state` | Ready / Thinking / Working / Waiting (tools, subagent, or Taskboard wait/block) |
@@ -302,6 +308,10 @@ statusline/
 │   └── widgets.ts
 └── tests/
 ```
+
+## Ownership and attribution
+
+`statusline` remains the only production `setFooter()` owner. The `worktree`, `runtime`, and `performance` additions are ordinary independently ordered/grouped/toggled widget units inside the existing `single` and `stacked` layouts; they do not introduce an Open TUI layout or claim header/editor/transcript surfaces. Derived Open TUI portions are attributed in `LICENSES/pi-open-tui-MIT.txt`.
 
 ## Develop
 

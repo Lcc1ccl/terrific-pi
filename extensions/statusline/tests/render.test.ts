@@ -60,6 +60,59 @@ const hudSnapshot: StatusSnapshot = {
 	},
 };
 
+describe("current live-compatible output characterization", () => {
+	it("keeps current stacked semantic output at 80/120/160 columns", () => {
+		const config: StatuslineConfig = {
+			...DEFAULT_CONFIG,
+			widgets: [
+				"mode", "model", "fast", "contextBar", "cost", "cache", "tokens", "path",
+				"session", "branch", "branchDiff", "progress", "state", "duration", "toolActivity",
+			],
+			layout: "stacked",
+			iconMode: "emoji",
+			contextMode: "used",
+			contextBarWidth: 8,
+			toolActivityMode: "compact",
+			widgetGroups: { mode: "project", path: "environment", branch: "environment", branchDiff: "environment" },
+		};
+		const characterized = {
+			...hudSnapshot,
+			auxUsage: { input: 3_700, output: 900, unsplit: 0, tokens: 4_600, cost: 0.03 },
+		};
+		const expectedByWidth: Record<number, string[]> = {
+			80: [
+				"  EDIT · gpt-5 high · ",
+				"  Context [░░░░░░░░] 4% · 🎯 23.5% · 🔼 12.5KⅠ 3.7K · 🔽 3.2KⅠ 900",
+				"  /home/user/proj · demo · 🏠 · +12 -3",
+				"  task · Ready · 🕒 12s / 1m45s · ✓ core_tools x9",
+			],
+			120: [
+				"  EDIT · gpt-5 high · ",
+				"  Context [░░░░░░░░] 4% · $0.42Ⅰ $0.03 · 🎯 23.5% · 🔼 12.5KⅠ 3.7K · 🔽 3.2KⅠ 900",
+				"  /home/user/proj · demo · 🏠 · +12 -3",
+				"  task · Ready · 🕒 12s / 1m45s · ✓ core_tools x9",
+			],
+			160: [
+				"  EDIT · gpt-5 high · ",
+				"  Context [░░░░░░░░] 4% · $0.42Ⅰ $0.03 · 🎯 23.5% · 🔼 12.5KⅠ 3.7K · 🔽 3.2KⅠ 900",
+				"  /home/user/proj · demo · 🏠 · +12 -3",
+				"  task · Ready · 🕒 12s / 1m45s · ✓ core_tools x9",
+			],
+		};
+		for (const width of [80, 120, 160]) {
+			const rendered = renderStatusLine(
+				buildWidgetSegments(characterized, config),
+				config,
+				TEST_THEME,
+				width,
+				(text, max) => text.slice(0, max),
+				plainVisibleWidth,
+			);
+			assert.deepEqual(rendered, expectedByWidth[width]);
+		}
+	});
+});
+
 describe("renderStatusLine widget spacing", () => {
 	it("renders dot and bar separators with equal side spacing", () => {
 		assert.equal(render(2), "  left  ·  right");

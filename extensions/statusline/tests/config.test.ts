@@ -133,7 +133,7 @@ describe("mergeStatuslineConfig", () => {
 	it("falls back for illegal layout and iconMode", () => {
 		const merged = mergeStatuslineConfig({ layout: "grid", iconMode: "ascii" });
 		assert.equal(merged.layout, "single");
-		assert.equal(merged.iconMode, "emoji");
+		assert.equal(merged.iconMode, "ascii");
 	});
 
 	it("falls back for non-integer or out-of-range spacing", () => {
@@ -229,6 +229,7 @@ describe("saveStatuslineConfig", () => {
 			minimal: true,
 			separator: "bar" as const,
 			spacing: 2,
+			toolActivityMode: "compact" as const,
 		};
 
 		saveStatuslineConfig(nested, { ...config, widgets: [...config.widgets] });
@@ -256,6 +257,7 @@ describe("saveStatuslineConfig", () => {
 			separator: "bar",
 			spacing: 2,
 			toolActivityMode: "compact",
+			telemetry: DEFAULT_CONFIG.telemetry,
 		});
 	});
 });

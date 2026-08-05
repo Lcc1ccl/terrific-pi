@@ -8,6 +8,7 @@ import type {
 	StatuslineConfig,
 	StatuslineLayout,
 	StatuslineSeparator,
+	TelemetryConfig,
 	ToolActivityMode,
 	WidgetGroup,
 	WidgetId,
@@ -33,6 +34,9 @@ export const WIDGET_IDS = [
 	"quota",
 	"environment",
 	"toolActivity",
+	"worktree",
+	"runtime",
+	"performance",
 ] as const satisfies readonly WidgetId[];
 
 const WIDGET_ID_SET = new Set<string>(WIDGET_IDS);
@@ -49,6 +53,16 @@ export const WIDGET_SEPARATOR_GLYPHS = {
 export const DEFAULT_CONTEXT_BAR_WIDTH = 10;
 export const MIN_CONTEXT_BAR_WIDTH = 4;
 export const MAX_CONTEXT_BAR_WIDTH = 40;
+
+export const DEFAULT_TELEMETRY: TelemetryConfig = {
+	display: "off",
+	tps: true,
+	ttft: true,
+	duration: true,
+	tokens: true,
+	stalls: true,
+	cost: true,
+};
 
 export const DEFAULT_CONFIG: StatuslineConfig = {
 	widgets: [
@@ -76,6 +90,7 @@ export const DEFAULT_CONFIG: StatuslineConfig = {
 	spacing: DEFAULT_WIDGET_SPACING,
 	// Prefer compact buckets if/when toolActivity is enabled later.
 	toolActivityMode: "compact",
+	telemetry: { ...DEFAULT_TELEMETRY },
 };
 
 /**
@@ -108,12 +123,14 @@ export const MINIMAL_PROFILE: StatuslineConfig = {
 	separator: "dot",
 	spacing: DEFAULT_WIDGET_SPACING,
 	toolActivityMode: "compact",
+	telemetry: { ...DEFAULT_TELEMETRY },
 };
 
 export function cloneMinimalProfile(): StatuslineConfig {
 	return {
 		...MINIMAL_PROFILE,
 		widgets: [...MINIMAL_PROFILE.widgets],
+		telemetry: { ...DEFAULT_TELEMETRY },
 	};
 }
 
@@ -150,7 +167,9 @@ function asLayout(value: unknown): StatuslineLayout | undefined {
 }
 
 function asIconMode(value: unknown): IconMode | undefined {
-	return value === "emoji" || value === "plain" ? value : undefined;
+	return value === "emoji" || value === "plain" || value === "nerd" || value === "ascii" || value === "auto"
+		? value
+		: undefined;
 }
 
 function asSeparator(value: unknown): StatuslineSeparator | undefined {
@@ -169,6 +188,30 @@ function asWidgetSpacing(value: unknown): number | undefined {
 
 function asToolActivityMode(value: unknown): ToolActivityMode | undefined {
 	return value === "detailed" || value === "compact" ? value : undefined;
+}
+
+function asTelemetry(value: unknown): TelemetryConfig {
+	if (!isRecord(value)) return { ...DEFAULT_TELEMETRY };
+	const display = value.display === "widget" || value.display === "notification" || value.display === "off"
+		? value.display
+		: DEFAULT_TELEMETRY.display;
+	const flag = (key: Exclude<keyof TelemetryConfig, "display">): boolean =>
+		typeof value[key] === "boolean" ? value[key] : DEFAULT_TELEMETRY[key];
+	return {
+		display,
+		tps: flag("tps"),
+		ttft: flag("ttft"),
+		duration: flag("duration"),
+		tokens: flag("tokens"),
+		stalls: flag("stalls"),
+		cost: flag("cost"),
+	};
+}
+
+function telemetryIsDefault(value: TelemetryConfig | undefined): boolean {
+	if (!value) return true;
+	return (Object.keys(DEFAULT_TELEMETRY) as Array<keyof TelemetryConfig>)
+		.every((key) => value[key] === DEFAULT_TELEMETRY[key]);
 }
 
 const WIDGET_GROUP_SET = new Set<string>(WIDGET_GROUP_ORDER);
@@ -214,7 +257,11 @@ export function withWidgetGroupOverride(
 }
 
 export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
-	if (!isRecord(raw)) return { ...DEFAULT_CONFIG, widgets: [...DEFAULT_CONFIG.widgets] };
+	if (!isRecord(raw)) return {
+		...DEFAULT_CONFIG,
+		widgets: [...DEFAULT_CONFIG.widgets],
+		telemetry: { ...DEFAULT_TELEMETRY },
+	};
 
 	const widgets = asWidgetIds(raw.widgets);
 	const layout = asLayout(raw.layout);
@@ -226,6 +273,7 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 	const spacing = asWidgetSpacing(raw.spacing);
 	const toolActivityMode = asToolActivityMode(raw.toolActivityMode);
 	const widgetGroups = asWidgetGroups(raw.widgetGroups);
+	const telemetry = asTelemetry(raw.telemetry);
 
 	return {
 		widgets: widgets && widgets.length > 0 ? widgets : [...DEFAULT_CONFIG.widgets],
@@ -237,6 +285,7 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 		separator: separator ?? DEFAULT_CONFIG.separator,
 		spacing: spacing ?? DEFAULT_CONFIG.spacing,
 		toolActivityMode: toolActivityMode ?? DEFAULT_CONFIG.toolActivityMode,
+		telemetry,
 		...(widgetGroups ? { widgetGroups } : {}),
 	};
 }
@@ -269,10 +318,12 @@ export function saveStatuslineConfig(path: string, config: StatuslineConfig): vo
 		separator: config.separator ?? DEFAULT_CONFIG.separator,
 		spacing: config.spacing,
 		toolActivityMode: config.toolActivityMode ?? DEFAULT_CONFIG.toolActivityMode,
+		telemetry: { ...(config.telemetry ?? DEFAULT_TELEMETRY) },
 		...(config.widgetGroups && Object.keys(config.widgetGroups).length > 0
 			? { widgetGroups: { ...config.widgetGroups } }
 			: {}),
 	};
+	if (telemetryIsDefault(config.telemetry)) delete (payload as Partial<StatuslineConfig>).telemetry;
 	const directory = dirname(path);
 	const temporary = join(directory, `.${basename(path)}.${process.pid}.${Date.now()}.tmp`);
 	mkdirSync(directory, { recursive: true });

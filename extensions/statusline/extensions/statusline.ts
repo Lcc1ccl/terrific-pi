@@ -16,6 +16,10 @@ import {
 import { selectMenu } from "../lib/select-menu.ts";
 import { AgentDurationTracker } from "../lib/duration.ts";
 import { QuotaMonitor } from "../lib/quota.ts";
+import { formatPerformance } from "../lib/format.ts";
+import { readRuntimeInfo, type RuntimeInfo } from "../lib/runtime-info.ts";
+import { TurnTelemetryTracker, type TurnPerformanceView } from "../lib/telemetry.ts";
+import { readWorktreeInfo, type WorktreeInfo } from "../lib/worktree.ts";
 import { renderStatusLine } from "../lib/render.ts";
 import { WidgetsSetupComponent } from "../lib/widgets-setup.ts";
 import type {
@@ -83,32 +87,41 @@ export default function statusline(pi: ExtensionAPI) {
 	let runState: RunState = "Ready";
 	let branchChanges: BranchChangeStats | undefined;
 	let gitRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+	let projectRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 	let durationTickTimer: ReturnType<typeof setInterval> | undefined;
 	let renderRequest: (() => void) | undefined;
 	let lifecycleGeneration = 0;
 	let gitRequestGeneration = 0;
+	let projectRequestGeneration = 0;
 	let config: StatuslineConfig = { ...DEFAULT_CONFIG, widgets: [...DEFAULT_CONFIG.widgets] };
 	let configPath = resolveRuntimeConfigPath();
 	let configLoadError: string | undefined;
 	let quotaContext: QuotaContext | undefined;
 	let usageContext: UsageContext | undefined;
+	let currentCwd: string | undefined;
 	let usage = aggregateSessionUsage([]);
 	let auxiliaryUsage = aggregateAuxiliaryUsage([]);
 	const activeTools = new Set<string>();
 	const toolCallNames = new Map<string, string>();
 	const toolStats: Record<string, ToolActivity> = {};
 	let environment: EnvironmentCounts | undefined;
+	let worktree: WorktreeInfo | undefined;
+	let runtime: RuntimeInfo | undefined;
+	let performanceView: TurnPerformanceView | undefined;
 	const defaultBranchCache = new Map<string, string | null>();
 	const durationTracker = new AgentDurationTracker();
+	const telemetryTracker = new TurnTelemetryTracker();
 	const quotaMonitor = new QuotaMonitor({
 		onChange: () => requestRender(),
 	});
 
 	const requestRender = () => renderRequest?.();
+	const currentTelemetry = () => config.telemetry ?? DEFAULT_CONFIG.telemetry!;
 
 	const cloneConfig = (value: StatuslineConfig): StatuslineConfig => ({
 		...value,
 		widgets: [...value.widgets],
+		telemetry: { ...(value.telemetry ?? DEFAULT_CONFIG.telemetry!) },
 		...(value.widgetGroups ? { widgetGroups: { ...value.widgetGroups } } : {}),
 	});
 
@@ -130,6 +143,9 @@ export default function statusline(pi: ExtensionAPI) {
 		}
 		config = loaded.value;
 		configLoadError = undefined;
+		telemetryTracker.reset("reload");
+		performanceView = undefined;
+		invalidateProjectInfo();
 		requestRender();
 		requestQuotaSync();
 		return { ok: true, value: cloneConfig(config) };
@@ -159,6 +175,9 @@ export default function statusline(pi: ExtensionAPI) {
 			saveStatuslineConfig(configPath, candidate);
 			config = candidate;
 			configLoadError = undefined;
+			telemetryTracker.reset("reload");
+			performanceView = undefined;
+			invalidateProjectInfo();
 			requestRender();
 			requestQuotaSync();
 			return { ok: true, value: undefined };
@@ -217,6 +236,7 @@ export default function statusline(pi: ExtensionAPI) {
 	};
 
 	const refreshBranchChanges = async (cwd: string, lifecycle: number, request: number) => {
+		if (!config.widgets.includes("branchDiff")) return;
 		const defaultBranch = await resolveDefaultBranch(cwd);
 		const mergeBase = defaultBranch ? await git(cwd, ["merge-base", "HEAD", defaultBranch]) : undefined;
 		const numstat = mergeBase ? await git(cwd, ["diff", "--numstat", `${mergeBase}..HEAD`]) : undefined;
@@ -226,6 +246,12 @@ export default function statusline(pi: ExtensionAPI) {
 	};
 
 	const scheduleGitRefresh = (cwd: string, delay = 120) => {
+		if (!config.widgets.includes("branchDiff")) {
+			branchChanges = undefined;
+			if (gitRefreshTimer) clearTimeout(gitRefreshTimer);
+			gitRefreshTimer = undefined;
+			return;
+		}
 		if (gitRefreshTimer) clearTimeout(gitRefreshTimer);
 		const lifecycle = lifecycleGeneration;
 		const request = ++gitRequestGeneration;
@@ -237,6 +263,48 @@ export default function statusline(pi: ExtensionAPI) {
 				requestRender();
 			});
 		}, delay);
+	};
+
+	const refreshProjectInfo = async (cwd: string, lifecycle: number, request: number) => {
+		const [nextWorktree, nextRuntime] = await Promise.all([
+			config.widgets.includes("worktree") ? readWorktreeInfo(pi.exec.bind(pi), cwd) : undefined,
+			config.widgets.includes("runtime") ? readRuntimeInfo(cwd, pi.exec.bind(pi)) : undefined,
+		]);
+		if (lifecycle !== lifecycleGeneration || request !== projectRequestGeneration) return;
+		worktree = nextWorktree;
+		runtime = nextRuntime;
+		requestRender();
+	};
+
+	const scheduleProjectRefresh = (cwd: string, delay = 120) => {
+		if (!config.widgets.includes("worktree") && !config.widgets.includes("runtime")) {
+			worktree = undefined;
+			runtime = undefined;
+			if (projectRefreshTimer) clearTimeout(projectRefreshTimer);
+			projectRefreshTimer = undefined;
+			return;
+		}
+		if (projectRefreshTimer) clearTimeout(projectRefreshTimer);
+		const lifecycle = lifecycleGeneration;
+		const request = ++projectRequestGeneration;
+		projectRefreshTimer = setTimeout(() => {
+			projectRefreshTimer = undefined;
+			void refreshProjectInfo(cwd, lifecycle, request).catch(() => {
+				if (lifecycle !== lifecycleGeneration || request !== projectRequestGeneration) return;
+				worktree = undefined;
+				runtime = undefined;
+				requestRender();
+			});
+		}, delay);
+	};
+
+	const invalidateProjectInfo = () => {
+		projectRequestGeneration += 1;
+		if (projectRefreshTimer) clearTimeout(projectRefreshTimer);
+		projectRefreshTimer = undefined;
+		worktree = undefined;
+		runtime = undefined;
+		if (currentCwd) scheduleProjectRefresh(currentCwd, 0);
 	};
 
 	const setRunState = (state: RunState) => {
@@ -384,20 +452,28 @@ export default function statusline(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_start", async (event, ctx) => {
 		if (ctx.mode !== "tui") return;
 
 		lifecycleGeneration += 1;
 		gitRequestGeneration += 1;
+		projectRequestGeneration += 1;
 		if (gitRefreshTimer) clearTimeout(gitRefreshTimer);
+		if (projectRefreshTimer) clearTimeout(projectRefreshTimer);
 		gitRefreshTimer = undefined;
+		projectRefreshTimer = undefined;
 		renderRequest = undefined;
 		quotaContext = ctx;
 		usageContext = ctx;
+		currentCwd = ctx.cwd;
 		quotaMonitor.clear();
 		runState = "Ready";
 		branchChanges = undefined;
 		environment = undefined;
+		worktree = undefined;
+		runtime = undefined;
+		performanceView = undefined;
+		telemetryTracker.reset(event.reason === "reload" ? "reload" : "session");
 		clearActiveTools();
 		for (const name of Object.keys(toolStats)) delete toolStats[name];
 		durationTracker.reset();
@@ -414,6 +490,7 @@ export default function statusline(pi: ExtensionAPI) {
 			renderRequest = localRenderRequest;
 			const unsubscribeBranch = footerData.onBranchChange(() => {
 				scheduleGitRefresh(ctx.cwd, 0);
+				scheduleProjectRefresh(ctx.cwd, 0);
 				tui.requestRender();
 			});
 
@@ -429,6 +506,7 @@ export default function statusline(pi: ExtensionAPI) {
 					const extensionStatuses = footerData.getExtensionStatuses();
 					const modeStatus = extensionStatuses.get(MODE_STATUS_KEY);
 					const fastStatus = extensionStatuses.get(FAST_STATUS_KEY);
+					const telemetry = currentTelemetry();
 					const snapshot: StatusSnapshot = {
 						cwd: ctx.cwd,
 						sessionName: ctx.sessionManager.getSessionName(),
@@ -458,6 +536,9 @@ export default function statusline(pi: ExtensionAPI) {
 						toolActivity: config.widgets.includes("toolActivity") && Object.keys(toolStats).length > 0
 							? toolStats
 							: undefined,
+						worktree: config.widgets.includes("worktree") ? worktree : undefined,
+						runtime: config.widgets.includes("runtime") ? runtime : undefined,
+						performance: telemetry.display === "widget" ? performanceView : undefined,
 					};
 
 					const segments = buildWidgetSegments(snapshot, config);
@@ -475,6 +556,7 @@ export default function statusline(pi: ExtensionAPI) {
 		});
 
 		scheduleGitRefresh(ctx.cwd, 0);
+		scheduleProjectRefresh(ctx.cwd, 0);
 	});
 
 	pi.on("before_agent_start", async (event) => {
@@ -488,29 +570,57 @@ export default function statusline(pi: ExtensionAPI) {
 		requestRender();
 	});
 
-	pi.on("agent_start", async () => {
+	pi.on("agent_start", async (event) => {
 		resetToolActivity();
+		performanceView = undefined;
+		if (currentTelemetry().display !== "off") telemetryTracker.handle(event);
 		durationTracker.startRound();
 		startDurationTick();
 		setRunState("Thinking");
 	});
-	pi.on("turn_start", async () => setRunState("Thinking"));
+	pi.on("turn_start", async (event) => {
+		if (currentTelemetry().display !== "off") telemetryTracker.handle(event);
+		setRunState("Thinking");
+	});
+	pi.on("message_start", async (event) => {
+		if (currentTelemetry().display !== "off") telemetryTracker.handle(event);
+	});
 	pi.on("message_end", async (event, ctx) => {
+		if (currentTelemetry().display !== "off") telemetryTracker.handle(event);
 		if (event.message.role !== "assistant") return;
 		refreshUsage(ctx);
 	});
 	pi.on("message_update", async (event) => {
+		if (currentTelemetry().display !== "off") telemetryTracker.handle(event);
 		if (activeTools.size > 0) return;
 		const state = runStateForAssistantEvent(event.assistantMessageEvent.type);
 		if (state) setRunState(state);
 	});
-	pi.on("agent_settled", async (_event, ctx) => {
+	pi.on("turn_end", async (event) => {
+		if (currentTelemetry().display !== "off") telemetryTracker.handle(event);
+	});
+	pi.on("agent_end", async (event) => {
+		const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
+		if (lastAssistant?.stopReason === "aborted" || lastAssistant?.stopReason === "error") {
+			telemetryTracker.reset("abort");
+			performanceView = undefined;
+			requestRender();
+		}
+	});
+	pi.on("agent_settled", async (event, ctx) => {
+		const telemetry = currentTelemetry();
+		const settled = telemetry.display !== "off" ? telemetryTracker.handle(event) : undefined;
+		performanceView = telemetry.display === "widget" ? settled : undefined;
+		if (settled && telemetry.display === "notification" && ctx.mode === "tui") {
+			ctx.ui.notify(formatPerformance(settled, telemetry, config.iconMode).text, "info");
+		}
 		clearActiveTools();
 		durationTracker.endRound();
 		stopDurationTick();
 		refreshUsage(ctx);
 		setRunState("Ready");
 		scheduleGitRefresh(ctx.cwd, 0);
+		scheduleProjectRefresh(ctx.cwd, 0);
 	});
 	pi.on("tool_execution_start", async (event) => {
 		if (!shouldTrackToolActivity(event.toolName)) return;
@@ -531,6 +641,7 @@ export default function statusline(pi: ExtensionAPI) {
 		else stats.success += 1;
 		setRunState(activeTools.size > 0 ? "Waiting" : "Thinking");
 		scheduleGitRefresh(ctx.cwd);
+		scheduleProjectRefresh(ctx.cwd);
 	});
 	pi.on("model_select", async (_event, ctx) => {
 		quotaContext = ctx;
@@ -547,24 +658,38 @@ export default function statusline(pi: ExtensionAPI) {
 	pi.on("session_tree", async (_event, ctx) => {
 		quotaContext = ctx;
 		usageContext = ctx;
+		telemetryTracker.reset("tree");
+		performanceView = undefined;
 		resetToolActivity();
 		refreshUsage(ctx);
 		requestQuotaSync();
 	});
 	pi.on("thinking_level_select", async () => requestRender());
-	pi.on("session_compact", async (_event, ctx) => refreshUsage(ctx));
+	pi.on("session_compact", async (_event, ctx) => {
+		telemetryTracker.reset("compact");
+		performanceView = undefined;
+		refreshUsage(ctx);
+	});
 	pi.on("session_info_changed", async () => requestRender());
 	pi.on("session_shutdown", async () => {
 		lifecycleGeneration += 1;
 		gitRequestGeneration += 1;
+		projectRequestGeneration += 1;
 		if (gitRefreshTimer) clearTimeout(gitRefreshTimer);
+		if (projectRefreshTimer) clearTimeout(projectRefreshTimer);
 		gitRefreshTimer = undefined;
+		projectRefreshTimer = undefined;
 		stopDurationTick();
 		durationTracker.reset();
+		telemetryTracker.reset("shutdown");
+		performanceView = undefined;
+		worktree = undefined;
+		runtime = undefined;
 		renderRequest = undefined;
 		clearActiveTools();
 		quotaContext = undefined;
 		usageContext = undefined;
+		currentCwd = undefined;
 		quotaMonitor.dispose();
 		usage = aggregateSessionUsage([]);
 		auxiliaryUsage = aggregateAuxiliaryUsage([]);
