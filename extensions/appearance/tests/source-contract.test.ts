@@ -16,10 +16,10 @@ function productionSources(dir: string): string[] {
   return result;
 }
 
-test("manifest is source-only with real extension path, wildcard peers, and zero runtime deps", () => {
+test("manifest is installable with real extension path, wildcard peers, and zero runtime deps", () => {
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   assert.equal(manifest.type, "module");
-  assert.deepEqual(manifest.terrificPi, { install: false });
+  assert.equal(Object.hasOwn(manifest, "terrificPi"), false);
   assert.deepEqual(manifest.dependencies ?? {}, {});
   assert.deepEqual(manifest.peerDependencies, {
     "@earendil-works/pi-coding-agent": "*",

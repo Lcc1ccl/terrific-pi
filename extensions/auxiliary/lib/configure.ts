@@ -70,7 +70,6 @@ export interface AuxiliaryConfiguratorDeps {
 	agentDir: string;
 	currentModel?: string;
 	modelRefs: readonly string[];
-	hasVisionHandoff?: boolean;
 	ui: AuxiliaryConfiguratorUi;
 }
 
@@ -363,7 +362,6 @@ function mainMenuItems(deps: AuxiliaryConfiguratorDeps, state: ConfiguratorState
 			label: `Git finalize policy: confirm ${state.config.git.confirm ? "on" : "off"} · headless ${state.config.git.allowHeadless ? "on" : "off"} · push ${state.config.git.allowPush ? "on" : "off"}`,
 			description: "Controls interactive confirmation, headless commits, and permission for normal pushes.",
 		},
-		...(deps.hasVisionHandoff ? [{ id: "vision", label: "Vision: external · /vision-handoff", description: "Vision routing is configured separately by /vision-handoff." }] : []),
 		{ id: "show", label: "Show config", description: "Displays the stored auxiliary section with credential-bearing fields redacted." },
 		{ id: "done", label: "Done" },
 	);
@@ -571,7 +569,7 @@ async function applyDefaultModelToAllTasks(
 ): Promise<void> {
 	const confirmed = await deps.ui.confirm(
 		`Apply ${model} to all auxiliary tasks?`,
-		`Set this primary model and enable auxiliary routing for ${VISIBLE_AUXILIARY_TASKS.join(", ")}. Other task fields stay unchanged; internal compatibility and vision routes are excluded.`,
+		`Set this primary model and enable auxiliary routing for ${VISIBLE_AUXILIARY_TASKS.join(", ")}. Other task fields stay unchanged; internal compatibility routes are excluded.`,
 	);
 	if (!confirmed) return;
 	applyMutation(deps, (auxiliary) => {
@@ -664,7 +662,7 @@ async function routeMenu(deps: AuxiliaryConfiguratorDeps, target: RouteTarget): 
 			),
 			...(target.kind === "default" ? [menuItem(
 				"Apply primary model to all tasks",
-				`Copies ${route.model} to every public task model and enables auxiliary routing for all six managed tasks. Other task fields stay unchanged; internal compatibility and vision routes are excluded.`,
+				`Copies ${route.model} to every public task model and enables auxiliary routing for all six managed tasks. Other task fields stay unchanged; internal compatibility routes are excluded.`,
 			)] : []),
 			menuItem(thinkingLabel, "Requested reasoning level; models without reasoning support run with thinking off."),
 			menuItem(timeoutLabel, "Maximum wall time for each model attempt before an eligible fallback is tried."),
@@ -738,8 +736,6 @@ export async function runAuxiliaryConfigurator(deps: AuxiliaryConfiguratorDeps):
 			await routeMenu(deps, { kind: "task", task: selectedItem.id.slice(5) as ConfigurableTask });
 		} else if (selectedItem.id === "git") {
 			await editGitPolicy(deps);
-		} else if (selectedItem.id === "vision") {
-			deps.ui.notify("Vision routing is owned by pi-vision-handoff. Run /vision-handoff to configure it.", "info");
 		} else if (selectedItem.id === "show") {
 			deps.ui.notify(JSON.stringify({ auxiliary: redactConfigForDisplay(state.source) }, null, 2), "info");
 		}
@@ -860,7 +856,6 @@ export async function pickAvailableModel(
 export async function runAuxiliaryConfigTui(
 	ctx: ExtensionContext,
 	agentDir: string,
-	hasVisionHandoff = false,
 ): Promise<void> {
 	try {
 		await ctx.modelRegistry.refresh();
@@ -872,7 +867,6 @@ export async function runAuxiliaryConfigTui(
 		agentDir,
 		currentModel: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
 		modelRefs,
-		hasVisionHandoff,
 		ui: {
 			select: (title, options) => selectMenu(ctx, title, options),
 			input: (title, placeholder) => ctx.ui.input(title, placeholder),

@@ -48,7 +48,7 @@ terrific-pi/
 | 插件 | 路径 | 说明 |
 |------|------|------|
 | statusline | `extensions/statusline` | 可配置底栏：single/stacked HUD、minimal profile、emoji/plain、原生 OAuth quota、token/cache/cost、git、运行状态；`/statusline` 仅在相关 widget 启用时显示 Context & usage |
-| appearance | `extensions/appearance` | source-only 静态 startup header、rounded editor 与 `/appearance`；只拥有 header/editor surface，Phase 7 前不进入默认 install manifest |
+| appearance | `extensions/appearance` | 已进入默认 install manifest；静态 startup header、rounded editor 与 `/appearance`，只拥有 header/editor surface，不替代 vision handoff |
 | fast | `extensions/fast` | `/fast [on\|off\|toggle\|status]` 全局开关 OpenAI Priority processing（`service_tier=priority`）；仅 **GPT 模型** + openai 家族 Responses 生效，切走/非 GPT 自动退让；badge 跟生效态 |
 | context | `extensions/context` | `/context [summary\|details\|config]` 上下文占用拆解；`c` 复制，`x` 确认后压缩 session |
 | auxiliary | `extensions/auxiliary` | task-key 辅助模型 runtime：裸 `/aux` 管理器、`/aux status`、compression/title/summary/web research/Git finalize、独立 usage 与 HUD |
@@ -61,6 +61,8 @@ terrific-pi/
 | model-profile | `extensions/model-profile` | 常用 3–5 套 model+thinking 短列表；`/profile` 快速应用、全局 CRUD、可信项目覆盖编辑、热键、冷启动短列表 |
 
 > 共享插件配置主文件：`~/.pi/agent/terrific.json`。Taskboard `0.2.0` 只注册 `/taskboard`；`process_update` 与历史 session types 保持稳定，旧 `processView` 配置和 `process` status 仍只读兼容，并在下一次 `/taskboard default <mode>` 时原子迁移。Auxiliary 模型路由只读取 global config，不接受 project override。Pilot 已加入开发机/离线 packages，但启动后保持 inactive，只有显式 `/pilot` 才接管；其 constrained preflight/Worker guard 由 Pilot 自身实现，固定 `pi-subagents` pin 只承载公开 V1 前台请求；standalone mode 与 docsflow 保持独立。
+
+> Phase 7 仓内切换已将 `pi-vision-handoff` 标为 retired，并使 `appearance` 可安装。安装/rollout 后会实际失去 `/vision-handoff`、paste-time prewarm、非视觉模型转交及其 Auxiliary usage bridge；`appearance` 只替代 editor surface。仓内切换本身不修改 live `~/.pi`。
 
 ## 已收录技能
 
@@ -112,7 +114,7 @@ FORCE=1 RESTORE=1 ./install.sh
 # 或 FORCE=1 ./install.sh  # 仅强制替换 vendor 树
 ```
 
-- packages：合并进 `settings.json`（保留无关 npm:/git:，并清理已废弃的 renderer fork pin）
+- packages：合并进 `settings.json`（保留无关 npm:/git:，启用 installable 本仓 packages，并清理已废弃的 renderer fork 与 `pi-vision-handoff` pin）
 - skills：始终从包同步
 - snapshot agent 文件：仅 seed 缺失项
 
@@ -133,8 +135,8 @@ FORCE=1 RESTORE=1 ./install.sh
 # settings.json packages（相对 ~/.pi/agent）
 "git:github.com/nicobailon/pi-subagents@bd32df2cc1a951b588f6f93f67f3b9adac406303" # detached runner TypeBox 修复
 "npm:pi-web-access@0.13.0"        # 可选：固定 web tools
-"npm:pi-vision-handoff@0.8.1"     # 可选：固定 vision handoff
 "../vendor/terrific-pi/extensions/statusline"
+"../vendor/terrific-pi/extensions/appearance"
 "../vendor/terrific-pi/extensions/fast"
 "../vendor/terrific-pi/extensions/context"
 "../vendor/terrific-pi/extensions/auxiliary"

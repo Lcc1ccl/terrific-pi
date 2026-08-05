@@ -8,8 +8,7 @@ export type AuxiliaryTaskKey =
 	| "commit_message"
 	| "btw"
 	| "web_research"
-	| "pilot_router"
-	| "vision";
+	| "pilot_router";
 
 export type AuxiliaryExecutor = "call" | "session" | "delegation";
 

@@ -63,13 +63,13 @@ terrific-pi/
 | 能力 | 包路径 | 怎么调用 | 解决什么 | 实现性质 |
 |------|--------|----------|----------|----------|
 | 底栏 HUD | `extensions/statusline` | 自动 footer；`/statusline` 配置 | 一眼看 path/model/tokens/mode/fast/状态；新增 `worktree`/`runtime`/`performance` 普通 units，仍只使用 single/stacked 布局 | **本仓实现**（唯一 footer owner；可配置 widget） |
-| 外观 surface | `extensions/appearance` | Phase 7 后 startup；`/appearance` 配置 | 静态 header 与 rounded editor | **本仓 source-only 实现**；Phase 7 前不安装，只拥有 header/editor |
+| 外观 surface | `extensions/appearance` | startup；`/appearance` 配置 | 静态 header 与 rounded editor | **本仓实现，已进入 install manifest**；只拥有 header/editor，不拥有 footer/task/transcript |
 | 工具权限模式 | `extensions/mode` | `/mode ask\|plan\|edit\|auto\|config` | 会话内限制可写/可执行工具，并管理全局默认 | **本仓实现** |
 | Pilot Copilot | `extensions/pilot` | `/pilot` 激活；提交目标；`/pilot work` 审阅；TUI Authorize 或 headless exact digest | 手动人机共驾：完整 plan、trusted clean-Git primary-solo、Pilot one-shot policy + child write-root guard、package lifecycle-script 验证、actual-diff fresh review、acceptance evidence 和 receipt | **本仓实现**；默认 inactive，只使用 `pi-subagents` 公开 V1 前台传输，失败回人类，不自动修复/提交 |
 | OpenAI Priority | `extensions/fast` | `/fast [on\|off\|toggle\|status]` | 仅 GPT 模型 + openai 家族 Responses 时注入 `service_tier=priority` | **本仓实现**（窄注入） |
 | 上下文拆解 | `extensions/context` | `/context [summary\|details\|config]`；`c` 复制、`x` 确认压缩 | 不调模型查看占用；压缩为显式动作 | **本仓实现** |
 | 旁路问答 | `extensions/btw` | `/btw …`、`status`、`config`、`context=none` | 独立内存会话问答，不污染主 session | **本仓实现**；模型可走 auxiliary 路由 |
-| 辅助模型 runtime | `extensions/auxiliary` | 裸 `/aux` 管理器、`/aux status`；工具 `aux_summarize`/`web_research`/`git_finalize`；compact/title 钩子 | 任务级旁路模型，不改主会话模型 | **本仓实现**；研究/视觉 **委托外部 pin** |
+| 辅助模型 runtime | `extensions/auxiliary` | 裸 `/aux` 管理器、`/aux status`；工具 `aux_summarize`/`web_research`/`git_finalize`；compact/title 钩子 | 任务级旁路模型，不改主会话模型 | **本仓实现**；研究委托外部 pin；保留通用 image-capable model 校验但无 vision route |
 | 任务进度 HUD | `extensions/taskboard` | 模型调 `process_update`；`/taskboard` 管理、`default <mode>`；`Ctrl+O` 展开 | 多步任务里程碑、等待/阻塞与验证；可提供稳定的运行中活动行 | **本仓实现** |
 | 低噪音过程流 | `extensions/presentation` | 自动；`/presentation` 管理；`Ctrl+O` 下钻 | 受控兼容 renderer、探索/失败摘要、Skill 身份、系统条和文件回执 | **本仓实现**；不依赖外部 renderer fork |
 | 文档流水线 | `extensions/docsflow` | 裸 `/docsflow` 管理器、`settings`、阶段 override | research→product→interface→delivery | **本仓编排**；执行靠 `pi-subagents` |
@@ -81,15 +81,15 @@ terrific-pi/
 |------|------|--------|----------|----------|
 | Provider 模型同步 | `skills/pi-provider-sync` | 对话触发 / 按 SKILL 指引 | 从 OpenAI 兼容或 Anthropic Messages `/models` 刷 `models.json`、补 `input`/`reasoning`/`cost` 等字段 | **本仓 skill**（非 extension） |
 
-### 2.3 本机常 pin 的外部包（不在本仓实现，但构成能力）
+### 2.3 外部 packages（当前 required 与 retired 状态）
 
-以当前开发机 `settings.json` 为准（迁移后可能不同）：
+仓内 package 模板的当前状态如下；实际 live `settings.json` 以机器本地为准：
 
 | 包 | 典型调用 | 角色 | 与本仓关系 |
 |----|----------|------|------------|
 | `git:github.com/nicobailon/pi-subagents@bd32df2…` | `subagent` 工具；docsflow / web_research；Pilot public V1 foreground transport | 子代理运行时 | auxiliary `web_research`、docsflow **依赖**；Pilot 的 policy grant/write-root guard 由 Pilot 自身实现，不依赖外部未发布 patch |
 | `npm:pi-web-access@…` | `web_search` / `fetch_content` / … | 联网检索与抓取 | 研究链路；不进 auxiliary 内核 |
-| `npm:pi-vision-handoff@…` | vision 相关工具 | 多模态交接 | auxiliary 只桥 usage；计划在 Phase 7 rollout 时退役 |
+| `npm:pi-vision-handoff@…`（retired） | rollout 后无调用入口 | 已退役的多模态交接 | Phase 7 installer 不再加入并会清理旧 pin；实际损失 `/vision-handoff`、paste-time prewarm、非视觉模型转交和 Auxiliary usage bridge，appearance 未替代这些能力 |
 | `npm:cc-safety-net@…` | 自动拦截高危 shell | 安全网 | 正交 |
 | `npm:@ayulab/pi-rewind@…` | rewind 相关 | 会话回滚 | 正交 |
 | `git:…/ponytail` | 技能：偷懒实现纪律 | 开发风格 | 正交 |
@@ -133,7 +133,7 @@ terrific-pi/
 | 层 | 谁负责 | 内容 |
 |----|--------|------|
 | Footer 常驻 | **statusline** | 唯一 `setFooter()` owner；path、branch、model+thinking、cache、cost、mode、fast、progress/state/duration，以及可选 worktree/runtime/performance units；不新增 layout |
-| Header / editor | **appearance** | source-only；Phase 7 启用后只调用 `setHeader()` / `setEditorComponent()`，disabled/absent 零副作用，不接管 footer |
+| Header / editor | **appearance** | installable；只调用 `setHeader()` / `setEditorComponent()`，disabled/absent 零副作用，不接管 footer |
 | 任务 HUD | **taskboard** | 多步任务目标、步骤、blocker、等待/阻塞与验证；`activityMode: full` 在紧凑 HUD 提供聚合运行态、在展开面板提供详情 |
 | 过程历史 | **presentation** | 受控折叠原生工具行；运行中探索/Skill 身份与单一安全失败行，`app.tools.expand` 恢复 Pi 原生细节 |
 | 扩展 status key | 各插件 `setStatus` | mode / fast / taskboard / auxiliary 等；statusline 对部分 key **排除重复展示**（见 `EXCLUDED_PROGRESS_KEYS`） |
@@ -178,7 +178,7 @@ terrific-pi/
 | 名称 | 状态 | 为何要有 | 解决的问题 | 实现策略 | 明确不做什么 |
 |------|------|----------|------------|----------|--------------|
 | statusline | 已收录 | 官方 footer 不够密/不可配 | 可配置 HUD、quota、stacked/minimal、新 display units | 本仓实现；仅 single/stacked | 唯一 footer owner；不替代 taskboard 或 appearance |
-| appearance | 已收录，source-only | Open TUI 的 header/editor 需明确 owner，且不能由 statusline/presentation 代管 | 静态 header、rounded editor、独立设置菜单 | 选择性移植并保留 MIT attribution；Phase 7 前不安装 | 不接管 footer/task/transcript；不替代 vision handoff |
+| appearance | 已收录，可安装 | Open TUI 的 header/editor 需明确 owner，且不能由 statusline/presentation 代管 | 静态 header、rounded editor、独立设置菜单 | 选择性移植并保留 MIT attribution | 不接管 footer/task/transcript；不替代已退役 vision handoff |
 | mode | 已收录 | 需要会话级工具策略 | ask/plan/edit/auto | 本仓实现 | 不切换模型/thinking |
 | fast | 已收录 | Priority 无一键开关 | `service_tier` 注入 | 本仓窄实现 | 不控制 thinking、不通用 header 框架 |
 | context | 已收录 | 需要可解释上下文占用 | `/context` 拆解 | 本仓实现 | 不压缩、不调模型 |
@@ -260,4 +260,5 @@ terrific-pi/
 | 2026-07-22 | Pilot Phase 0：登记双激活、input routing 与 Auxiliary `pilot_router` bridge；未启用 settings 或 legacy cutover |
 | 2026-07-23 | Pilot Copilot scope：默认 inactive，仅 `/pilot` 手动接管；完整知情 Work Gate、trusted clean-Git single Worker、resolved package scripts、actual-diff review、acceptance evidence、final-state receipt；加入离线 packages，并保留独立 mode/docsflow |
 | 2026-08-04 | Open TUI Phase 6：登记 statusline 新 units（无新 layout）、source-only appearance owner 边界，以及 Phase 7 卸载 pi-vision-handoff 的能力影响 |
+| 2026-08-04 | Open TUI Phase 7 仓内切换：appearance 进入 install manifest；pi-vision-handoff 转 retired；Auxiliary 删除配置入口与 usage bridge，不新增 `tasks.vision`，并明确 rollout 的四项能力损失 |
 | 2026-07-22 | `process-view` 更名为 `taskboard`：canonical package/path/command/config/status key 均迁移；Taskboard `0.2.0` 移除重复 `/process` 命令，长期保留 `process_update`、历史 session entry 和旧配置/status 的只读迁移兼容 |

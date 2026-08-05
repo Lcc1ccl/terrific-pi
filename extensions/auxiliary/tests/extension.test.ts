@@ -14,6 +14,9 @@ class Events {
 		this.handlers.set(name, values);
 		return () => this.handlers.set(name, values.filter((value) => value !== handler));
 	}
+	listenerCount(name: string) {
+		return this.handlers.get(name)?.length ?? 0;
+	}
 	emit(name: string, value: unknown) {
 		for (const handler of this.handlers.get(name) ?? []) handler(value);
 	}
@@ -58,6 +61,7 @@ describe("auxiliary extension registration", () => {
 		assert.deepEqual(tools.get("aux_summarize").parameters.properties.source.enum, ["text", "last_tool_result"]);
 		assert.deepEqual(tools.get("web_research").parameters.properties.freshness.enum, ["any", "recent", "current"]);
 		assert.equal(tools.get("git_finalize").executionMode, "sequential");
+		assert.equal(events.listenerCount("vision-handoff:usage"), 0);
 		events.emit("vision-handoff:usage", {
 			provider: "openai",
 			model: "gpt-5.4-mini",
@@ -66,10 +70,7 @@ describe("auxiliary extension registration", () => {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.01 },
 			},
 		});
-		assert.equal(entries.length, 1);
-		assert.equal(entries[0]!.type, "terrific-pi:auxiliary-usage-v1");
-		assert.deepEqual((entries[0]!.data as { task: string; usage: { totalTokens: number } }).task, "vision");
-		assert.equal((entries[0]!.data as { usage: { totalTokens: number } }).usage.totalTokens, 12);
+		assert.equal(entries.length, 0);
 		for (const event of ["session_start", "session_tree", "before_agent_start", "tool_call", "session_before_compact", "agent_settled", "session_shutdown"]) {
 			assert.equal(hooks.has(event), true, event);
 		}
@@ -178,7 +179,7 @@ describe("auxiliary command interaction", () => {
 			appendEntry() {},
 			setSessionName() {},
 			getSessionName() { return undefined; },
-			getCommands() { return [{ name: "vision-handoff" }]; },
+			getCommands() { return []; },
 			exec: async () => ({ code: 0, stdout: "", stderr: "", killed: false }),
 			getActiveTools() { return ["read", "grep"]; },
 		};
@@ -216,7 +217,7 @@ describe("auxiliary command interaction", () => {
 			else process.env.PI_CODING_AGENT_DIR = previous;
 		}
 		assert.match(titles[0] ?? "", /Auxiliary Models/);
-		assert.match(titles[0] ?? "", /Vision: external/);
+		assert.doesNotMatch(titles[0] ?? "", /Vision: external|vision-handoff/);
 		assert.equal(canConfigureAuxiliary(["read", "grep", "find", "ls"]), true);
 	});
 

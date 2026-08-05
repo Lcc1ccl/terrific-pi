@@ -123,26 +123,28 @@ describe("auxiliary configurator", () => {
 		assert.deepEqual(saved.docsflow, { vaultEnabled: false });
 	});
 
-	test("hides dormant internal routes and unavailable external commands", async () => {
+	test("keeps exactly six public routes without a vision replacement", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-hidden-routes-"));
 		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({ auxiliary: {} }), "utf8");
-		const ui = new ScriptedUi(["Done"]);
+		const ui = new ScriptedUi(["Runtime", "Disabled", "Done"]);
 
 		await runAuxiliaryConfigurator({
 			agentDir,
 			modelRefs: [],
-			hasVisionHandoff: false,
 			ui,
 		});
 
 		const main = ui.dialogs[0];
 		assert.ok(main);
+		assert.deepEqual(
+			main.options
+				.filter((option) => /^(compression|title_generation|text_summary|commit_message|btw|web_research):/.test(option))
+				.map((option) => option.split(":", 1)[0]),
+			["compression", "title_generation", "text_summary", "commit_message", "btw", "web_research"],
+		);
 		assert.equal(main.options.some((option) => option.startsWith("pilot_router")), false);
-		assert.equal(main.options.some((option) => option.startsWith("Vision:")), false);
-
-		const visionUi = new ScriptedUi(["Done"]);
-		await runAuxiliaryConfigurator({ agentDir, modelRefs: [], hasVisionHandoff: true, ui: visionUi });
-		assert.equal(visionUi.dialogs[0]?.options.some((option) => option.startsWith("Vision:")), true);
+		assert.equal(main.options.some((option) => /vision/i.test(option)), false);
+		assert.equal(readConfig(agentDir).auxiliary.tasks?.vision, undefined);
 	});
 
 	test("edits a task model, thinking, timeout, and fallback", async () => {

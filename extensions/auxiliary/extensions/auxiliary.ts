@@ -536,7 +536,6 @@ export default function auxiliary(pi: ExtensionAPI) {
 				await runAuxiliaryConfigTui(
 					ctx,
 					getAgentDir(),
-					pi.getCommands?.().some((command) => command.name === "vision-handoff") ?? false,
 				);
 				return;
 			}
@@ -697,25 +696,6 @@ export default function auxiliary(pi: ExtensionAPI) {
 
 	eventUnsubscribes.push(pi.events.on(AUXILIARY_USAGE_INGEST_EVENT, (value) => {
 		if (isAuxiliaryUsageEntry(value)) appendUsage(value);
-	}));
-	eventUnsubscribes.push(pi.events.on("vision-handoff:usage", (value) => {
-		if (!value || typeof value !== "object" || Array.isArray(value)) return;
-		const record = value as Record<string, unknown>;
-		if (typeof record.provider !== "string" || typeof record.model !== "string" || !record.usage) return;
-		appendUsage({
-			version: 1,
-			id: randomUUID(),
-			task: "vision",
-			executor: "call",
-			provider: record.provider,
-			model: record.model,
-			thinking: "off",
-			status: "ok",
-			fallbackIndex: 0,
-			startedAt: Date.now(),
-			durationMs: 0,
-			usage: record.usage as AuxiliaryUsageEntryV1["usage"],
-		});
 	}));
 
 	pi.on("session_shutdown", async () => {
