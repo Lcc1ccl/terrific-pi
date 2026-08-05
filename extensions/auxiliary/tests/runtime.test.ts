@@ -155,6 +155,13 @@ describe("AuxiliaryRuntime", () => {
 		assert.equal(attempts.length, 0);
 	});
 
+	test("accepts an image-capable model for image-required calls", async () => {
+		const { runtime, attempts } = harness([response("ok")], [model("openai", "small", ["text", "image"])]);
+		const result = await runtime.call({ ...request, requiredInput: "image" }, route);
+		assert.equal(result.text, "ok");
+		assert.equal(attempts[0]?.status, "ok");
+	});
+
 	test("rejects an unsupported input modality before a provider call", async () => {
 		const { runtime, attempts } = harness([], [model("openai", "small", ["image"])]);
 		await assert.rejects(runtime.call(request, route), (error: unknown) => error instanceof AuxiliaryError && error.code === "unsupported_input");

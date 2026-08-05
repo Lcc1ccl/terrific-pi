@@ -2,8 +2,8 @@
   "packages": [
     "git:github.com/nicobailon/pi-subagents@bd32df2cc1a951b588f6f93f67f3b9adac406303",
     "npm:pi-web-access@0.13.0",
-    "npm:pi-vision-handoff@0.8.1",
     "../vendor/terrific-pi/extensions/statusline",
+    "../vendor/terrific-pi/extensions/appearance",
     "../vendor/terrific-pi/extensions/fast",
     "../vendor/terrific-pi/extensions/context",
     "../vendor/terrific-pi/extensions/auxiliary",

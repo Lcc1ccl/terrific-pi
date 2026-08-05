@@ -4,6 +4,7 @@
   ],
   "retiredPackages": [
     "npm:pi-subagents",
+    "npm:pi-vision-handoff",
     "git:git@github.com:Lcc1ccl/pi-tool-display",
     "git:git@github.com:Lcc1ccl/pi-compact-transcript"
   ]

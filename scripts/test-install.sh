@@ -229,7 +229,7 @@ assert not forbidden, f"forbidden archive members: {forbidden[:10]}"
 PY
 scan_archive_hygiene "$ARCHIVE"
 mkdir -p "$DEFAULT_PI_HOME/agent"
-printf '%s\n' '{"packages":["npm:keep-me","npm:pi-subagents@0.35.1","git:git@github.com:Lcc1ccl/pi-tool-display@stale","git:git@github.com:Lcc1ccl/pi-compact-transcript@stale","../vendor/terrific-pi/extensions/process-view"]}' >"$DEFAULT_PI_HOME/agent/settings.json"
+printf '%s\n' '{"packages":["npm:keep-me","npm:pi-subagents@0.35.1","npm:pi-vision-handoff@0.8.1","git:git@github.com:Lcc1ccl/pi-tool-display@stale","git:git@github.com:Lcc1ccl/pi-compact-transcript@stale","../vendor/terrific-pi/extensions/process-view"]}' >"$DEFAULT_PI_HOME/agent/settings.json"
 printf '%s\n' '{"processView":{"activityMode":"task","legacyOnly":true}}' >"$DEFAULT_PI_HOME/agent/terrific.json"
 FORCE=1 PI_HOME="$DEFAULT_PI_HOME" AGENTS_SKILLS_DIR="$SKILLS" "$ROOT/scripts/install.sh" "$ARCHIVE" >/dev/null
 FORCE=1 RESTORE=1 PI_HOME="$RESTORE_PI_HOME" AGENTS_SKILLS_DIR="$SKILLS" "$ROOT/scripts/install.sh" "$ARCHIVE" >/dev/null
@@ -241,12 +241,14 @@ default_agent, restore_agent, archive = map(Path, sys.argv[1:])
 subagents_pin = "git:github.com/nicobailon/pi-subagents@bd32df2cc1a951b588f6f93f67f3b9adac406303"
 retired = (
     "npm:pi-subagents",
+    "npm:pi-vision-handoff",
     "git:git@github.com:Lcc1ccl/pi-tool-display",
     "git:git@github.com:Lcc1ccl/pi-compact-transcript",
 )
 for agent in (default_agent, restore_agent):
     packages = json.loads((agent / "settings.json").read_text(encoding="utf-8"))["packages"]
     assert "../vendor/terrific-pi/extensions/presentation" in packages, "presentation package missing"
+    assert "../vendor/terrific-pi/extensions/appearance" in packages, "appearance package missing"
     assert "../vendor/terrific-pi/extensions/taskboard" in packages, "taskboard package missing"
     assert "../vendor/terrific-pi/extensions/process-view" not in packages, "legacy process-view package survived migration"
     assert "../vendor/terrific-pi/extensions/mode" in packages, "standalone mode package missing"
@@ -283,7 +285,9 @@ assert "external_packages<<" in manifest, "manifest has no external package bloc
 assert subagents_pin in manifest, "manifest has no fixed pi-subagents pin"
 assert "retired_external_packages<<" in manifest, "manifest has no retired package block"
 assert "../vendor/terrific-pi/extensions/pilot" in manifest, "manifest does not enable manual Pilot"
+assert "../vendor/terrific-pi/extensions/appearance" in manifest, "manifest does not enable appearance"
 assert "npm:pi-subagents" in manifest, "manifest does not retire npm pi-subagents"
+assert "npm:pi-vision-handoff" in manifest, "manifest does not retire pi-vision-handoff"
 assert "workflows<<" in manifest, "manifest has no workflows block"
 for relative in (
     "extensions/pilot/extensions/pilot.ts",

@@ -10,7 +10,6 @@ Task-scoped auxiliary model runtime for Pi. It runs bounded side calls without c
 - `web_research` through the public `pi-subagents` delegation v1 contract
 - `git_finalize` for already staged changes, with exact confirmation and optional normal push
 - Canonical branch-local usage entries and active-task status
-- Vision usage bridge for `pi-vision-handoff`
 - Versioned internal `pilot_router` request/response bridge retained for compatibility; the current manual Pilot Copilot does not call it
 
 The core package has no runtime dependencies beyond Pi peer APIs and Node.js.
@@ -26,7 +25,7 @@ This package follows Hermes-style **explicit task keys**, not a per-prompt model
 | generic one-shot summary / commit text | text one-shot | `aux_summarize`, `/aux summarize`, `git_finalize` subject generation |
 | side-channel Q&A | isolated no-tools session | `/btw` reads `auxiliary.tasks.btw` |
 | tool-using research | isolated tool agent | `web_research` → pinned `pi-subagents` researcher (fresh context) |
-| `vision` | multimodal pipeline | Reuse pinned `pi-vision-handoff`; core only bridges usage |
+| `vision` | multimodal pipeline | Retired in Phase 7; Auxiliary exposes no vision route or handoff bridge |
 | `web_extract` | domain package / source-aware extract | Reuse pinned `pi-web-access`; not reimplemented here |
 | `approval` | constrained reviewer | Deferred; optional `pi-approval-guardian` later |
 | `background_review` / memory | isolated agent or memory package | Deferred; optional `pi-hermes-memory` later |
@@ -51,12 +50,11 @@ Add the local package to `~/.pi/agent/settings.json`:
 }
 ```
 
-For bounded web research and vision handoff, install the reviewed fixed versions separately:
+For bounded web research, install the reviewed fixed versions separately:
 
 ```text
 git:github.com/nicobailon/pi-subagents@bd32df2cc1a951b588f6f93f67f3b9adac406303
 npm:pi-web-access@0.13.0
-npm:pi-vision-handoff@0.8.1
 ```
 
 `web_research` fails closed when the `pi-subagents` delegation bridge is unavailable. The auxiliary core does not silently launch another agent implementation.
@@ -73,7 +71,7 @@ Project-local `auxiliary` config is intentionally ignored because a model route 
 
 Run `/aux config` in TUI mode to edit the global runtime, default route, and task routes. The selected menu item shows a wrapped `Tip:` explaining its runtime impact. Model pickers use fuzzy matching across model IDs, full refs, and display names, so queries such as `5.6` or `sol` find `gpt-5.6-sol`. Each confirmed change is written atomically while preserving other `terrific.json` sections; malformed JSON is never overwritten.
 
-The Default route menu includes **Apply primary model to all tasks**. After confirmation, it copies the effective default model to the six public task routes and enables auxiliary routing for each. Existing thinking, timeout, output, retry, fallback, and unknown task fields remain unchanged; internal compatibility and vision routes are excluded.
+The Default route menu includes **Apply primary model to all tasks**. After confirmation, it copies the effective default model to the six public task routes and enables auxiliary routing for each. Existing thinking, timeout, output, retry, fallback, and unknown task fields remain unchanged; internal compatibility routes are excluded.
 
 See [`../../agent/terrific.example.json`](../../agent/terrific.example.json) for the complete template. Each task can set:
 
@@ -82,7 +80,13 @@ See [`../../agent/terrific.example.json`](../../agent/terrific.example.json) for
 - `thinking`, `timeoutMs`, and fields consumed by that task
 - up to three ordered `fallbackModels`
 
-Most routes expose `maxOutputTokens` and `maxRetries`. Compression and BTW do not consume retries, while Web Research owns its bounded result contract and consumes neither retries nor a route-level output cap, so those ineffective fields are hidden from their menus. The public `/aux config` task list is `compression`, `title_generation`, `text_summary`, `commit_message`, `btw`, and `web_research`. The retained `pilot_router` bridge is a dormant config-file compatibility key; it defaults to 10 seconds, 128 output tokens, and no retries, while existing `tasks.pilot_router` overrides remain honored. The current manual Pilot package never requests it, so it is omitted from menus and status. Vision routing remains owned by `/vision-handoff`; `/aux config` shows that external entry only when the command is loaded and never writes an ineffective `tasks.vision` block.
+Most routes expose `maxOutputTokens` and `maxRetries`. Compression and BTW do not consume retries, while Web Research owns its bounded result contract and consumes neither retries nor a route-level output cap, so those ineffective fields are hidden from their menus. The public `/aux config` task list is exactly `compression`, `title_generation`, `text_summary`, `commit_message`, `btw`, and `web_research`. The retained `pilot_router` bridge is a dormant config-file compatibility key; it defaults to 10 seconds, 128 output tokens, and no retries, while existing `tasks.pilot_router` overrides remain honored. The current manual Pilot package never requests it, so it is omitted from menus and status. `/aux config` has no external Vision entry and never creates `tasks.vision`.
+
+### Vision handoff retirement
+
+Phase 7 removes the `/vision-handoff` configuration entry and the `vision-handoff:usage` event bridge. Rolling out the retired external package therefore loses `/vision-handoff`, paste-time prewarm, and transfer from non-visual models as well as usage ingestion. `appearance` replaces only the editor surface and provides none of those capabilities.
+
+The six public Auxiliary routes remain unchanged. The generic runtime still validates and accepts image-capable models for calls that require image input; no `tasks.vision` route or handoff replacement has been added.
 
 ## Commands And Tools
 
