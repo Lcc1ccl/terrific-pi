@@ -8,6 +8,7 @@
 terrific-pi/
 ├── extensions/          # pi packages / extensions（一插件一目录）
 │   ├── statusline/      # 可配置底栏
+│   ├── appearance/      # startup header / rounded editor（/appearance）
 │   ├── fast/            # OpenAI Priority processing (/fast)
 │   ├── context/         # /context 上下文占用
 │   ├── auxiliary/       # task-scoped 辅助模型 runtime
@@ -47,6 +48,7 @@ terrific-pi/
 | 插件 | 路径 | 说明 |
 |------|------|------|
 | statusline | `extensions/statusline` | 可配置底栏：single/stacked HUD、minimal profile、emoji/plain、原生 OAuth quota、token/cache/cost、git、运行状态；`/statusline` 仅在相关 widget 启用时显示 Context & usage |
+| appearance | `extensions/appearance` | source-only 静态 startup header、rounded editor 与 `/appearance`；只拥有 header/editor surface，Phase 7 前不进入默认 install manifest |
 | fast | `extensions/fast` | `/fast [on\|off\|toggle\|status]` 全局开关 OpenAI Priority processing（`service_tier=priority`）；仅 **GPT 模型** + openai 家族 Responses 生效，切走/非 GPT 自动退让；badge 跟生效态 |
 | context | `extensions/context` | `/context [summary\|details\|config]` 上下文占用拆解；`c` 复制，`x` 确认后压缩 session |
 | auxiliary | `extensions/auxiliary` | task-key 辅助模型 runtime：裸 `/aux` 管理器、`/aux status`、compression/title/summary/web research/Git finalize、独立 usage 与 HUD |

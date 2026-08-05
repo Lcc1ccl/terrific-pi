@@ -1,6 +1,12 @@
 import { homedir } from "node:os";
 import { relative, resolve, sep } from "node:path";
 
+import { formatDuration } from "./duration.ts";
+import { resolveGlyphs, resolveIconMode, runtimeSymbol } from "./glyphs.ts";
+import type { RuntimeInfo } from "./runtime-info.ts";
+import type { TurnPerformanceView } from "./telemetry.ts";
+import type { WorktreeInfo } from "./worktree.ts";
+
 import {
 	DEFAULT_CONTEXT_BAR_WIDTH,
 	MAX_CONTEXT_BAR_WIDTH,
@@ -15,6 +21,7 @@ import type {
 	TokenTotals,
 	ToolActivity,
 	ToolActivityMode,
+	TelemetryConfig,
 } from "./types.ts";
 
 /** Core agent tools collapsed in compact toolActivity mode. */
@@ -135,14 +142,16 @@ export function formatCache(
 			{ text: value, tone: "value" },
 		]);
 	}
-	if (iconMode === "plain") {
+	const resolved = resolveIconMode(iconMode);
+	const glyphs = resolveGlyphs(iconMode);
+	if (resolved === "plain") {
 		return content([
 			{ text: "cache ", tone: "label" },
 			{ text: value, tone: "value" },
 		]);
 	}
 	return content([
-		{ text: "🎯 ", tone: "icon" },
+		{ text: `${glyphs.cache} `, tone: "icon" },
 		{ text: value, tone: "value" },
 	]);
 }
@@ -233,13 +242,15 @@ export function formatTokenDirection(
 ): SegmentContent {
 	const compact = formatTokensCompact(value);
 	const aux = Math.max(0, auxValue);
-	const parts: SegmentPart[] = iconMode === "plain"
+	const resolved = resolveIconMode(iconMode);
+	const glyphs = resolveGlyphs(iconMode);
+	const parts: SegmentPart[] = resolved === "plain"
 		? [
 			{ text: direction === "in" ? "in " : "out ", tone: "label" },
 			{ text: compact, tone: "value" },
 		]
 		: [
-			{ text: direction === "in" ? "🔼 " : "🔽 ", tone: "icon" },
+			{ text: `${direction === "in" ? glyphs.input : glyphs.output} `, tone: "icon" },
 			{ text: compact, tone: "value" },
 		];
 	if (aux > 0) appendAuxSuffix(parts, formatTokensCompact(aux));
@@ -287,11 +298,15 @@ export function formatTokenPairMinimal(
 }
 
 export function formatBranch(branch: string, iconMode: IconMode = "emoji"): SegmentContent {
+	const resolved = resolveIconMode(iconMode);
+	const glyphs = resolveGlyphs(iconMode);
 	const isDefault = branch === "main" || branch === "master";
-	if (isDefault && iconMode === "emoji") {
-		return content([{ text: "🏠", tone: "muted" }]);
+	if (resolved === "emoji") {
+		return content([{ text: isDefault ? glyphs.home : branch, tone: "muted" }]);
 	}
-	return content([{ text: branch, tone: "muted" }]);
+	if (resolved === "plain") return content([{ text: branch, tone: "muted" }]);
+	if (resolved === "nerd" && isDefault) return content([{ text: glyphs.home, tone: "muted" }]);
+	return content([{ text: `${glyphs.git} ${branch}`, tone: "muted" }]);
 }
 
 export function formatBranchDiff(stats: { additions: number; deletions: number }): SegmentContent | undefined {
@@ -307,11 +322,12 @@ export function formatBranchDiff(stats: { additions: number; deletions: number }
 
 export function formatFastBadge(value: string | undefined, iconMode: IconMode = "emoji"): SegmentContent | undefined {
 	if (!value) return undefined;
-	if (iconMode === "plain") {
+	const resolved = resolveIconMode(iconMode);
+	if (resolved === "plain") {
 		return content([{ text: "fast", tone: "label" }]);
 	}
-	// Warning maps to the active theme's gold/yellow emphasis.
-	return content([{ text: value, tone: "warn" }]);
+	const text = resolved === "emoji" ? value : resolveGlyphs(iconMode).fast;
+	return content([{ text, tone: "warn" }]);
 }
 
 export function formatQuotaWindowLabel(windowSeconds: number | undefined, fallback: string): string {
@@ -355,11 +371,13 @@ export function formatQuota(
 	});
 	if (windows.length === 0) return undefined;
 
+	const resolved = resolveIconMode(iconMode);
+	const glyphs = resolveGlyphs(iconMode);
 	const parts: SegmentPart[] = [];
-	if (iconMode === "plain") {
+	if (resolved === "plain") {
 		parts.push({ text: "usage ", tone: "label" });
 	} else {
-		parts.push({ text: "📊 ", tone: "icon" });
+		parts.push({ text: `${glyphs.quota} `, tone: "icon" });
 	}
 
 	windows.forEach((window, index) => {
@@ -404,8 +422,10 @@ export function formatToolActivity(
 	const names = Object.keys(activity).sort((a, b) => a.localeCompare(b));
 	if (names.length === 0) return undefined;
 
-	const ok = iconMode === "plain" ? "ok" : "✓";
-	const err = iconMode === "plain" ? "error" : "✗";
+	const resolved = resolveIconMode(iconMode);
+	const glyphs = resolveGlyphs(iconMode);
+	const ok = resolved === "plain" ? "ok" : glyphs.success;
+	const err = resolved === "plain" ? "error" : glyphs.error;
 	const parts: SegmentPart[] = [];
 
 	const pushEntry = (
@@ -465,9 +485,17 @@ export function formatDurationContent(
 			{ text: pair, tone: "value" },
 		]);
 	}
-	if (iconMode === "emoji") {
+	const resolved = resolveIconMode(iconMode);
+	const glyphs = resolveGlyphs(iconMode);
+	if (resolved === "emoji") {
 		return content([
-			{ text: "🕒 ", tone: "icon" },
+			{ text: `${glyphs.duration} `, tone: "icon" },
+			{ text: pair, tone: "value" },
+		]);
+	}
+	if (resolved !== "plain") {
+		return content([
+			{ text: `${glyphs.duration} `, tone: "icon" },
 			{ text: pair, tone: "value" },
 		]);
 	}
@@ -475,6 +503,93 @@ export function formatDurationContent(
 		{ text: "time ", tone: "label" },
 		{ text: pair, tone: "value" },
 	]);
+}
+
+export function formatWorktree(info: WorktreeInfo, iconMode: IconMode): SegmentContent {
+	const glyphs = resolveGlyphs(iconMode);
+	const parts: SegmentPart[] = [
+		{ text: `${glyphs.git} `, tone: "icon" },
+		{ text: info.branch ?? info.oid?.slice(0, 7) ?? "?", tone: "muted" },
+	];
+	const add = (count: number, glyph: string, tone: SegmentTone) => {
+		if (count <= 0) return;
+		parts.push({ text: " ", tone: "dim" }, { text: `${glyph}${count}`, tone });
+	};
+	if (info.ahead > 0 && info.behind > 0) {
+		parts.push({ text: " ", tone: "dim" }, { text: `${glyphs.diverged}${info.ahead}/${info.behind}`, tone: "warn" });
+	} else {
+		add(info.ahead, glyphs.ahead, "success");
+		add(info.behind, glyphs.behind, "warn");
+	}
+	add(info.stash, glyphs.stashed, "dim");
+	add(info.conflicted, glyphs.conflicted, "error");
+	add(info.deleted, glyphs.deleted, "error");
+	add(info.modified, glyphs.modified, "warn");
+	add(info.renamed, glyphs.renamed, "warn");
+	add(info.staged, glyphs.staged, "success");
+	add(info.untracked, glyphs.untracked, "muted");
+	return content(parts);
+}
+
+export function formatRuntime(info: RuntimeInfo, iconMode: IconMode): SegmentContent {
+	if (info.ambiguous) return content([{ text: "runtime ", tone: "label" }, { text: "?", tone: "dim" }]);
+	const label = runtimeSymbol(info.name, iconMode);
+	const resolved = resolveIconMode(iconMode);
+	return content([
+		{ text: label, tone: resolved === "plain" || resolved === "ascii" ? "label" : "icon" },
+		...(info.version ? [{ text: ` ${info.version}`, tone: "muted" as const }] : []),
+	]);
+}
+
+function formatTelemetryDuration(ms: number): string {
+	return ms < 60_000 ? `${(ms / 1_000).toFixed(1)}s` : formatDuration(ms);
+}
+
+export function formatPerformance(
+	view: TurnPerformanceView,
+	config: TelemetryConfig,
+	iconMode: IconMode,
+): SegmentContent {
+	const glyphs = resolveGlyphs(iconMode);
+	const items: SegmentPart[][] = [];
+	const resolved = resolveIconMode(iconMode);
+	const label = (glyph: string, name: string) => resolved === "plain" ? name : `${glyph} ${name}`;
+	if (config.tps) items.push([
+		{ text: `${label(glyphs.speed, "TPS")} `, tone: "label" },
+		{ text: view.tps === null ? "?" : view.tps.toFixed(1), tone: view.tps === null ? "dim" : "active" },
+	]);
+	if (config.ttft) items.push([
+		{ text: `${label(glyphs.latency, "TTFT")} `, tone: "label" },
+		{ text: formatTelemetryDuration(view.ttftMs), tone: "value" },
+	]);
+	if (config.duration) items.push([
+		{ text: `${label(glyphs.done, "run")} `, tone: "label" },
+		{ text: formatTelemetryDuration(view.totalMs), tone: "value" },
+	]);
+	if (config.tokens) {
+		if (view.usageAvailable) {
+			items.push([
+				{ text: `${label(glyphs.input, "in")} `, tone: "label" },
+				{ text: formatTokensCompact(view.inputTokens ?? 0), tone: "value" },
+			]);
+			items.push([
+				{ text: `${label(glyphs.output, "out")} `, tone: "label" },
+				{ text: formatTokensCompact(view.outputTokens ?? 0), tone: "value" },
+			]);
+		} else {
+			items.push([{ text: "usage ", tone: "label" }, { text: "?", tone: "dim" }]);
+		}
+	}
+	if (config.stalls && view.stallMs > 0) items.push([
+		{ text: `${label(glyphs.stall, "stall")} `, tone: "warn" },
+		{ text: `${view.stallCount}/${formatTelemetryDuration(view.stallMs)}`, tone: "warn" },
+	]);
+	if (config.cost && view.rateUsdPerMTokens !== null) items.push([
+		{ text: "$", tone: "label" },
+		{ text: `${view.rateUsdPerMTokens.toFixed(2)}/M`, tone: "warn" },
+	]);
+	const parts = items.flatMap((item, index) => index === 0 ? item : [{ text: " · ", tone: "dim" as const }, ...item]);
+	return content(parts);
 }
 
 export function thinkingLevelTone(level: string): SegmentTone {

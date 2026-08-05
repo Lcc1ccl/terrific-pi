@@ -21,7 +21,7 @@
 
 ```text
 terrific-pi/
-├── extensions/          # 可安装 pi packages（本机能力主体）
+├── extensions/          # 独立 pi packages（可安装或显式 source-only）
 ├── skills/              # 可迁移 agent skills → ~/.agents/skills
 ├── snapshot/agent/      # 无密钥配置快照（迁移用）
 ├── agent/               # 可公开配置模板
@@ -62,7 +62,8 @@ terrific-pi/
 
 | 能力 | 包路径 | 怎么调用 | 解决什么 | 实现性质 |
 |------|--------|----------|----------|----------|
-| 底栏 HUD | `extensions/statusline` | 自动 footer；`/statusline` 配置 | 一眼看 path/model/tokens/mode/fast/状态；仅相关 widget 启用时显示 Context & usage | **本仓实现**（可配置 widget） |
+| 底栏 HUD | `extensions/statusline` | 自动 footer；`/statusline` 配置 | 一眼看 path/model/tokens/mode/fast/状态；新增 `worktree`/`runtime`/`performance` 普通 units，仍只使用 single/stacked 布局 | **本仓实现**（唯一 footer owner；可配置 widget） |
+| 外观 surface | `extensions/appearance` | Phase 7 后 startup；`/appearance` 配置 | 静态 header 与 rounded editor | **本仓 source-only 实现**；Phase 7 前不安装，只拥有 header/editor |
 | 工具权限模式 | `extensions/mode` | `/mode ask\|plan\|edit\|auto\|config` | 会话内限制可写/可执行工具，并管理全局默认 | **本仓实现** |
 | Pilot Copilot | `extensions/pilot` | `/pilot` 激活；提交目标；`/pilot work` 审阅；TUI Authorize 或 headless exact digest | 手动人机共驾：完整 plan、trusted clean-Git primary-solo、Pilot one-shot policy + child write-root guard、package lifecycle-script 验证、actual-diff fresh review、acceptance evidence 和 receipt | **本仓实现**；默认 inactive，只使用 `pi-subagents` 公开 V1 前台传输，失败回人类，不自动修复/提交 |
 | OpenAI Priority | `extensions/fast` | `/fast [on\|off\|toggle\|status]` | 仅 GPT 模型 + openai 家族 Responses 时注入 `service_tier=priority` | **本仓实现**（窄注入） |
@@ -88,7 +89,7 @@ terrific-pi/
 |----|----------|------|------------|
 | `git:github.com/nicobailon/pi-subagents@bd32df2…` | `subagent` 工具；docsflow / web_research；Pilot public V1 foreground transport | 子代理运行时 | auxiliary `web_research`、docsflow **依赖**；Pilot 的 policy grant/write-root guard 由 Pilot 自身实现，不依赖外部未发布 patch |
 | `npm:pi-web-access@…` | `web_search` / `fetch_content` / … | 联网检索与抓取 | 研究链路；不进 auxiliary 内核 |
-| `npm:pi-vision-handoff@…` | vision 相关工具 | 多模态交接 | auxiliary 只桥 usage |
+| `npm:pi-vision-handoff@…` | vision 相关工具 | 多模态交接 | auxiliary 只桥 usage；计划在 Phase 7 rollout 时退役 |
 | `npm:cc-safety-net@…` | 自动拦截高危 shell | 安全网 | 正交 |
 | `npm:@ayulab/pi-rewind@…` | rewind 相关 | 会话回滚 | 正交 |
 | `git:…/ponytail` | 技能：偷懒实现纪律 | 开发风格 | 正交 |
@@ -131,7 +132,8 @@ terrific-pi/
 
 | 层 | 谁负责 | 内容 |
 |----|--------|------|
-| Footer 常驻 | **statusline** | path、branch、model+thinking、cache、cost、mode、fast、progress/state/duration；默认不启用 `toolActivity`、tokens、session、branchDiff |
+| Footer 常驻 | **statusline** | 唯一 `setFooter()` owner；path、branch、model+thinking、cache、cost、mode、fast、progress/state/duration，以及可选 worktree/runtime/performance units；不新增 layout |
+| Header / editor | **appearance** | source-only；Phase 7 启用后只调用 `setHeader()` / `setEditorComponent()`，disabled/absent 零副作用，不接管 footer |
 | 任务 HUD | **taskboard** | 多步任务目标、步骤、blocker、等待/阻塞与验证；`activityMode: full` 在紧凑 HUD 提供聚合运行态、在展开面板提供详情 |
 | 过程历史 | **presentation** | 受控折叠原生工具行；运行中探索/Skill 身份与单一安全失败行，`app.tools.expand` 恢复 Pi 原生细节 |
 | 扩展 status key | 各插件 `setStatus` | mode / fast / taskboard / auxiliary 等；statusline 对部分 key **排除重复展示**（见 `EXCLUDED_PROGRESS_KEYS`） |
@@ -146,7 +148,7 @@ terrific-pi/
 | 文件 | 谁读 | 内容 |
 |------|------|------|
 | `~/.pi/agent/settings.json` | pi 核心 + 全局默认 | packages、defaultProvider/Model/ThinkingLevel、theme… |
-| `~/.pi/agent/terrific.json` | mode / btw / context / auxiliary / docsflow / model-profile / fast / taskboard / presentation | 本仓插件共享配置；Taskboard `0.2.0` 不再注册 `/process`，仍可读取并迁移旧 `processView` |
+| `~/.pi/agent/terrific.json` | mode / btw / context / auxiliary / docsflow / model-profile / fast / taskboard / presentation / appearance | 本仓插件共享配置；appearance 仅在存在合法 section 时启用；Taskboard `0.2.0` 不再注册 `/process`，仍可读取并迁移旧 `processView` |
 | `~/.pi/agent/statusline.json` | statusline | widget 布局与 profile |
 | `~/.pi/agent/models.json` | pi + pi-provider-sync | 自定义 provider/models |
 | `~/.pi/agent/auth.json` | pi | **密钥；禁止入库** |
@@ -175,7 +177,8 @@ terrific-pi/
 
 | 名称 | 状态 | 为何要有 | 解决的问题 | 实现策略 | 明确不做什么 |
 |------|------|----------|------------|----------|--------------|
-| statusline | 已收录 | 官方 footer 不够密/不可配 | 可配置 HUD、quota、stacked/minimal | 本仓实现 | 不替代 taskboard 任务面板 |
+| statusline | 已收录 | 官方 footer 不够密/不可配 | 可配置 HUD、quota、stacked/minimal、新 display units | 本仓实现；仅 single/stacked | 唯一 footer owner；不替代 taskboard 或 appearance |
+| appearance | 已收录，source-only | Open TUI 的 header/editor 需明确 owner，且不能由 statusline/presentation 代管 | 静态 header、rounded editor、独立设置菜单 | 选择性移植并保留 MIT attribution；Phase 7 前不安装 | 不接管 footer/task/transcript；不替代 vision handoff |
 | mode | 已收录 | 需要会话级工具策略 | ask/plan/edit/auto | 本仓实现 | 不切换模型/thinking |
 | fast | 已收录 | Priority 无一键开关 | `service_tier` 注入 | 本仓窄实现 | 不控制 thinking、不通用 header 框架 |
 | context | 已收录 | 需要可解释上下文占用 | `/context` 拆解 | 本仓实现 | 不压缩、不调模型 |
@@ -256,4 +259,5 @@ terrific-pi/
 | 2026-07-22 | 正式定义个性化 Pi enhancement monorepo；补目录/workflow 边界、历史 session 契约与 dist 保留策略 |
 | 2026-07-22 | Pilot Phase 0：登记双激活、input routing 与 Auxiliary `pilot_router` bridge；未启用 settings 或 legacy cutover |
 | 2026-07-23 | Pilot Copilot scope：默认 inactive，仅 `/pilot` 手动接管；完整知情 Work Gate、trusted clean-Git single Worker、resolved package scripts、actual-diff review、acceptance evidence、final-state receipt；加入离线 packages，并保留独立 mode/docsflow |
+| 2026-08-04 | Open TUI Phase 6：登记 statusline 新 units（无新 layout）、source-only appearance owner 边界，以及 Phase 7 卸载 pi-vision-handoff 的能力影响 |
 | 2026-07-22 | `process-view` 更名为 `taskboard`：canonical package/path/command/config/status key 均迁移；Taskboard `0.2.0` 移除重复 `/process` 命令，长期保留 `process_update`、历史 session entry 和旧配置/status 的只读迁移兼容 |

@@ -412,6 +412,7 @@ describe("appearance submenu", () => {
 		assert.deepEqual(mainItems, [
 			"Widgets",
 			"Appearance",
+			"Telemetry",
 			"Show config",
 			"Reload from file",
 			"Reset to defaults",

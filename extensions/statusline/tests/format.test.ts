@@ -73,6 +73,38 @@ describe("formatCache", () => {
 	});
 });
 
+describe("extended icon modes", () => {
+	const tokens = { input: 100, output: 0, cacheRead: 400, cacheWrite: 100 };
+	const quota = {
+		provider: "codex" as const,
+		windows: [{ id: "primary", label: "5h", usedPercent: 42 }],
+		capturedAt: Date.now(),
+		stale: false,
+	};
+	const activity = { Bash: { active: 0, success: 2, error: 1 } };
+
+	it("uses nerd glyphs across every existing icon-bearing formatter", () => {
+		assert.equal(formatCache(tokens, false, "nerd")?.text, " 66.7%");
+		assert.equal(formatTokenDirection("in", 1_500, "nerd").text, " 1.5K");
+		assert.equal(formatBranch("main", "nerd").text, "");
+		assert.equal(formatFastBadge("legacy", "nerd")?.text, "");
+		assert.equal(formatQuota(quota, "nerd", 4)?.text, "󰓎 5h [██░░] 42%");
+		assert.equal(formatToolActivity(activity, "nerd")?.text, " total x1 ·  Bash x2");
+		assert.equal(formatDurationContent("12s / 1m45s", "nerd").text, " 12s / 1m45s");
+	});
+
+	it("uses ASCII glyphs and auto never falls back to emoji", () => {
+		assert.equal(formatCache(tokens, false, "ascii")?.text, "c 66.7%");
+		assert.equal(formatTokenDirection("out", 800, "ascii").text, "v 800");
+		assert.equal(formatBranch("main", "ascii").text, "* main");
+		assert.equal(formatFastBadge("legacy", "ascii")?.text, "F");
+		assert.equal(formatQuota(quota, "ascii", 4)?.text, "% 5h [██░░] 42%");
+		assert.equal(formatToolActivity(activity, "ascii")?.text, "x total x1 · + Bash x2");
+		assert.equal(formatDurationContent("12s / 1m45s", "ascii").text, "t 12s / 1m45s");
+		assert.ok([" 66.7%", "c 66.7%"].includes(formatCache(tokens, false, "auto")?.text ?? ""));
+	});
+});
+
 describe("formatContextText", () => {
 	it("formats remaining and used modes", () => {
 		assert.equal(formatContextText(37.2, "remaining")?.text, "Context 63% left");
