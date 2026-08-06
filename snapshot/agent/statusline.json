@@ -1,16 +1,20 @@
 {
   "widgets": [
+    "mode",
     "model",
     "fast",
-    "path",
-    "branch",
     "contextBar",
     "cost",
     "cache",
-    "mode",
+    "tokens",
+    "path",
+    "session",
+    "branch",
+    "branchDiff",
     "progress",
     "state",
-    "duration"
+    "duration",
+    "toolActivity"
   ],
   "layout": "stacked",
   "iconMode": "emoji",
@@ -18,5 +22,12 @@
   "contextBarWidth": 8,
   "minimal": false,
   "separator": "dot",
-  "spacing": 1
+  "spacing": 1,
+  "toolActivityMode": "compact",
+  "widgetGroups": {
+    "mode": "project",
+    "path": "environment",
+    "branch": "environment",
+    "branchDiff": "environment"
+  }
 }

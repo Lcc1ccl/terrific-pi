@@ -3,11 +3,11 @@
     "type": "api_key",
     "key": ""
   },
-  "grok": {
+  "anthropic": {
     "type": "api_key",
     "key": ""
   },
-  "anthropic": {
+  "xiaomi": {
     "type": "api_key",
     "key": ""
   }

@@ -2,7 +2,7 @@
 
 > 日期：2026-08-04
 >
-> 状态：待批准；仅计划，尚未实施
+> 状态：已实施（Phase 0-7）；自动化验收与当前 TUI rollout 已通过，Windows Terminal / VS Code terminal 人工矩阵待补
 >
 > 上游基线：`OldSuns/pi-open-tui@c280fcd054256e6ea080011e32d35a8f816949fb`（npm `0.2.10`）
 >
@@ -441,43 +441,43 @@ Settings：
 
 ### 保留现状
 
-- [ ] Phase 0-6 live `settings.json` 未变
-- [ ] Phase 0-6 live `terrific.json` 未变
-- [ ] live `statusline.json` 未因迁移被改成固定布局
-- [ ] snapshot 未变
-- [ ] current stacked footer characterization 未变
-- [ ] presentation 72 tests 继续通过
-- [ ] taskboard 83 tests 继续通过
+- [x] Phase 0-6 live `settings.json` 未变
+- [x] Phase 0-6 live `terrific.json` 未变
+- [x] live `statusline.json` 未因迁移被改成固定布局
+- [x] Phase 0-6 snapshot 未变；Phase 7 rollout 后已刷新并消毒
+- [x] current stacked footer characterization 未变
+- [x] presentation 72 tests 继续通过
+- [x] taskboard 83 tests 继续通过
 
 ### Statusline
 
-- [ ] 仍只有一个生产 `setFooter()` owner
-- [ ] telemetry 每 agent run 最多一个 settled snapshot
-- [ ] performance widget 与 notification 不重复
-- [ ] worktree 支持 subdir/worktree/diverged/detached
-- [ ] runtime disabled 时不启动版本命令
-- [ ] `single/stacked` 不回归
-- [ ] 没有新增 `layout: open` 或固定两行/三区 renderer
-- [ ] 新 units 可独立排序、编组、启停，并在 40/80/120/160 列安全
+- [x] 仍只有一个生产 `setFooter()` owner
+- [x] telemetry 每 agent run 最多一个 settled snapshot
+- [x] performance widget 与 notification 不重复
+- [x] worktree 支持 subdir/worktree/diverged/detached
+- [x] runtime disabled 时不启动版本命令
+- [x] `single/stacked` 不回归
+- [x] 没有新增 `layout: open` 或固定两行/三区 renderer
+- [x] 新 units 可独立排序、编组、启停，并在 40/80/120/160 列安全
 
 ### Appearance
 
-- [ ] Phase 7 前 source-only，不进入默认 install manifest
-- [ ] config absent 时零副作用
-- [ ] 不调用 `setFooter`
-- [ ] rollout 时 `pi-vision-handoff` 已从 user packages 移除
-- [ ] appearance 是唯一 editor owner；未知 foreign editor 触发失败而非覆盖
-- [ ] 不清屏、不直接写 stdout
-- [ ] `/appearance` 只写 `terrific.json.appearance`
-- [ ] 10-generation lifecycle clean
+- [x] Phase 7 前 source-only，不进入默认 install manifest
+- [x] config absent 时零副作用
+- [x] 不调用 `setFooter`
+- [x] rollout 时 `pi-vision-handoff` 已从 user packages 移除
+- [x] appearance 是唯一 editor owner；未知 foreign editor 触发失败而非覆盖
+- [x] 不清屏、不直接写 stdout
+- [x] `/appearance` 只写 `terrific.json.appearance`
+- [x] 10-generation lifecycle clean
 
 ### 发布与安全
 
-- [ ] MIT attribution 随源码和离线包分发
-- [ ] 无 secrets/session/runtime state
-- [ ] package manifest 路径真实存在
-- [ ] README/CAPABILITIES 与磁盘一致
-- [ ] pack self-check 和临时 install smoke 通过
+- [x] MIT attribution 随源码和离线包分发
+- [x] 无 secrets/session/runtime state
+- [x] package manifest 路径真实存在
+- [x] README/CAPABILITIES 与磁盘一致
+- [x] pack self-check 和临时 install smoke 通过
 
 ## 9. 回滚
 

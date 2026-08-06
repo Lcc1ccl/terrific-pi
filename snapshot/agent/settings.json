@@ -1,10 +1,10 @@
 {
-  "lastChangelogVersion": "0.81.1",
+  "lastChangelogVersion": "0.83.0",
   "theme": "dark",
   "defaultProvider": "openai",
-  "defaultModel": "gpt-5.6-terra",
+  "defaultModel": "gpt-5.6-sol",
   "defaultThinkingLevel": "max",
-  "hideThinkingBlock": true,
+  "hideThinkingBlock": false,
   "quietStartup": true,
   "outputPad": 0,
   "packages": [
@@ -22,14 +22,15 @@
     "git:github.com/nicobailon/pi-subagents@bd32df2cc1a951b588f6f93f67f3b9adac406303",
     "../vendor/terrific-pi/extensions/auxiliary",
     "npm:pi-web-access@0.13.0",
-    "npm:pi-vision-handoff@0.8.1",
     "../vendor/terrific-pi/extensions/docsflow",
-    "../vendor/terrific-pi/extensions/model-profile"
+    "../vendor/terrific-pi/extensions/model-profile",
+    "npm:pi-goal@0.1.7",
+    "../vendor/terrific-pi/extensions/appearance"
   ],
   "subagents": {
     "agentOverrides": {
       "researcher": {
-        "model": "grok/grok-4.5",
+        "model": "xiaomi/mimo-v2.5-pro",
         "thinking": "low",
         "defaultContext": "fresh",
         "inheritProjectContext": false,
@@ -42,5 +43,9 @@
         ]
       }
     }
+  },
+  "defaultProjectTrust": "always",
+  "images": {
+    "autoResize": true
   }
 }
