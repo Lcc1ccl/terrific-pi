@@ -25,6 +25,7 @@ auth.json
 **/sessions/
 **/*.jsonl
 .pi-subagents/
+.orca/
 
 # Build / cache
 build/
