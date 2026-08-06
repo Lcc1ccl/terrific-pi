@@ -10,6 +10,7 @@ import type {
 	StatuslineConfig,
 	StatuslineSeparator,
 	WidgetGroup,
+	WidgetId,
 	WidgetSegment,
 } from "./types.ts";
 import { WIDGET_GROUP_ORDER } from "./types.ts";
@@ -116,6 +117,7 @@ function colorizeSegments(
 	segments: WidgetSegment[],
 	config: StatuslineConfig,
 	theme: HostTheme,
+	indent = "  ",
 ): string {
 	const separator = colorizeText(
 		theme,
@@ -124,7 +126,7 @@ function colorizeSegments(
 		"dim",
 	);
 	const colored = segments.map((segment) => colorizeSegment(theme, segment));
-	return `  ${colored.join(separator)}`;
+	return `${indent}${colored.join(separator)}`;
 }
 
 function cloneSegments(segments: WidgetSegment[]): WidgetSegment[] {
@@ -149,11 +151,12 @@ export function fitSegmentsToWidth(
 	theme: HostTheme,
 	width: number,
 	measure: (text: string) => number,
+	indent = "  ",
 ): WidgetSegment[] {
 	const maxWidth = Math.max(1, width);
 	let current = cloneSegments(segments);
 
-	const lineWidth = () => measure(colorizeSegments(current, config, theme));
+	const lineWidth = () => measure(colorizeSegments(current, config, theme, indent));
 	if (lineWidth() <= maxWidth) return current;
 
 	// 1) Drop high-priority (low importance) segments one by one.
@@ -219,6 +222,23 @@ function renderSingleLine(
 	const separatorEllipsis = colorizeText(theme, "dim", "…", "dim");
 	const line = colorizeSegments(fitted, config, theme);
 	return truncate(line, Math.max(1, width), separatorEllipsis);
+}
+
+export const EDITOR_STATUS_WIDGET_IDS: ReadonlySet<WidgetId> = new Set(["model", "mode", "fast"]);
+
+export function renderEditorStatus(
+	segments: WidgetSegment[],
+	config: StatuslineConfig,
+	theme: HostTheme,
+	width: number,
+	truncate: (text: string, maxWidth: number, ellipsis: string) => string,
+	measure: (text: string) => number = plainVisibleWidth,
+): string {
+	if (width <= 0) return "";
+	const source = segments.filter((segment) => EDITOR_STATUS_WIDGET_IDS.has(segment.id));
+	if (source.length === 0) return "";
+	const fitted = fitSegmentsToWidth(source, config, theme, width, measure, "");
+	return truncate(colorizeSegments(fitted, config, theme, ""), width, "");
 }
 
 export function renderStatusLine(

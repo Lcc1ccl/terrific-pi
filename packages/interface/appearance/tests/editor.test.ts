@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CustomEditor, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
-import { visibleWidth, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
 
 import { AppearanceEditor } from "../lib/editor.ts";
 import { stripAnsi } from "../lib/utils.ts";
@@ -50,4 +50,40 @@ test("editor keeps rounded rails, native content, padding compensation, and safe
   const scrolled = editor.render(24).map(stripAnsi);
   assert.ok(scrolled.some((line) => /^╭.*↑ \d+ more.*╮$/.test(line)));
   for (const line of scrolled) assert.ok(visibleWidth(line) <= 24);
+});
+
+test("editor embeds a width-safe status source in the bottom-right border", () => {
+  const status = "gpt-5 high · EDIT · fast";
+  const budgets: number[] = [];
+  const editor = new AppearanceEditor(tui, editorTheme, keys, (width) => {
+    budgets.push(width);
+    return truncateToWidth(status, width, "");
+  });
+
+  const lines = editor.render(40).map(stripAnsi);
+  assert.match(lines.at(-1) ?? "", / gpt-5 high · EDIT · fast ╯$/);
+  assert.ok((budgets.at(-1) ?? 40) < 40);
+
+  editor.setText(Array.from({ length: 30 }, (_, index) => `line ${index}`).join("\n"));
+  for (const width of [1, 2, 3, 4, 12, 24, 40]) {
+    const rendered = editor.render(width).map(stripAnsi);
+    if (width >= 24) assert.ok(rendered.some((line) => /^╭.*↑ \d+ more.*╮$/.test(line)));
+    for (const line of rendered) assert.ok(visibleWidth(line) <= width);
+  }
+  assert.match(editor.render(40).map(stripAnsi).at(-1) ?? "", / gpt-5 high · EDIT · fast ╯$/);
+});
+
+test("editor restores the border tone after colored status metadata", () => {
+  const coloredTheme = {
+    ...editorTheme,
+    borderColor: (text: string) => `\x1b[34m${text}\x1b[39m`,
+  } as EditorTheme;
+  const editor = new AppearanceEditor(
+    tui,
+    coloredTheme,
+    keys,
+    () => "\x1b[31mstatus\x1b[39m",
+  );
+  const bottom = editor.render(24).at(-1) ?? "";
+  assert.match(bottom, /\x1b\[31mstatus\x1b\[39m\x1b\[34m ╯\x1b\[39m$/);
 });

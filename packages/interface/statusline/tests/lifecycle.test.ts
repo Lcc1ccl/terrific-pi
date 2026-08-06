@@ -23,17 +23,23 @@ function config(raw: unknown): { cwd: string; path: string } {
 
 function harness(exec: (...args: any[]) => Promise<any>) {
 	const handlers = new Map<string, Array<(event: any, ctx: any) => any>>();
+	const busHandlers = new Map<string, Array<(value: any) => void>>();
 	const commands = new Map<string, any>();
 	const notifications: string[] = [];
 	let footerFactory: ((tui: any, theme: any, data: any) => any) | undefined;
 	let renders = 0;
 	const pi = {
-		events: { on() {} },
+		events: {
+			on(name: string, handler: (value: any) => void) {
+				busHandlers.set(name, [...(busHandlers.get(name) ?? []), handler]);
+				return () => busHandlers.set(name, (busHandlers.get(name) ?? []).filter((item) => item !== handler));
+			},
+		},
 		on(name: string, handler: (event: any, ctx: any) => any) {
 			handlers.set(name, [...(handlers.get(name) ?? []), handler]);
 		},
 		registerCommand(name: string, command: any) { commands.set(name, command); },
-		getThinkingLevel: () => "off",
+		getThinkingLevel: () => "high",
 		exec,
 	};
 	const makeCtx = (
@@ -77,13 +83,16 @@ function harness(exec: (...args: any[]) => Promise<any>) {
 		async emit(name: string, event: any, ctx: any) {
 			for (const handler of handlers.get(name) ?? []) await handler(event, ctx);
 		},
-		mountFooter() {
+		emitBus(name: string, value: any) {
+			for (const handler of busHandlers.get(name) ?? []) handler(value);
+		},
+		mountFooter(statuses: ReadonlyMap<string, string> = new Map()) {
 			return footerFactory?.(
 				{ requestRender: () => { renders += 1; } },
 				{ fg: (_color: string, text: string) => text },
 				{
 					onBranchChange: () => () => {},
-					getExtensionStatuses: () => new Map(),
+					getExtensionStatuses: () => statuses,
 					getGitBranch: () => null,
 				},
 			);
@@ -124,6 +133,91 @@ async function settledRun(app: ReturnType<typeof harness>, ctx: any): Promise<vo
 }
 
 describe("statusline migration lifecycle", () => {
+	it("moves editor metadata only while appearance owns the editor", async () => {
+		const { cwd } = config({
+			widgets: ["path", "model", "mode", "fast", "state"],
+			iconMode: "plain",
+			telemetry: { display: "off" },
+		});
+		const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
+		const ctx = app.makeCtx(cwd);
+		ctx.model.reasoning = true;
+		await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+		const footer = app.mountFooter(new Map([["mode", "EDIT"], ["fast", ""]]));
+		assert.ok(footer);
+		assert.match(footer.render(120).join("\n"), /model high.*EDIT.*fast/);
+
+		let source: { render(width: number): string } | undefined;
+		let ownsEditor = true;
+		app.emitBus("terrific-pi:statusline:editor-v1", {
+			version: 1,
+			active: true,
+			ownsEditor: () => ownsEditor,
+			attach(value: { render(width: number): string }) { source = value; },
+		});
+		assert.ok(source);
+		assert.match(source.render(120), /model high.*EDIT.*fast/);
+		assert.doesNotMatch(footer.render(120).join("\n"), /model high|EDIT|fast/);
+
+		ownsEditor = false;
+		assert.match(footer.render(120).join("\n"), /model high.*EDIT.*fast/);
+		ownsEditor = true;
+		assert.doesNotMatch(footer.render(120).join("\n"), /model high|EDIT|fast/);
+
+		app.emitBus("terrific-pi:statusline:editor-v1", { version: 1, active: false });
+		assert.match(footer.render(120).join("\n"), /model high.*EDIT.*fast/);
+	});
+
+	it("replays an editor attachment requested before the footer source mounts", async () => {
+		const { cwd } = config({
+			widgets: ["path", "model", "mode", "fast"],
+			iconMode: "plain",
+			telemetry: { display: "off" },
+		});
+		const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
+		const ctx = app.makeCtx(cwd);
+		ctx.model.reasoning = true;
+		await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		let source: { render(width: number): string } | undefined;
+		app.emitBus("terrific-pi:statusline:editor-v1", {
+			version: 1,
+			active: true,
+			ownsEditor: () => true,
+			attach(value: { render(width: number): string }) { source = value; },
+		});
+		assert.equal(Boolean(source), false);
+
+		const footer = app.mountFooter(new Map([["mode", "EDIT"], ["fast", "fast"]]));
+		assert.ok(source);
+		assert.match(source.render(120), /model high.*EDIT.*fast/);
+		assert.doesNotMatch(footer?.render(120).join("\n") ?? "", /model high|EDIT|fast/);
+	});
+
+	it("cancels an editor request before the footer source mounts", async () => {
+		const { cwd } = config({
+			widgets: ["model", "mode", "fast"],
+			iconMode: "plain",
+			telemetry: { display: "off" },
+		});
+		const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
+		const ctx = app.makeCtx(cwd);
+		await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+
+		let attached = false;
+		app.emitBus("terrific-pi:statusline:editor-v1", {
+			version: 1,
+			active: true,
+			ownsEditor: () => true,
+			attach() { attached = true; },
+		});
+		app.emitBus("terrific-pi:statusline:editor-v1", { version: 1, active: false });
+
+		const footer = app.mountFooter(new Map([["mode", "EDIT"], ["fast", "fast"]]));
+		assert.equal(attached, false);
+		assert.match(footer?.render(120).join("\n") ?? "", /model.*EDIT.*fast/);
+	});
+
 	it("performs zero exec calls when worktree runtime and branchDiff are disabled", async () => {
 		const { cwd } = config({ widgets: ["path"], telemetry: { display: "off" } });
 		let calls = 0;

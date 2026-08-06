@@ -15,6 +15,7 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 - Session name (when set via `/name`)
 - Model + thinking level using pi's native thinking colors
 - Execution mode and fast priority badges when active
+- Automatic editor placement: when Appearance owns the editor, enabled model/thinking/mode/fast widgets move to its bottom-right border and are removed from the footer; otherwise footer rendering is unchanged
 - Active-branch token usage (`🔼input` / `🔽output`, or plain `in` / `out`)
 - Active-branch cumulative cache hit rate (`🎯…%` or `cache …%`)
 - Active-branch main cost (`$x.xx`, hidden when zero)
@@ -40,7 +41,7 @@ Package defaults stay single-line emoji and do **not** enable the new widgets:
 ~/proj · session · model high ·  · 🔼 1.5K · 🔽 800 · 🎯 66.7% · $0.42 · Context [██████░░░░] 60% · 🏠 · +12 -3 · 🕒 12s / 1m45s · Ready
 ```
 
-(`mode` is enabled by default but only appears while `/mode` is non-default/active.)
+(`mode` is enabled by default but only appears while `/mode` is non-default/active.) With the root package's Appearance editor enabled, the model/thinking/mode/fast portion is rendered in the editor border instead of this footer line; `/statusline` remains its configuration owner.
 
 ## Install
 

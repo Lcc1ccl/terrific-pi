@@ -20,7 +20,11 @@ import { formatPerformance } from "../lib/format.ts";
 import { readRuntimeInfo, type RuntimeInfo } from "../lib/runtime-info.ts";
 import { TurnTelemetryTracker, type TurnPerformanceView } from "../lib/telemetry.ts";
 import { readWorktreeInfo, type WorktreeInfo } from "../lib/worktree.ts";
-import { renderStatusLine } from "../lib/render.ts";
+import {
+	EDITOR_STATUS_WIDGET_IDS,
+	renderEditorStatus,
+	renderStatusLine,
+} from "../lib/render.ts";
 import { WidgetsSetupComponent } from "../lib/widgets-setup.ts";
 import type {
 	BranchChangeStats,
@@ -56,6 +60,26 @@ function parseNumstat(output: string): BranchChangeStats {
 }
 
 const AUXILIARY_USAGE_CHANGED_EVENT = "terrific-pi:auxiliary-usage:changed-v1";
+const EDITOR_STATUS_EVENT = "terrific-pi:statusline:editor-v1";
+
+type EditorStatusSource = {
+	render(width: number): string;
+};
+
+type EditorStatusRequest = {
+	version: 1;
+	active: boolean;
+	attach?: (source: EditorStatusSource) => void;
+	ownsEditor?: () => boolean;
+};
+
+function asEditorStatusRequest(value: unknown): EditorStatusRequest | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const request = value as Partial<EditorStatusRequest>;
+	if (request.version !== 1 || typeof request.active !== "boolean") return undefined;
+	if (request.active && (typeof request.attach !== "function" || typeof request.ownsEditor !== "function")) return undefined;
+	return request as EditorStatusRequest;
+}
 
 function displayKey(key: string): string {
 	return ({ up: "Up", down: "Down", enter: "Enter", escape: "Esc" }[key] ?? key.replace(/\b[a-z]/g, (char) => char.toUpperCase()));
@@ -108,6 +132,10 @@ export default function statusline(pi: ExtensionAPI) {
 	let worktree: WorktreeInfo | undefined;
 	let runtime: RuntimeInfo | undefined;
 	let performanceView: TurnPerformanceView | undefined;
+	let editorStatusActive = false;
+	let editorStatusSource: EditorStatusSource | undefined;
+	let editorStatusAttach: ((source: EditorStatusSource) => void) | undefined;
+	let editorStatusOwns: (() => boolean) | undefined;
 	const defaultBranchCache = new Map<string, string | null>();
 	const durationTracker = new AgentDurationTracker();
 	const telemetryTracker = new TurnTelemetryTracker();
@@ -116,7 +144,42 @@ export default function statusline(pi: ExtensionAPI) {
 	});
 
 	const requestRender = () => renderRequest?.();
+	const attachEditorStatus = () => {
+		if (!editorStatusAttach || !editorStatusSource) return;
+		try {
+			editorStatusAttach(editorStatusSource);
+			editorStatusActive = true;
+			requestRender();
+		} catch {
+			editorStatusAttach = undefined;
+			editorStatusOwns = undefined;
+			editorStatusActive = false;
+		}
+	};
+	const ownsEditorStatus = () => {
+		if (!editorStatusActive || !editorStatusOwns) return false;
+		try {
+			return editorStatusOwns();
+		} catch {
+			return false;
+		}
+	};
 	const currentTelemetry = () => config.telemetry ?? DEFAULT_CONFIG.telemetry!;
+	const unsubscribeEditorStatus = pi.events.on(EDITOR_STATUS_EVENT, (value) => {
+		const request = asEditorStatusRequest(value);
+		if (!request) return;
+		if (!request.active) {
+			editorStatusAttach = undefined;
+			editorStatusOwns = undefined;
+			editorStatusActive = false;
+			requestRender();
+			return;
+		}
+		if (!request.attach || !request.ownsEditor) return;
+		editorStatusAttach = request.attach;
+		editorStatusOwns = request.ownsEditor;
+		attachEditorStatus();
+	});
 
 	const cloneConfig = (value: StatuslineConfig): StatuslineConfig => ({
 		...value,
@@ -473,6 +536,8 @@ export default function statusline(pi: ExtensionAPI) {
 		worktree = undefined;
 		runtime = undefined;
 		performanceView = undefined;
+		editorStatusActive = false;
+		editorStatusSource = undefined;
 		telemetryTracker.reset(event.reason === "reload" ? "reload" : "session");
 		clearActiveTools();
 		for (const name of Object.keys(toolStats)) delete toolStats[name];
@@ -493,57 +558,78 @@ export default function statusline(pi: ExtensionAPI) {
 				scheduleProjectRefresh(ctx.cwd, 0);
 				tui.requestRender();
 			});
+			const currentSnapshot = (): StatusSnapshot => {
+				const context = ctx.getContextUsage();
+				const thinking = ctx.model?.reasoning ? pi.getThinkingLevel() : "off";
+				const extensionStatuses = footerData.getExtensionStatuses();
+				const modeStatus = extensionStatuses.get(MODE_STATUS_KEY);
+				const fastStatus = extensionStatuses.get(FAST_STATUS_KEY);
+				const telemetry = currentTelemetry();
+				return {
+					cwd: ctx.cwd,
+					sessionName: ctx.sessionManager.getSessionName(),
+					modelId: ctx.model?.id ?? "no-model",
+					thinkingLevel: thinking,
+					hasReasoning: Boolean(ctx.model?.reasoning),
+					mode: modeStatus ? sanitizeStatus(modeStatus) || undefined : undefined,
+					fast: fastStatus ? sanitizeStatus(fastStatus) || undefined : undefined,
+					tokens: usage.tokens,
+					cost: usage.cost,
+					auxUsage: hasAuxUsage(auxiliaryUsage) ? auxiliaryUsage : undefined,
+					context: context
+						? {
+							tokens: context.tokens,
+							contextWindow: context.contextWindow,
+							percent: context.percent,
+						}
+						: undefined,
+					branch: footerData.getGitBranch(),
+					branchDiff: branchChanges,
+					progress: joinExtensionProgress(extensionStatuses),
+					duration: durationTracker.snapshot(),
+					runState: resolveRunState(runState, extensionStatuses),
+					quota: config.widgets.includes("quota") ? quotaMonitor.getSnapshot() : undefined,
+					quotaStatus: config.widgets.includes("quota") ? quotaMonitor.getStatus() : undefined,
+					environment: config.widgets.includes("environment") ? environment : undefined,
+					toolActivity: config.widgets.includes("toolActivity") && Object.keys(toolStats).length > 0
+						? toolStats
+						: undefined,
+					worktree: config.widgets.includes("worktree") ? worktree : undefined,
+					runtime: config.widgets.includes("runtime") ? runtime : undefined,
+					performance: telemetry.display === "widget" ? performanceView : undefined,
+				};
+			};
+			const source: EditorStatusSource = {
+				render: (width) => renderEditorStatus(
+					buildWidgetSegments(currentSnapshot(), config),
+					config,
+					theme,
+					width,
+					truncateToWidth,
+					visibleWidth,
+				),
+			};
+			editorStatusSource = source;
+			attachEditorStatus();
 
 			return {
 				dispose() {
 					unsubscribeBranch();
 					if (renderRequest === localRenderRequest) renderRequest = undefined;
+					if (editorStatusSource === source) {
+						editorStatusSource = undefined;
+						editorStatusActive = false;
+					}
 				},
 				invalidate() {},
 				render(width: number): string[] {
-					const context = ctx.getContextUsage();
-					const thinking = ctx.model?.reasoning ? pi.getThinkingLevel() : "off";
-					const extensionStatuses = footerData.getExtensionStatuses();
-					const modeStatus = extensionStatuses.get(MODE_STATUS_KEY);
-					const fastStatus = extensionStatuses.get(FAST_STATUS_KEY);
-					const telemetry = currentTelemetry();
-					const snapshot: StatusSnapshot = {
-						cwd: ctx.cwd,
-						sessionName: ctx.sessionManager.getSessionName(),
-						modelId: ctx.model?.id ?? "no-model",
-						thinkingLevel: thinking,
-						hasReasoning: Boolean(ctx.model?.reasoning),
-						mode: modeStatus ? sanitizeStatus(modeStatus) || undefined : undefined,
-						fast: fastStatus ? sanitizeStatus(fastStatus) || undefined : undefined,
-						tokens: usage.tokens,
-						cost: usage.cost,
-						auxUsage: hasAuxUsage(auxiliaryUsage) ? auxiliaryUsage : undefined,
-						context: context
-							? {
-								tokens: context.tokens,
-								contextWindow: context.contextWindow,
-								percent: context.percent,
-							}
-							: undefined,
-						branch: footerData.getGitBranch(),
-						branchDiff: branchChanges,
-						progress: joinExtensionProgress(extensionStatuses),
-						duration: durationTracker.snapshot(),
-						runState: resolveRunState(runState, extensionStatuses),
-						quota: config.widgets.includes("quota") ? quotaMonitor.getSnapshot() : undefined,
-						quotaStatus: config.widgets.includes("quota") ? quotaMonitor.getStatus() : undefined,
-						environment: config.widgets.includes("environment") ? environment : undefined,
-						toolActivity: config.widgets.includes("toolActivity") && Object.keys(toolStats).length > 0
-							? toolStats
-							: undefined,
-						worktree: config.widgets.includes("worktree") ? worktree : undefined,
-						runtime: config.widgets.includes("runtime") ? runtime : undefined,
-						performance: telemetry.display === "widget" ? performanceView : undefined,
-					};
-
-					const segments = buildWidgetSegments(snapshot, config);
+					const segments = buildWidgetSegments(currentSnapshot(), config);
+					const footerSegments = ownsEditorStatus()
+						? segments.filter((segment) => !EDITOR_STATUS_WIDGET_IDS.has(segment.id))
+						: segments;
+					if (footerSegments.length === 0) return [];
 					const rendered = renderStatusLine(
-						segments,
+						footerSegments,
 						config,
 						theme,
 						width,
@@ -686,6 +772,11 @@ export default function statusline(pi: ExtensionAPI) {
 		worktree = undefined;
 		runtime = undefined;
 		renderRequest = undefined;
+		editorStatusActive = false;
+		editorStatusSource = undefined;
+		editorStatusAttach = undefined;
+		editorStatusOwns = undefined;
+		unsubscribeEditorStatus();
 		clearActiveTools();
 		quotaContext = undefined;
 		usageContext = undefined;

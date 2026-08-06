@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { DEFAULT_CONFIG } from "../lib/config.ts";
 import {
 	fitSegmentsToWidth,
 	groupSegmentsBySemantics,
 	plainVisibleWidth,
+	renderEditorStatus,
 	renderStatusLine,
 } from "../lib/render.ts";
 import { buildWidgetSegments } from "../lib/widgets.ts";
@@ -59,6 +61,27 @@ const hudSnapshot: StatusSnapshot = {
 		Bash: { active: 0, success: 3, error: 0 },
 	},
 };
+
+describe("editor status projection", () => {
+	it("reuses configured widget order, separator, tones, and width priorities", () => {
+		const config: StatuslineConfig = {
+			...DEFAULT_CONFIG,
+			widgets: ["path", "model", "mode", "fast", "state"],
+			iconMode: "plain",
+			separator: "bar",
+			spacing: 1,
+		};
+		const built = buildWidgetSegments(hudSnapshot, config);
+		assert.equal(
+			renderEditorStatus(built, config, TEST_THEME, 80, (text) => text),
+			"gpt-5 high │ EDIT │ fast",
+		);
+		assert.equal(
+			renderEditorStatus(built, config, TEST_THEME, 12, truncateToWidth, visibleWidth),
+			"gpt-5 high",
+		);
+	});
+});
 
 describe("current live-compatible output characterization", () => {
 	it("keeps current stacked semantic output at 80/120/160 columns", () => {

@@ -10,17 +10,38 @@ function fillLine(content: string, width: number): string {
   return `${clipped}${" ".repeat(Math.max(0, width - visibleWidth(clipped)))}`;
 }
 
-function roundedBorder(width: number, kind: "top" | "bottom", paint: (text: string) => string, source?: string): string {
+function roundedBorder(
+  width: number,
+  kind: "top" | "bottom",
+  paint: (text: string) => string,
+  source?: string,
+  renderStatus?: (width: number) => string,
+): string {
   const corners = kind === "top" ? (["╭", "╮"] as const) : (["╰", "╯"] as const);
   if (width < 2) return paint(truncateToWidth(corners.join(""), width, ""));
   const scroll = source ? stripAnsi(source).match(/([↑↓]\s+\d+\s+more)/)?.[1] : undefined;
   const label = scroll ? `─── ${scroll} ` : "";
-  return paint(`${corners[0]}${label}${"─".repeat(Math.max(0, width - 2 - visibleWidth(label)))}${corners[1]}`);
+  const statusBudget = Math.max(0, width - 2 - visibleWidth(label) - 2);
+  const renderedStatus = renderStatus
+    ? truncateToWidth(renderStatus(statusBudget), statusBudget, "")
+    : "";
+  const status = renderedStatus ? ` ${renderedStatus} ` : "";
+  const fill = "─".repeat(Math.max(0, width - 2 - visibleWidth(label) - visibleWidth(status)));
+  if (!renderedStatus) return paint(`${corners[0]}${label}${fill}${corners[1]}`);
+  return `${paint(`${corners[0]}${label}${fill} `)}${renderedStatus}${paint(` ${corners[1]}`)}`;
 }
 
 export class AppearanceEditor extends CustomEditor {
-  constructor(tui: TUI, editorTheme: EditorTheme, keybindings: KeybindingsManager) {
+  private readonly renderStatus?: (width: number) => string;
+
+  constructor(
+    tui: TUI,
+    editorTheme: EditorTheme,
+    keybindings: KeybindingsManager,
+    renderStatus?: (width: number) => string,
+  ) {
     super(tui, editorTheme, keybindings, { paddingX: 0 });
+    this.renderStatus = renderStatus;
   }
 
   override setPaddingX(_padding: number): void {
@@ -37,7 +58,7 @@ export class AppearanceEditor extends CustomEditor {
       const line = base[index] ?? "";
       lines.push(`${this.borderColor("│")} ${fillLine(isEditorBorderLine(line) ? "" : line, innerWidth)} ${this.borderColor("│")}`);
     }
-    lines.push(roundedBorder(width, "bottom", this.borderColor, base[bottom]));
+    lines.push(roundedBorder(width, "bottom", this.borderColor, base[bottom], this.renderStatus));
     for (let index = bottom + 1; index < base.length; index++) lines.push(base[index] ?? "");
     return lines.map((line) => truncateToWidth(line, width, ""));
   }

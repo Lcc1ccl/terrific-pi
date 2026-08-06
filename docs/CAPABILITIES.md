@@ -6,7 +6,7 @@ This document is the current capability map for the core `terrific-pi` distribut
 
 | Domain | Package | Entry | Responsibility |
 |---|---|---|---|
-| Interface | statusline | `/statusline`, automatic footer | Sole footer owner; model, usage, context, Git, runtime, and status widgets |
+| Interface | statusline | `/statusline`, automatic footer | Sole status-widget owner; model/editor metadata, usage, context, Git, runtime, and footer layout |
 | Interface | appearance | `/appearance`, startup | Header and editor surfaces only |
 | Interface | taskboard | `/taskboard`, `process_update` | Structured task milestones, waiting/blocked state, and task HUD |
 | Interface | presentation | `/presentation`, automatic renderers | Transcript presentation, system entries, and file receipts |
@@ -31,7 +31,7 @@ The root Pi manifest loads exactly these ten extension entries and the `pi-provi
 | Priority request mutation | fast |
 | Auxiliary usage ledger | auxiliary |
 
-Dedicated status keys are not duplicated into generic progress. Runtime code has no cross-component source imports; integrations use Pi status, events, and session entries.
+Dedicated status keys are not duplicated into generic progress. Runtime code has no cross-component source imports; integrations use Pi status, events, and session entries. When Appearance owns the editor, a versioned event moves enabled `model` (including thinking), `mode`, and `fast` statusline widgets into the editor's bottom-right border; otherwise they remain in the footer.
 
 ## Configuration
 

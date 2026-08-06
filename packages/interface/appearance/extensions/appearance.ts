@@ -12,13 +12,46 @@ import {
 } from "../lib/config.ts";
 import { createAppearanceSettings } from "../lib/settings.ts";
 
+const EDITOR_STATUS_EVENT = "terrific-pi:statusline:editor-v1";
+
+type EditorStatusSource = {
+  render(width: number): string;
+};
+
+type EditorStatusRequest = {
+  version: 1;
+  active: boolean;
+  attach?: (source: EditorStatusSource) => void;
+  ownsEditor?: () => boolean;
+};
+
 function isTui(ctx: ExtensionContext): boolean {
   return ctx.hasUI && ctx.mode === "tui";
 }
 
 export default function appearance(pi: ExtensionAPI): void {
+  let editorTui: { requestRender(): void } | undefined;
+  let editorUi: ExtensionContext["ui"] | undefined;
+  let statusSource: EditorStatusSource | undefined;
+  let bridgeRequested = false;
   const editorFactory: NonNullable<Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0]> =
-    (tui, theme, keybindings) => new AppearanceEditor(tui, theme, keybindings);
+    (tui, theme, keybindings) => {
+      editorTui = tui;
+      if (!bridgeRequested && editorUi) {
+        bridgeRequested = true;
+        const ownerUi = editorUi;
+        pi.events.emit(EDITOR_STATUS_EVENT, {
+          version: 1,
+          active: true,
+          ownsEditor: () => ownerUi.getEditorComponent() === editorFactory,
+          attach(source) {
+            statusSource = source;
+            editorTui?.requestRender();
+          },
+        } satisfies EditorStatusRequest);
+      }
+      return new AppearanceEditor(tui, theme, keybindings, (width) => statusSource?.render(width) ?? "");
+    };
 
   pi.on("session_start", async (_event, ctx) => {
     if (!isTui(ctx)) return;
@@ -33,10 +66,18 @@ export default function appearance(pi: ExtensionAPI): void {
     }
 
     if (config.header) ctx.ui.setHeader((tui) => new AppearanceHeader(pi, ctx, tui));
-    if (config.editor) ctx.ui.setEditorComponent(editorFactory);
+    if (config.editor) {
+      editorUi = ctx.ui;
+      ctx.ui.setEditorComponent(editorFactory);
+    }
   });
 
   pi.on("session_shutdown", async () => {
+    if (bridgeRequested) pi.events.emit(EDITOR_STATUS_EVENT, { version: 1, active: false } satisfies EditorStatusRequest);
+    bridgeRequested = false;
+    statusSource = undefined;
+    editorTui = undefined;
+    editorUi = undefined;
     // Host teardown owns editor/header disposal. Clearing here can erase a newer owner during reload.
   });
 
