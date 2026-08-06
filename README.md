@@ -62,14 +62,10 @@ Device-local files remain authoritative:
 | `~/.pi/agent/terrific.json` | Core package sections such as `mode`, `fast`, `context`, `auxiliary`, `btw`, `taskboard`, `presentation`, `appearance`, and `modelProfile` |
 | `~/.pi/agent/statusline.json` | Statusline layout and widgets |
 | `~/.pi/agent/settings.json` | Pi package list and model defaults |
-| `~/.pi/agent/models.json` | Pi model registry and `pi-provider-sync` |
+| `~/.pi/agent/models.json` | Pi model registry |
 | `~/.pi/agent/auth.json` | Credentials; never part of this repository or npm package |
 
 Examples live under `config/examples/`. Package writers modify only their own section, preserve unknown sibling keys, and refuse malformed JSON.
-
-## Skills
-
-`pi-provider-sync` is shipped through the root Pi package from `skills/pi-provider-sync`. The repository copy is the source of truth; no live-directory reverse synchronization is used.
 
 ## Development
 

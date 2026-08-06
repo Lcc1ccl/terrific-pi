@@ -26,9 +26,9 @@ test("core root manifest exposes exactly the three approved domains", () => {
 	const manifest = readJson(join(ROOT, "package.json"));
 	assert.equal(manifest.name, "terrific-pi");
 	assert.deepEqual(manifest.pi?.extensions, EXTENSIONS);
-	assert.deepEqual(manifest.pi?.skills, ["./skills"]);
+	assert.equal(manifest.pi?.skills, undefined);
 	assert.equal(manifest.pi?.subagents, undefined);
-	for (const relative of [...EXTENSIONS, "./skills/pi-provider-sync/SKILL.md"]) {
+	for (const relative of EXTENSIONS) {
 		assert.equal(existsSync(join(ROOT, relative)), true, `missing resource: ${relative}`);
 	}
 });

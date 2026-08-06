@@ -17,7 +17,7 @@ This document is the current capability map for the core `terrific-pi` distribut
 | Runtime | auxiliary | `/aux`, `aux_summarize`, `web_research`, `git_finalize` | Bounded side-model routes and canonical usage |
 | Runtime | btw | `/btw` | Isolated no-tool side-channel Q&A |
 
-The root Pi manifest loads exactly these ten extension entries and the `pi-provider-sync` skill.
+The root Pi manifest loads exactly these ten extension entries.
 
 ## Ownership Contracts
 
@@ -54,5 +54,4 @@ All section writers preserve unknown sibling sections, which permits the separat
 
 - One root Git/npm package and one SemVer cover all core components.
 - Nested component packages are private development/test boundaries.
-- Skills are discovered from the root package; no copy-back or installer synchronization exists.
 - Snapshot, custom offline archive, restore installer, and manifest-generation scripts are retired.

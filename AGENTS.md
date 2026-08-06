@@ -21,7 +21,7 @@ Pilot and Docsflow belong to the separate `terrific-pi-automation` repository. C
 
 - The root `package.json` is the only release manifest and version.
 - Nested component manifests stay `private: true` and retain package-local tests.
-- Root `pi.extensions` and `pi.skills` paths are explicit and covered by `tests/manifest.test.ts`.
+- Root Pi resource paths are explicit and covered by `tests/manifest.test.ts`.
 - The root package has no ordinary runtime dependencies; Pi-provided APIs remain peer dependencies.
 - Third-party Pi packages are installed separately and declared as required or optional Pi package specs, never hidden npm dependencies.
 - Do not introduce npm workspaces or a shared monorepo runtime without a demonstrated need.

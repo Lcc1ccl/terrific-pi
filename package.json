@@ -15,8 +15,6 @@
     "README.md",
     "config/examples",
     "scripts",
-    "skills/pi-provider-sync/SKILL.md",
-    "skills/pi-provider-sync/sync_provider_models.py",
     "packages/interface/statusline/extensions",
     "packages/interface/statusline/lib",
     "packages/interface/appearance/extensions",
@@ -53,8 +51,7 @@
       "./packages/session-control/model-profile/extensions/model-profile.ts",
       "./packages/runtime/auxiliary/extensions/auxiliary.ts",
       "./packages/runtime/btw/extensions/btw.ts"
-    ],
-    "skills": ["./skills"]
+    ]
   },
   "terrificPi": {
     "optionalPiPackages": [
