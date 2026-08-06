@@ -1,5 +1,6 @@
 import {
 	DEFAULT_CONFIG,
+	enabledWidgets,
 	MAX_CONTEXT_BAR_WIDTH,
 	MIN_CONTEXT_BAR_WIDTH,
 } from "./config.ts";
@@ -29,12 +30,13 @@ import {
 	thinkingLevelTone,
 	type SegmentContent,
 } from "./format.ts";
-import { formatWidgetSeparator, groupSegmentsBySemantics, stripTerminalControls } from "./render.ts";
+import { formatWidgetSeparator, groupSegmentsByLines, stripTerminalControls } from "./render.ts";
 import type {
 	RunState,
 	StatusSnapshot,
 	StatuslineConfig,
 	WidgetId,
+	WidgetLines,
 	WidgetSegment,
 } from "./types.ts";
 import { WIDGET_PRIORITY } from "./types.ts";
@@ -162,33 +164,34 @@ function pushContent(
 }
 
 export function formatWidgetsPreview(
-	enabled: readonly string[],
+	lines: WidgetLines,
 	config: StatuslineConfig = DEFAULT_CONFIG,
 ): string {
-	return formatWidgetsPreviewLines(enabled, config).join(" / ");
+	return formatWidgetsPreviewLines(lines, config).join(" / ");
 }
 
 /** Mock preview lines using PREVIEW_SNAPSHOT so empty live data still shows chrome. */
 export function formatWidgetsPreviewLines(
-	enabled: readonly string[],
+	lines: WidgetLines,
 	config: StatuslineConfig = DEFAULT_CONFIG,
 ): string[] {
-	const widgets = enabled.filter((id): id is WidgetId => typeof id === "string");
-	if (widgets.length === 0) return ["(none)"];
 	const previewConfig: StatuslineConfig = {
 		...config,
-		widgets: [...widgets],
-		...(config.widgetGroups ? { widgetGroups: { ...config.widgetGroups } } : {}),
+		lines: {
+			line0: [...lines.line0],
+			line1: [...lines.line1],
+			line2: [...lines.line2],
+			line3: [...lines.line3],
+			line4: [...lines.line4],
+		},
 	};
 	const segments = buildWidgetSegments(PREVIEW_SNAPSHOT, previewConfig);
-	const sep = formatWidgetSeparator(previewConfig.spacing, previewConfig.separator ?? "dot");
-	if (segments.length === 0) return ["(empty)"];
-	if (previewConfig.layout !== "stacked") {
-		return [segments.map((segment) => segment.text).join(sep)];
-	}
-	const groups = groupSegmentsBySemantics(segments, previewConfig);
-	if (groups.length === 0) return ["(empty)"];
-	return groups.map((group) => group.map((segment) => segment.text).join(sep));
+	if (segments.length === 0) return ["(none)"];
+	const separator = formatWidgetSeparator(previewConfig.spacing, previewConfig.separator ?? "dot");
+	const groups = groupSegmentsByLines(segments, previewConfig).filter((group) => group.length > 0);
+	return groups.length > 0
+		? groups.map((group) => group.map((segment) => segment.text).join(separator))
+		: ["(empty)"];
 }
 
 export function buildWidgetSegments(snapshot: StatusSnapshot, config: StatuslineConfig): WidgetSegment[] {
@@ -196,7 +199,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 	const minimal = config.minimal;
 	const iconMode = config.iconMode ?? "emoji";
 
-	for (const id of config.widgets) {
+	for (const id of enabledWidgets(config)) {
 		const priority = WIDGET_PRIORITY[id] ?? 50;
 		switch (id) {
 			case "path":

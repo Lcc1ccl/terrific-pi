@@ -2,7 +2,10 @@ import { DynamicBorder, type ExtensionAPI } from "@earendil-works/pi-coding-agen
 import { Container, Input, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import {
+	cloneStatuslineConfig,
 	DEFAULT_CONFIG,
+	enabledWidgets,
+	hasWidget,
 	loadStatuslineConfigResult,
 	resolveRuntimeConfigPath,
 	saveStatuslineConfig,
@@ -21,7 +24,6 @@ import { readRuntimeInfo, type RuntimeInfo } from "../lib/runtime-info.ts";
 import { TurnTelemetryTracker, type TurnPerformanceView } from "../lib/telemetry.ts";
 import { readWorktreeInfo, type WorktreeInfo } from "../lib/worktree.ts";
 import {
-	EDITOR_STATUS_WIDGET_IDS,
 	renderEditorStatus,
 	renderStatusLine,
 } from "../lib/render.ts";
@@ -118,7 +120,7 @@ export default function statusline(pi: ExtensionAPI) {
 	let lifecycleGeneration = 0;
 	let gitRequestGeneration = 0;
 	let projectRequestGeneration = 0;
-	let config: StatuslineConfig = { ...DEFAULT_CONFIG, widgets: [...DEFAULT_CONFIG.widgets] };
+	let config: StatuslineConfig = cloneStatuslineConfig(DEFAULT_CONFIG);
 	let configPath = resolveRuntimeConfigPath();
 	let configLoadError: string | undefined;
 	let quotaContext: QuotaContext | undefined;
@@ -181,16 +183,12 @@ export default function statusline(pi: ExtensionAPI) {
 		attachEditorStatus();
 	});
 
-	const cloneConfig = (value: StatuslineConfig): StatuslineConfig => ({
-		...value,
-		widgets: [...value.widgets],
-		...(value.widgetGroups ? { widgetGroups: { ...value.widgetGroups } } : {}),
-	});
-	const runMetricsEnabled = () => RUN_METRIC_WIDGET_IDS.some((id) => config.widgets.includes(id));
+	const cloneConfig = cloneStatuslineConfig;
+	const runMetricsEnabled = () => RUN_METRIC_WIDGET_IDS.some((id) => hasWidget(config, id));
 	const runTrackingEnabled = () => Boolean(config.runNotification) || runMetricsEnabled();
 
 	const syncQuota = async (ctx: QuotaContext) => {
-		const enabled = config.widgets.includes("quota");
+		const enabled = hasWidget(config, "quota");
 		await quotaMonitor.sync(ctx.model, ctx.modelRegistry as never, enabled);
 	};
 
@@ -300,7 +298,7 @@ export default function statusline(pi: ExtensionAPI) {
 	};
 
 	const refreshBranchChanges = async (cwd: string, lifecycle: number, request: number) => {
-		if (!config.widgets.includes("branchDiff")) return;
+		if (!hasWidget(config, "branchDiff")) return;
 		const defaultBranch = await resolveDefaultBranch(cwd);
 		const mergeBase = defaultBranch ? await git(cwd, ["merge-base", "HEAD", defaultBranch]) : undefined;
 		const numstat = mergeBase ? await git(cwd, ["diff", "--numstat", `${mergeBase}..HEAD`]) : undefined;
@@ -310,7 +308,7 @@ export default function statusline(pi: ExtensionAPI) {
 	};
 
 	const scheduleGitRefresh = (cwd: string, delay = 120) => {
-		if (!config.widgets.includes("branchDiff")) {
+		if (!hasWidget(config, "branchDiff")) {
 			branchChanges = undefined;
 			if (gitRefreshTimer) clearTimeout(gitRefreshTimer);
 			gitRefreshTimer = undefined;
@@ -331,8 +329,8 @@ export default function statusline(pi: ExtensionAPI) {
 
 	const refreshProjectInfo = async (cwd: string, lifecycle: number, request: number) => {
 		const [nextWorktree, nextRuntime] = await Promise.all([
-			config.widgets.includes("worktree") ? readWorktreeInfo(pi.exec.bind(pi), cwd) : undefined,
-			config.widgets.includes("runtime") ? readRuntimeInfo(cwd, pi.exec.bind(pi)) : undefined,
+			hasWidget(config, "worktree") ? readWorktreeInfo(pi.exec.bind(pi), cwd) : undefined,
+			hasWidget(config, "runtime") ? readRuntimeInfo(cwd, pi.exec.bind(pi)) : undefined,
 		]);
 		if (lifecycle !== lifecycleGeneration || request !== projectRequestGeneration) return;
 		worktree = nextWorktree;
@@ -341,7 +339,7 @@ export default function statusline(pi: ExtensionAPI) {
 	};
 
 	const scheduleProjectRefresh = (cwd: string, delay = 120) => {
-		if (!config.widgets.includes("worktree") && !config.widgets.includes("runtime")) {
+		if (!hasWidget(config, "worktree") && !hasWidget(config, "runtime")) {
 			worktree = undefined;
 			runtime = undefined;
 			if (projectRefreshTimer) clearTimeout(projectRefreshTimer);
@@ -431,7 +429,7 @@ export default function statusline(pi: ExtensionAPI) {
 					ctx.ui.notify(reloaded.error, "error");
 					return;
 				}
-				ctx.ui.notify(`Statusline config reloaded (${reloaded.value.widgets.join(", ")})`, "info");
+				ctx.ui.notify(`Statusline config reloaded (${enabledWidgets(reloaded.value).join(", ")})`, "info");
 				return;
 			}
 
@@ -491,20 +489,18 @@ export default function statusline(pi: ExtensionAPI) {
 								};
 							}),
 						confirm: (title, message) => ctx.ui.confirm(title, message),
-						editWidgets: (title, allWidgets, enabled, widgetGroups, onChange, onReject) =>
-							ctx.ui.custom<typeof enabled | undefined>((tui, theme, keybindings, done) =>
+						editWidgets: (title, allWidgets, lines, onChange, onReject) =>
+							ctx.ui.custom<typeof lines | undefined>((tui, theme, keybindings, done) =>
 								new WidgetsSetupComponent({
 									title,
 									allWidgets,
-									enabled,
-									widgetGroups,
+									lines,
 									theme,
 									previewConfig: cloneConfig(config),
 									keybindings,
-									onChange: (next, nextGroups) =>
-										onChange(next as typeof enabled, nextGroups),
+									onChange,
 									onReject,
-									done: (next) => done(next as typeof enabled | undefined),
+									done,
 									requestRender: () => tui.requestRender(),
 								}),
 							),
@@ -588,14 +584,14 @@ export default function statusline(pi: ExtensionAPI) {
 					progress: joinExtensionProgress(extensionStatuses),
 					duration: durationTracker.snapshot(),
 					runState: resolveRunState(runState, extensionStatuses),
-					quota: config.widgets.includes("quota") ? quotaMonitor.getSnapshot() : undefined,
-					quotaStatus: config.widgets.includes("quota") ? quotaMonitor.getStatus() : undefined,
-					environment: config.widgets.includes("environment") ? environment : undefined,
-					toolActivity: config.widgets.includes("toolActivity") && Object.keys(toolStats).length > 0
+					quota: hasWidget(config, "quota") ? quotaMonitor.getSnapshot() : undefined,
+					quotaStatus: hasWidget(config, "quota") ? quotaMonitor.getStatus() : undefined,
+					environment: hasWidget(config, "environment") ? environment : undefined,
+					toolActivity: hasWidget(config, "toolActivity") && Object.keys(toolStats).length > 0
 						? toolStats
 						: undefined,
-					worktree: config.widgets.includes("worktree") ? worktree : undefined,
-					runtime: config.widgets.includes("runtime") ? runtime : undefined,
+					worktree: hasWidget(config, "worktree") ? worktree : undefined,
+					runtime: hasWidget(config, "runtime") ? runtime : undefined,
 					performance: runMetricsEnabled() ? performanceView : undefined,
 				};
 			};
@@ -624,19 +620,15 @@ export default function statusline(pi: ExtensionAPI) {
 				invalidate() {},
 				render(width: number): string[] {
 					const segments = buildWidgetSegments(currentSnapshot(), config);
-					const footerSegments = ownsEditorStatus()
-						? segments.filter((segment) => !EDITOR_STATUS_WIDGET_IDS.has(segment.id))
-						: segments;
-					if (footerSegments.length === 0) return [];
-					const rendered = renderStatusLine(
-						footerSegments,
+					return renderStatusLine(
+						segments,
 						config,
 						theme,
 						width,
 						truncateToWidth,
 						visibleWidth,
+						!ownsEditorStatus(),
 					);
-					return Array.isArray(rendered) ? rendered : [rendered];
 				},
 			};
 		});
@@ -735,7 +727,7 @@ export default function statusline(pi: ExtensionAPI) {
 		requestRender();
 	});
 	pi.on("after_provider_response", async (event, ctx) => {
-		if (!config.widgets.includes("quota")) return;
+		if (!hasWidget(config, "quota")) return;
 		quotaContext = ctx;
 		quotaMonitor.noteProviderResponse(event.status, event.headers);
 		requestQuotaSync();

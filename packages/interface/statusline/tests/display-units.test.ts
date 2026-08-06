@@ -5,8 +5,8 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { DEFAULT_CONFIG } from "../lib/config.ts";
 import { formatRunNotification, formatRuntime, formatWorktree } from "../lib/format.ts";
 import { resolveGlyphs, resolveIconMode } from "../lib/glyphs.ts";
-import { plainVisibleWidth, renderStatusLine } from "../lib/render.ts";
-import type { StatusSnapshot, StatuslineConfig } from "../lib/types.ts";
+import { renderStatusLine } from "../lib/render.ts";
+import type { StatusSnapshot, StatuslineConfig, WidgetId, WidgetLines } from "../lib/types.ts";
 import { buildWidgetSegments } from "../lib/widgets.ts";
 
 const snapshot: StatusSnapshot = {
@@ -51,13 +51,16 @@ const snapshot: StatusSnapshot = {
 };
 
 const runMetricWidgets = [
-	"runTps",
-	"runTtft",
-	"runDuration",
-	"runTokens",
-	"runStalls",
-	"runCostRate",
+	"runTps", "runTtft", "runDuration", "runTokens", "runStalls", "runCostRate",
 ] as const;
+
+function lines(partial: Partial<WidgetLines>): WidgetLines {
+	return { line0: [], line1: [], line2: [], line3: [], line4: [], ...partial };
+}
+
+function configFor(widgets: readonly WidgetId[], partial: Partial<StatuslineConfig> = {}): StatuslineConfig {
+	return { ...DEFAULT_CONFIG, lines: lines({ line1: [...widgets] }), ...partial };
+}
 
 describe("glyph modes", () => {
 	it("resolves nerd ascii and auto while retaining emoji/plain", () => {
@@ -75,20 +78,11 @@ describe("glyph modes", () => {
 });
 
 describe("run metric widgets", () => {
-	it("formats each settled-run metric as an independent segment", () => {
-		const segments = buildWidgetSegments(snapshot, {
-			...DEFAULT_CONFIG,
-			widgets: [...runMetricWidgets],
-			iconMode: "plain",
-		});
+	it("formats each settled-run metric independently", () => {
+		const segments = buildWidgetSegments(snapshot, configFor(runMetricWidgets, { iconMode: "plain" }));
 		assert.deepEqual(segments.map((segment) => segment.id), runMetricWidgets);
 		assert.deepEqual(segments.map((segment) => segment.text), [
-			"TPS 42.5",
-			"TTFT 1.2s",
-			"run 5.0s",
-			"in 50 · out 20",
-			"stall 1/4.3s",
-			"$4.00/M",
+			"TPS 42.5", "TTFT 1.2s", "run 5.0s", "in 50 · out 20", "stall 1/4.3s", "$4.00/M",
 		]);
 	});
 
@@ -103,11 +97,7 @@ describe("run metric widgets", () => {
 				rateUsdPerMTokens: null,
 				usageAvailable: false,
 			},
-		}, {
-			...DEFAULT_CONFIG,
-			widgets: ["runTps", "runTtft", "runTokens", "runCostRate"],
-			iconMode: "plain",
-		});
+		}, configFor(["runTps", "runTtft", "runTokens", "runCostRate"], { iconMode: "plain" }));
 		assert.deepEqual(segments.map((segment) => segment.text), ["TPS ?", "TTFT 1.2s", "usage ?"]);
 	});
 
@@ -126,55 +116,57 @@ describe("run metric widgets", () => {
 });
 
 describe("ordinary widget integration", () => {
-	it("builds project and run widgets in configured order and semantic groups", () => {
+	it("builds widgets in flattened LINE0-LINE4 order", () => {
 		const config: StatuslineConfig = {
 			...DEFAULT_CONFIG,
-			widgets: ["runtime", "runTtft", "runTps", "worktree"],
+			lines: lines({ line0: ["runTps"], line2: ["runtime", "runTtft"], line4: ["worktree"] }),
 			iconMode: "ascii",
 		};
 		const segments = buildWidgetSegments(snapshot, config);
-		assert.deepEqual(segments.map((segment) => segment.id), ["runtime", "runTtft", "runTps", "worktree"]);
-		assert.deepEqual(segments.map((segment) => segment.accent), ["neutral", "usage", "usage", "branch"]);
+		assert.deepEqual(segments.map((segment) => segment.id), ["runTps", "runtime", "runTtft", "worktree"]);
+		assert.deepEqual(segments.map((segment) => segment.accent), ["usage", "neutral", "usage", "branch"]);
 		assert.match(formatWorktree(snapshot.worktree!, "ascii").text, /feature\/迁移.*\^v2\/3.*S4.*=1.*x2.*!6.*r1.*A5.*\?7/);
 		assert.equal(formatRuntime(snapshot.runtime!, "ascii").text, "node 22.10.0");
 		assert.equal(formatRuntime({ name: "runtime", ambiguous: true }, "plain").text, "runtime ?");
 	});
 
-	it("renders single and stacked layouts safely at 40/80/120/160 columns", () => {
-		for (const layout of ["single", "stacked"] as const) {
-			const config: StatuslineConfig = {
-				...DEFAULT_CONFIG,
-				layout,
-				widgets: ["path", "model", "worktree", "runtime", ...runMetricWidgets, "state"],
-				iconMode: "nerd",
-			};
-			const segments = buildWidgetSegments(snapshot, config);
-			for (const width of [40, 80, 120, 160]) {
-				const rendered = renderStatusLine(
-					segments,
-					config,
-					{ fg: (_color, text) => text },
-					width,
-					truncateToWidth,
-					visibleWidth,
-				);
-				for (const line of Array.isArray(rendered) ? rendered : [rendered]) {
-					assert.equal(line.includes("https://example.com"), false);
-					assert.equal(line.includes("\n"), false);
-					assert.ok(visibleWidth(line) <= width, `${layout} ${width}: ${visibleWidth(line)} ${line}`);
-				}
+	it("renders up to five explicit lines safely at 40/80/120/160 columns", () => {
+		const config: StatuslineConfig = {
+			...DEFAULT_CONFIG,
+			lines: lines({
+				line0: ["model", "runTps"],
+				line1: ["path", "worktree"],
+				line2: ["runtime", "runTtft", "runDuration"],
+				line3: ["runTokens", "runStalls", "runCostRate"],
+				line4: ["state"],
+			}),
+			iconMode: "nerd",
+		};
+		const segments = buildWidgetSegments(snapshot, config);
+		for (const width of [40, 80, 120, 160]) {
+			const rendered = renderStatusLine(
+				segments,
+				config,
+				{ fg: (_color, text) => text },
+				width,
+				truncateToWidth,
+				visibleWidth,
+				true,
+			);
+			for (const line of rendered) {
+				assert.equal(line.includes("https://example.com"), false);
+				assert.equal(line.includes("\n"), false);
+				assert.ok(visibleWidth(line) <= width, `${width}: ${visibleWidth(line)} ${line}`);
 			}
 		}
 	});
 
 	it("keeps formatter/build p95 bounded", () => {
-		const config = { ...DEFAULT_CONFIG, widgets: ["worktree", "runtime", ...runMetricWidgets] as const };
+		const config = configFor(["worktree", "runtime", ...runMetricWidgets]);
 		const samples: number[] = [];
 		for (let sample = 0; sample < 20; sample++) {
 			const started = performance.now();
-			for (let index = 0; index < 500; index++) {
-				buildWidgetSegments(snapshot, { ...config, widgets: [...config.widgets] });
-			}
+			for (let index = 0; index < 500; index++) buildWidgetSegments(snapshot, config);
 			samples.push(performance.now() - started);
 		}
 		samples.sort((left, right) => left - right);

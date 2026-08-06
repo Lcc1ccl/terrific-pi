@@ -7,175 +7,212 @@ import { describe, it } from "node:test";
 import {
 	cloneMinimalProfile,
 	DEFAULT_CONFIG,
+	enabledWidgets,
+	hasWidget,
 	isMinimalProfile,
 	loadStatuslineConfigResult,
 	mergeStatuslineConfig,
 	MINIMAL_PROFILE,
 	MINIMAL_WIDGETS,
-	nextWidgetGroup,
 	resolveConfigPath,
 	resolveRuntimeConfigPath,
-	resolveWidgetGroup,
 	saveStatuslineConfig,
+	widgetLineOf,
 	WIDGET_IDS,
-	withWidgetGroupOverride,
 } from "../lib/config.ts";
+import type { StatuslineConfig } from "../lib/types.ts";
 
-function loadConfig(path: string) {
+function loadConfig(path: string): StatuslineConfig {
 	const result = loadStatuslineConfigResult(path);
 	if (!result.ok) throw new Error(result.error);
 	return result.value;
 }
 
 describe("mergeStatuslineConfig", () => {
-	it("keeps defaults for empty input", () => {
-		assert.deepEqual(mergeStatuslineConfig({}), DEFAULT_CONFIG);
+	it("uses line0-line4 as the only widget source and keeps the first duplicate", () => {
+		const merged = mergeStatuslineConfig({
+			lines: {
+				line0: ["tokens", "model", "nope"],
+				line1: ["path", "tokens"],
+				line2: [],
+				line3: ["state"],
+				line4: [],
+			},
+			widgets: ["cost"],
+			layout: "stacked",
+			widgetGroups: { path: "activity" },
+		});
+
+		assert.deepEqual(merged.lines, {
+			line0: ["tokens", "model"],
+			line1: ["path"],
+			line2: [],
+			line3: ["state"],
+			line4: [],
+		});
+		assert.equal(Object.hasOwn(merged, "widgets"), false);
+		assert.equal(Object.hasOwn(merged, "layout"), false);
+		assert.equal(Object.hasOwn(merged, "widgetGroups"), false);
 	});
 
-	it("defaults to the dot separator with numeric spacing", () => {
-		assert.equal(DEFAULT_CONFIG.separator, "dot");
-		assert.equal(DEFAULT_CONFIG.spacing, 1);
+	it("keeps defaults for empty input without sharing line arrays", () => {
+		const merged = mergeStatuslineConfig({});
+		assert.deepEqual(merged, DEFAULT_CONFIG);
+		assert.notEqual(merged.lines, DEFAULT_CONFIG.lines);
+		assert.notEqual(merged.lines.line0, DEFAULT_CONFIG.lines.line0);
 	});
 
-	it("defaults layout single and iconMode emoji without auto-inserting optional widgets", () => {
-		assert.equal(DEFAULT_CONFIG.layout, "single");
-		assert.equal(DEFAULT_CONFIG.iconMode, "emoji");
-		assert.equal(DEFAULT_CONFIG.runNotification, false);
-		assert.equal(DEFAULT_CONFIG.widgets.includes("quota"), false);
-		assert.equal(DEFAULT_CONFIG.widgets.includes("environment"), false);
-		assert.equal(DEFAULT_CONFIG.widgets.includes("toolActivity"), false);
-		assert.equal(DEFAULT_CONFIG.toolActivityMode, "compact");
-		assert.equal(DEFAULT_CONFIG.widgets.includes("mode"), true);
-		assert.equal(WIDGET_IDS.includes("performance" as never), false);
-		for (const id of ["runTps", "runTtft", "runDuration", "runTokens", "runStalls", "runCostRate"] as const) {
-			assert.equal(WIDGET_IDS.includes(id), true, id);
-			assert.equal(DEFAULT_CONFIG.widgets.includes(id), false, id);
-		}
-		assert.equal(WIDGET_IDS.includes("auxUsage" as never), false);
+	it("accepts partial lines and ignores unknown line names", () => {
+		const merged = mergeStatuslineConfig({
+			lines: { line0: ["path"], line2: ["state"], line5: ["cost"] },
+		});
+		assert.deepEqual(merged.lines, {
+			line0: ["path"],
+			line1: [],
+			line2: ["state"],
+			line3: [],
+			line4: [],
+		});
 	});
 
-	it("defines a minimal profile around pi footer core + light extras", () => {
-		assert.deepEqual(MINIMAL_WIDGETS, [
-			"path",
-			"session",
-			"model",
-			"branch",
-			"tokens",
-			"cache",
-			"cost",
-			"context",
-			"mode",
-			"fast",
-			"progress",
-			"state",
-		]);
-		assert.equal(MINIMAL_PROFILE.layout, "single");
-		assert.equal(MINIMAL_PROFILE.iconMode, "plain");
-		assert.equal(MINIMAL_PROFILE.minimal, true);
-		assert.equal(MINIMAL_PROFILE.contextMode, "used");
-		assert.equal(MINIMAL_PROFILE.toolActivityMode, "compact");
-		assert.equal(isMinimalProfile(cloneMinimalProfile()), true);
-		assert.equal(isMinimalProfile(DEFAULT_CONFIG), false);
-		assert.equal(
-			isMinimalProfile({ ...cloneMinimalProfile(), widgets: ["model", "state"] }),
-			false,
+	it("falls back to defaults when no line contains a valid widget", () => {
+		assert.deepEqual(
+			mergeStatuslineConfig({ lines: { line0: ["nope"], line1: [] } }).lines,
+			DEFAULT_CONFIG.lines,
 		);
 	});
 
-	it("registers fast as a dedicated widget and enables it by default", () => {
-		assert.equal(WIDGET_IDS.indexOf("fast"), WIDGET_IDS.indexOf("mode") + 1);
-		assert.equal(DEFAULT_CONFIG.widgets.indexOf("mode"), DEFAULT_CONFIG.widgets.indexOf("model") + 1);
-		assert.equal(DEFAULT_CONFIG.widgets.indexOf("fast"), DEFAULT_CONFIG.widgets.indexOf("mode") + 1);
-	});
-
-	it("merges widget group overrides and drops no-op defaults", () => {
+	it("falls back to legacy migration when lines has no valid line array", () => {
 		const merged = mergeStatuslineConfig({
-			widgetGroups: { tokens: "activity", path: "project", nope: "usage" },
+			lines: { line0: "bad", line5: ["path"] },
+			widgets: ["state"],
+			layout: "single",
 		});
-		assert.deepEqual(merged.widgetGroups, { tokens: "activity" });
-		assert.equal(resolveWidgetGroup("tokens", merged.widgetGroups), "activity");
-		assert.equal(resolveWidgetGroup("path", merged.widgetGroups), "project");
-		assert.equal(nextWidgetGroup("project"), "usage");
-		assert.deepEqual(withWidgetGroupOverride({ tokens: "activity" }, "tokens", "usage"), undefined);
+		assert.deepEqual(merged.lines, {
+			line0: [],
+			line1: ["state"],
+			line2: [],
+			line3: [],
+			line4: [],
+		});
 	});
 
-	it("filters unknown widgets and applies known options", () => {
+	it("applies display options and rejects invalid values", () => {
 		const merged = mergeStatuslineConfig({
-			widgets: ["path", "nope", "cost", "contextBar", "quota"],
-			layout: "stacked",
+			lines: { line1: ["path", "contextBar", "quota"] },
 			iconMode: "plain",
 			contextMode: "used",
 			contextBarWidth: 8,
 			minimal: true,
 			separator: "bar",
 			spacing: 2,
-			toolActivityMode: "compact",
+			toolActivityMode: "detailed",
+			runNotification: true,
 		});
-		assert.deepEqual(merged.widgets, ["path", "cost", "contextBar", "quota"]);
-		assert.equal(merged.layout, "stacked");
 		assert.equal(merged.iconMode, "plain");
 		assert.equal(merged.contextMode, "used");
 		assert.equal(merged.contextBarWidth, 8);
 		assert.equal(merged.minimal, true);
 		assert.equal(merged.separator, "bar");
 		assert.equal(merged.spacing, 2);
-		assert.equal(merged.toolActivityMode, "compact");
+		assert.equal(merged.toolActivityMode, "detailed");
+		assert.equal(merged.runNotification, true);
+
+		for (const spacing of [-1, 5, 1.5, "1"]) {
+			assert.equal(mergeStatuslineConfig({ spacing }).spacing, 1);
+		}
+		assert.equal(mergeStatuslineConfig({ contextBarWidth: 8.9 }).contextBarWidth, 10);
+		assert.equal(mergeStatuslineConfig({ separator: "│" }).separator, "dot");
+		assert.equal(mergeStatuslineConfig({ iconMode: "unknown" }).iconMode, "emoji");
 	});
 
-	it("accepts run metric widgets and drops removed performance/telemetry config", () => {
+	it("registers independent run metric widgets without enabling them by default", () => {
+		assert.equal(DEFAULT_CONFIG.runNotification, false);
+		assert.equal(DEFAULT_CONFIG.toolActivityMode, "compact");
+		for (const id of ["runTps", "runTtft", "runDuration", "runTokens", "runStalls", "runCostRate"] as const) {
+			assert.equal(WIDGET_IDS.includes(id), true, id);
+			assert.equal(hasWidget(DEFAULT_CONFIG, id), false, id);
+		}
+		assert.equal(WIDGET_IDS.includes("performance" as never), false);
+		assert.equal(WIDGET_IDS.includes("auxUsage" as never), false);
+	});
+
+	it("defines the minimal profile as explicit editor and footer lines", () => {
+		assert.deepEqual(MINIMAL_PROFILE.lines.line0, ["model", "mode", "fast"]);
+		assert.deepEqual(MINIMAL_PROFILE.lines.line1, [
+			"path", "session", "branch", "tokens", "cache", "cost", "context", "progress", "state",
+		]);
+		assert.deepEqual(MINIMAL_WIDGETS, [...MINIMAL_PROFILE.lines.line0, ...MINIMAL_PROFILE.lines.line1]);
+		assert.equal(MINIMAL_PROFILE.iconMode, "plain");
+		assert.equal(MINIMAL_PROFILE.minimal, true);
+		assert.equal(MINIMAL_PROFILE.contextMode, "used");
+		assert.equal(isMinimalProfile(cloneMinimalProfile()), true);
+		assert.equal(isMinimalProfile(DEFAULT_CONFIG), false);
+		const changed = cloneMinimalProfile();
+		changed.lines.line1 = ["state"];
+		assert.equal(isMinimalProfile(changed), false);
+	});
+
+	it("exposes flattened enablement and line lookup helpers", () => {
+		const config = mergeStatuslineConfig({ lines: { line0: ["tokens"], line3: ["path", "state"] } });
+		assert.deepEqual(enabledWidgets(config), ["tokens", "path", "state"]);
+		assert.equal(hasWidget(config, "path"), true);
+		assert.equal(hasWidget(config, "cost"), false);
+		assert.equal(widgetLineOf(config.lines, "state"), "line3");
+	});
+});
+
+describe("legacy widget migration", () => {
+	it("moves editor metadata to line0 and preserves single-line footer order", () => {
+		const merged = mergeStatuslineConfig({
+			widgets: ["path", "model", "tokens", "mode", "state", "fast"],
+			layout: "single",
+		});
+		assert.deepEqual(merged.lines, {
+			line0: ["model", "mode", "fast"],
+			line1: ["path", "tokens", "state"],
+			line2: [],
+			line3: [],
+			line4: [],
+		});
+	});
+
+	it("maps stacked groups and valid overrides to line1-line4", () => {
+		const merged = mergeStatuslineConfig({
+			widgets: ["path", "model", "tokens", "session", "state", "cost"],
+			layout: "stacked",
+			widgetGroups: { path: "activity", cost: "environment", nope: "project" },
+		});
+		assert.deepEqual(merged.lines, {
+			line0: ["model"],
+			line1: [],
+			line2: ["tokens"],
+			line3: ["session", "cost"],
+			line4: ["path", "state"],
+		});
+	});
+
+	it("drops removed performance and telemetry fields", () => {
 		const merged = mergeStatuslineConfig({
 			widgets: ["runTtft", "performance", "runTps"],
 			runNotification: true,
-			telemetry: { display: "notification", ttft: true },
+			telemetry: { display: "notification" },
 		});
-		assert.deepEqual(merged.widgets, ["runTtft", "runTps"]);
+		assert.deepEqual(merged.lines.line1, ["runTtft", "runTps"]);
 		assert.equal(merged.runNotification, true);
 		assert.equal(Object.hasOwn(merged, "telemetry"), false);
-	});
-
-	it("rejects arbitrary separator strings", () => {
-		assert.equal(mergeStatuslineConfig({ separator: "│" }).separator, "dot");
-		assert.equal(mergeStatuslineConfig({ separator: " | " }).separator, "dot");
-	});
-
-	it("deduplicates widgets and rejects fractional context widths", () => {
-		const merged = mergeStatuslineConfig({
-			widgets: ["path", "cost", "path", "cost"],
-			contextBarWidth: 8.9,
-		});
-		assert.deepEqual(merged.widgets, ["path", "cost"]);
-		assert.equal(merged.contextBarWidth, DEFAULT_CONFIG.contextBarWidth);
-	});
-
-	it("falls back for illegal layout and iconMode", () => {
-		const merged = mergeStatuslineConfig({ layout: "grid", iconMode: "ascii" });
-		assert.equal(merged.layout, "single");
-		assert.equal(merged.iconMode, "ascii");
-	});
-
-	it("falls back for non-integer or out-of-range spacing", () => {
-		for (const spacing of [-1, 5, 1.5, "1"]) {
-			const merged = mergeStatuslineConfig({ spacing });
-			assert.equal(merged.spacing, 1);
-		}
-	});
-
-	it("falls back when widgets become empty", () => {
-		const merged = mergeStatuslineConfig({ widgets: ["nope"] });
-		assert.deepEqual(merged.widgets, DEFAULT_CONFIG.widgets);
 	});
 });
 
 describe("loadStatuslineConfigResult", () => {
-	it("loads partial json and merges defaults", () => {
+	it("loads partial json and merges display defaults", () => {
 		const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
 		const file = join(dir, "settings.json");
-		writeFileSync(file, JSON.stringify({ widgets: ["path", "cost"], minimal: true }), "utf8");
+		writeFileSync(file, JSON.stringify({ lines: { line2: ["path", "cost"] }, minimal: true }), "utf8");
 		const loaded = loadConfig(file);
-		assert.deepEqual(loaded.widgets, ["path", "cost"]);
+		assert.deepEqual(loaded.lines.line2, ["path", "cost"]);
 		assert.equal(loaded.minimal, true);
 		assert.equal(loaded.contextMode, DEFAULT_CONFIG.contextMode);
-		assert.equal(loaded.layout, "single");
 		assert.equal(loaded.iconMode, "emoji");
 		assert.equal(loaded.separator, "dot");
 		assert.equal(loaded.spacing, 1);
@@ -185,35 +222,30 @@ describe("loadStatuslineConfigResult", () => {
 		assert.deepEqual(loadConfig("/tmp/does-not-exist-pi-statusline.json"), DEFAULT_CONFIG);
 	});
 
-	it("rejects a non-object JSON root", () => {
+	it("rejects non-object and malformed JSON", () => {
 		const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
-		const file = join(dir, "array.json");
-		writeFileSync(file, "[]", "utf8");
+		const array = join(dir, "array.json");
+		const malformed = join(dir, "bad.json");
+		writeFileSync(array, "[]", "utf8");
+		writeFileSync(malformed, "{not-json", "utf8");
 
-		const result = loadStatuslineConfigResult(file);
-		assert.equal(result.ok, false);
-		if (!result.ok) assert.match(result.error, /root must be a JSON object/i);
-	});
-
-	it("reports invalid JSON instead of treating it as a successful reload", () => {
-		const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
-		const file = join(dir, "bad.json");
-		writeFileSync(file, "{not-json", "utf8");
-
-		const result = loadStatuslineConfigResult(file);
-		assert.equal(result.ok, false);
-		if (!result.ok) assert.match(result.error, /failed to load.*bad\.json/i);
+		const arrayResult = loadStatuslineConfigResult(array);
+		assert.equal(arrayResult.ok, false);
+		if (!arrayResult.ok) assert.match(arrayResult.error, /root must be a JSON object/i);
+		const malformedResult = loadStatuslineConfigResult(malformed);
+		assert.equal(malformedResult.ok, false);
+		if (!malformedResult.ok) assert.match(malformedResult.error, /failed to load.*bad\.json/i);
 	});
 });
 
 describe("resolveConfigPath", () => {
-	it("prefers explicit path, then env, then default under agent dir", () => {
+	it("prefers explicit path, then env, then agent directory", () => {
 		assert.equal(resolveConfigPath({ explicit: "/tmp/a.json", envPath: "/tmp/b.json", agentDir: "/home/x/.pi/agent" }), "/tmp/a.json");
 		assert.equal(resolveConfigPath({ envPath: "/tmp/b.json", agentDir: "/home/x/.pi/agent" }), "/tmp/b.json");
 		assert.equal(resolveConfigPath({ agentDir: "/home/x/.pi/agent" }), "/home/x/.pi/agent/statusline.json");
 	});
 
-	it("uses PI_CODING_AGENT_DIR for the runtime default", () => {
+	it("uses PI_CODING_AGENT_DIR before the legacy directory", () => {
 		const previousConfig = process.env.PI_STATUSLINE_CONFIG;
 		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 		const previousLegacyDir = process.env.PI_AGENT_DIR;
@@ -234,49 +266,36 @@ describe("resolveConfigPath", () => {
 });
 
 describe("saveStatuslineConfig", () => {
-	it("writes pretty json and round-trips through load", () => {
+	it("writes all five lines without legacy widget fields and round-trips", () => {
 		const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
 		const nested = join(dir, "nested", "statusline.json");
-		const config = {
-			widgets: ["path", "cost"] as const,
-			layout: "stacked" as const,
-			iconMode: "plain" as const,
-			contextMode: "used" as const,
+		const config = mergeStatuslineConfig({
+			lines: { line0: ["model"], line2: ["path", "cost"] },
+			iconMode: "plain",
+			contextMode: "used",
 			contextBarWidth: 8,
 			minimal: true,
-			separator: "bar" as const,
+			separator: "bar",
 			spacing: 2,
-			toolActivityMode: "compact" as const,
+			toolActivityMode: "compact",
 			runNotification: true,
-		};
+		});
 
-		saveStatuslineConfig(nested, { ...config, widgets: [...config.widgets] });
+		saveStatuslineConfig(nested, config);
 
 		const raw = readFileSync(nested, "utf8");
 		assert.equal(raw.endsWith("\n"), true);
-		assert.deepEqual(JSON.parse(raw), {
-			widgets: ["path", "cost"],
-			layout: "stacked",
-			iconMode: "plain",
-			contextMode: "used",
-			contextBarWidth: 8,
-			minimal: true,
-			separator: "bar",
-			spacing: 2,
-			toolActivityMode: "compact",
-			runNotification: true,
+		const parsed = JSON.parse(raw) as Record<string, unknown>;
+		assert.deepEqual(parsed.lines, {
+			line0: ["model"],
+			line1: [],
+			line2: ["path", "cost"],
+			line3: [],
+			line4: [],
 		});
-		assert.deepEqual(loadConfig(nested), {
-			widgets: ["path", "cost"],
-			layout: "stacked",
-			iconMode: "plain",
-			contextMode: "used",
-			contextBarWidth: 8,
-			minimal: true,
-			separator: "bar",
-			spacing: 2,
-			toolActivityMode: "compact",
-			runNotification: true,
-		});
+		assert.equal(Object.hasOwn(parsed, "widgets"), false);
+		assert.equal(Object.hasOwn(parsed, "layout"), false);
+		assert.equal(Object.hasOwn(parsed, "widgetGroups"), false);
+		assert.deepEqual(loadConfig(nested), config);
 	});
 });

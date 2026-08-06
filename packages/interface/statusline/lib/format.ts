@@ -218,7 +218,7 @@ export function formatCwd(cwd: string): string {
 	return fromHome === "" ? "~" : `~${sep}${fromHome}`;
 }
 
-/** Cap session title width so stacked/split HUD project rows stay scannable. */
+/** Cap session titles so dense status lines stay scannable. */
 export const SESSION_NAME_MAX_CHARS = 24;
 
 export function formatSessionName(name: string, maxChars = SESSION_NAME_MAX_CHARS): string {

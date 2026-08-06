@@ -60,7 +60,7 @@ Device-local files remain authoritative:
 | File | Owner |
 |---|---|
 | `~/.pi/agent/terrific.json` | Core package sections such as `mode`, `fast`, `context`, `auxiliary`, `btw`, `taskboard`, `presentation`, `appearance`, and `modelProfile` |
-| `~/.pi/agent/statusline.json` | Statusline layout and widgets |
+| `~/.pi/agent/statusline.json` | Statusline `LINE0`-`LINE4` widget placement and display settings |
 | `~/.pi/agent/settings.json` | Pi package list and model defaults |
 | `~/.pi/agent/models.json` | Pi model registry |
 | `~/.pi/agent/auth.json` | Credentials; never part of this repository or npm package |

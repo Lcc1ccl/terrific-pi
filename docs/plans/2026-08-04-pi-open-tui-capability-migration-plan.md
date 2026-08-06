@@ -4,6 +4,8 @@
 >
 > 状态：已实施（Phase 0-7）；自动化验收与当前 TUI rollout 已通过，Windows Terminal / VS Code terminal 人工矩阵待补
 >
+> 后续变更（2026-08-06）：本计划中的 `single`/`stacked`/`widgetGroups` 结论已被 [Statusline LINE0-4 Layout Design](./2026-08-06-statusline-line-layout-design.md) 取代。当前实现以 `lines.line0`-`lines.line4` 为唯一写入格式，旧格式仅兼容读取；下文相关内容保留为当时迁移记录，不再代表当前配置契约。
+>
 > 上游基线：`OldSuns/pi-open-tui@c280fcd054256e6ea080011e32d35a8f816949fb`（npm `0.2.10`）
 >
 > 本仓基线：`terrific-pi@cff31cfe9821bbd91ad062e1ae25bc05fab637f2`

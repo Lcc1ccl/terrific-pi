@@ -31,14 +31,14 @@ The root Pi manifest loads exactly these ten extension entries.
 | Priority request mutation | fast |
 | Auxiliary usage ledger | auxiliary |
 
-Dedicated status keys are not duplicated into generic progress. Runtime code has no cross-component source imports; integrations use Pi status, events, and session entries. When Appearance owns the editor, a versioned event moves enabled `model` (including thinking), `mode`, and `fast` statusline widgets into the editor's bottom-right border; otherwise they remain in the footer.
+Dedicated status keys are not duplicated into generic progress. Runtime code has no cross-component source imports; integrations use Pi status, events, and session entries. Statusline `LINE0` accepts any widget and renders through Appearance's editor bottom-right bridge while Appearance owns that surface; `LINE1`-`LINE4` remain footer rows. Without an active Appearance editor owner, `LINE0` falls back to the first footer row.
 
 ## Configuration
 
 | File | Sections or data |
 |---|---|
 | `terrific.json` | appearance, auxiliary, btw, context, fast, mode, modelProfile, presentation, taskboard |
-| `statusline.json` | footer widgets, settled-run notification, and layout |
+| `statusline.json` | `LINE0`-`LINE4` widget placement, display settings, and settled-run notification |
 | `settings.json` | root package entry and Pi model defaults |
 | `models.json` | custom providers/models and provider-sync output |
 

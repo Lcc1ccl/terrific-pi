@@ -13,7 +13,11 @@ import {
 	runStateForAssistantEvent,
 	shouldTrackToolActivity,
 } from "../lib/widgets.ts";
-import type { StatusSnapshot } from "../lib/types.ts";
+import type { StatusSnapshot, WidgetId, WidgetLines } from "../lib/types.ts";
+
+function line1(widgets: readonly WidgetId[]): WidgetLines {
+	return { line0: [], line1: [...widgets], line2: [], line3: [], line4: [] };
+}
 
 const baseSnapshot: StatusSnapshot = {
 	cwd: "/home/user/proj",
@@ -38,10 +42,10 @@ describe("buildWidgetSegments", () => {
 		assert.deepEqual(
 			segments.map((segment) => segment.id),
 			[
-				"path",
-				"session",
 				"model",
 				"fast",
+				"path",
+				"session",
 				"tokens",
 				"cache",
 				"cost",
@@ -56,9 +60,9 @@ describe("buildWidgetSegments", () => {
 		assert.deepEqual(
 			segments.filter((segment) => segment.id !== "path").map((segment) => segment.text),
 			[
-				"demo",
 				"gpt-5 high",
 				"",
+				"demo",
 				"🔼 1.5K · 🔽 800",
 				"🎯 66.7%",
 				"$0.42",
@@ -87,7 +91,7 @@ describe("buildWidgetSegments", () => {
 			{ ...baseSnapshot, sessionName: undefined, branch: null, branchDiff: undefined, progress: undefined },
 			{
 				...DEFAULT_CONFIG,
-				widgets: ["session", "branch", "cost", "state"],
+				lines: line1(["session", "branch", "cost", "state"]),
 			},
 		);
 		assert.deepEqual(
@@ -99,7 +103,7 @@ describe("buildWidgetSegments", () => {
 	it("truncates long session names for HUD space", () => {
 		const segments = buildWidgetSegments(
 			{ ...baseSnapshot, sessionName: "Investigate why statusline session titles overflow stacked HUD rows" },
-			{ ...DEFAULT_CONFIG, widgets: ["session"] },
+			{ ...DEFAULT_CONFIG, lines: line1(["session"]) },
 		);
 		assert.deepEqual(segments.map((segment) => segment.text), ["Investigate why statusl…"]);
 	});
@@ -107,7 +111,7 @@ describe("buildWidgetSegments", () => {
 	it("hides zero cost", () => {
 		const segments = buildWidgetSegments(
 			{ ...baseSnapshot, cost: 0 },
-			{ ...DEFAULT_CONFIG, widgets: ["cost", "state"] },
+			{ ...DEFAULT_CONFIG, lines: line1(["cost", "state"]) },
 		);
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
@@ -121,7 +125,7 @@ describe("buildWidgetSegments", () => {
 				...baseSnapshot,
 				auxUsage: { input: 3_700, output: 900, unsplit: 0, tokens: 4_600, cost: 0.03 },
 			},
-			{ ...DEFAULT_CONFIG, widgets: ["tokens", "cost"], iconMode: "plain" },
+			{ ...DEFAULT_CONFIG, lines: line1(["tokens", "cost"]), iconMode: "plain" },
 		);
 		assert.deepEqual(segments.map((segment) => segment.text), [
 			"in 1.5KⅠ 3.7K · out 800Ⅰ 900",
@@ -142,7 +146,7 @@ describe("buildWidgetSegments", () => {
 					hasUnknownCost: true,
 				},
 			},
-			{ ...DEFAULT_CONFIG, widgets: ["tokens", "cost"], iconMode: "plain" },
+			{ ...DEFAULT_CONFIG, lines: line1(["tokens", "cost"]), iconMode: "plain" },
 		);
 		assert.deepEqual(unsplit.map((segment) => segment.text), [
 			"in 1.5K · out 800Ⅰ 3.7K",
@@ -162,7 +166,7 @@ describe("buildWidgetSegments", () => {
 					hasUnknownCost: true,
 				},
 			},
-			{ ...DEFAULT_CONFIG, widgets: ["tokens", "cost"], iconMode: "plain" },
+			{ ...DEFAULT_CONFIG, lines: line1(["tokens", "cost"]), iconMode: "plain" },
 		);
 		assert.deepEqual(unknown.map((segment) => segment.text), [
 			"in 1.5K · out 800Ⅰ ?",
@@ -183,7 +187,7 @@ describe("buildWidgetSegments", () => {
 					hasUnknownCost: true,
 				},
 			},
-			{ ...DEFAULT_CONFIG, widgets: ["tokens", "cost"], iconMode: "plain" },
+			{ ...DEFAULT_CONFIG, lines: line1(["tokens", "cost"]), iconMode: "plain" },
 		);
 		assert.deepEqual(partialUnknown.map((segment) => segment.text), [
 			"in 1.5KⅠ 3.7K · out 800Ⅰ ?",
@@ -194,14 +198,14 @@ describe("buildWidgetSegments", () => {
 	it("renders fast independently and hides it when inactive", () => {
 		const active = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,
-			widgets: ["fast", "progress"],
+			lines: line1(["fast", "progress"]),
 		});
 		assert.deepEqual(active.map((segment) => segment.text), ["", "task 1/2"]);
 		assert.equal(active[0]?.parts?.[0]?.tone, "warn");
 
 		const inactive = buildWidgetSegments(
 			{ ...baseSnapshot, fast: undefined },
-			{ ...DEFAULT_CONFIG, widgets: ["fast"] },
+			{ ...DEFAULT_CONFIG, lines: line1(["fast"]) },
 		);
 		assert.deepEqual(inactive, []);
 	});
@@ -209,7 +213,7 @@ describe("buildWidgetSegments", () => {
 	it("keeps input and output tokens in one atomic segment", () => {
 		const segments = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,
-			widgets: ["tokens"],
+			lines: line1(["tokens"]),
 		});
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
@@ -220,7 +224,7 @@ describe("buildWidgetSegments", () => {
 	it("renders plain token labels without changing numbers", () => {
 		const segments = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,
-			widgets: ["tokens", "cache", "fast", "branch"],
+			lines: line1(["tokens", "cache", "fast", "branch"]),
 			iconMode: "plain",
 		});
 		assert.deepEqual(
@@ -232,7 +236,7 @@ describe("buildWidgetSegments", () => {
 	it("uses muted supporting metadata and state-aware runtime tones", () => {
 		const metadata = buildWidgetSegments(
 			{ ...baseSnapshot, branch: "feature" },
-			{ ...DEFAULT_CONFIG, widgets: ["path", "branch"] },
+			{ ...DEFAULT_CONFIG, lines: line1(["path", "branch"]) },
 		);
 		assert.ok(metadata.every((segment) => segment.parts?.every((part) => part.tone === "muted")));
 
@@ -244,7 +248,7 @@ describe("buildWidgetSegments", () => {
 		] as const) {
 			const [state] = buildWidgetSegments(
 				{ ...baseSnapshot, runState },
-				{ ...DEFAULT_CONFIG, widgets: ["state"] },
+				{ ...DEFAULT_CONFIG, lines: line1(["state"]) },
 			);
 			assert.equal(state?.parts?.[0]?.tone, expectedTone);
 		}
@@ -259,7 +263,7 @@ describe("buildWidgetSegments", () => {
 		] as const) {
 			const [segment] = buildWidgetSegments(
 				{ ...baseSnapshot, mode },
-				{ ...DEFAULT_CONFIG, widgets: ["mode"] },
+				{ ...DEFAULT_CONFIG, lines: line1(["mode"]) },
 			);
 			assert.equal(segment?.text, mode);
 			assert.equal(segment?.parts?.[0]?.tone, tone);
@@ -269,7 +273,7 @@ describe("buildWidgetSegments", () => {
 	it("renders main as home", () => {
 		const segments = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,
-			widgets: ["branch"],
+			lines: line1(["branch"]),
 		});
 		assert.deepEqual(segments.map((segment) => segment.text), ["🏠"]);
 	});
@@ -277,7 +281,7 @@ describe("buildWidgetSegments", () => {
 	it("renders master as home", () => {
 		const segments = buildWidgetSegments(
 			{ ...baseSnapshot, branch: "master" },
-			{ ...DEFAULT_CONFIG, widgets: ["branch"] },
+			{ ...DEFAULT_CONFIG, lines: line1(["branch"]) },
 		);
 		assert.deepEqual(segments.map((segment) => segment.text), ["🏠"]);
 	});
@@ -290,7 +294,7 @@ describe("buildWidgetSegments", () => {
 			]) {
 				const segments = buildWidgetSegments(
 					{ ...baseSnapshot, context },
-					{ ...DEFAULT_CONFIG, widgets: [widget] },
+					{ ...DEFAULT_CONFIG, lines: line1([widget]) },
 				);
 				assert.deepEqual(segments.map((segment) => segment.text), ["Context ?"]);
 			}
@@ -300,7 +304,7 @@ describe("buildWidgetSegments", () => {
 	it("hides branch changes when the diff is empty", () => {
 		const segments = buildWidgetSegments(
 			{ ...baseSnapshot, branchDiff: { additions: 0, deletions: 0 } },
-			{ ...DEFAULT_CONFIG, widgets: ["branchDiff"] },
+			{ ...DEFAULT_CONFIG, lines: line1(["branchDiff"]) },
 		);
 		assert.deepEqual(segments, []);
 	});
@@ -308,7 +312,7 @@ describe("buildWidgetSegments", () => {
 	it("renders duration pair", () => {
 		const segments = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,
-			widgets: ["duration", "state"],
+			lines: line1(["duration", "state"]),
 		});
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
@@ -323,7 +327,7 @@ describe("buildWidgetSegments", () => {
 		] as const) {
 			const segments = buildWidgetSegments(
 				{ ...baseSnapshot, quotaStatus },
-				{ ...DEFAULT_CONFIG, widgets: ["quota"] },
+				{ ...DEFAULT_CONFIG, lines: line1(["quota"]) },
 			);
 			assert.deepEqual(segments.map((segment) => segment.text), [expected]);
 		}
@@ -346,7 +350,7 @@ describe("buildWidgetSegments", () => {
 			},
 			{
 				...DEFAULT_CONFIG,
-				widgets: ["quota", "environment", "toolActivity"],
+				lines: line1(["quota", "environment", "toolActivity"]),
 				toolActivityMode: "detailed",
 			},
 		);
@@ -365,7 +369,7 @@ describe("buildWidgetSegments", () => {
 	it("uses abbreviated labels when minimal is enabled", () => {
 		const segments = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,
-			widgets: ["tokens", "cache", "cost", "context", "duration", "contextBar"],
+			lines: line1(["tokens", "cache", "cost", "context", "duration", "contextBar"]),
 			minimal: true,
 			iconMode: "plain",
 			contextMode: "remaining",

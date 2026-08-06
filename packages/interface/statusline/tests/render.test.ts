@@ -5,29 +5,23 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { DEFAULT_CONFIG } from "../lib/config.ts";
 import {
 	fitSegmentsToWidth,
-	groupSegmentsBySemantics,
+	groupSegmentsByLines,
 	plainVisibleWidth,
 	renderEditorStatus,
 	renderStatusLine,
 } from "../lib/render.ts";
 import { buildWidgetSegments } from "../lib/widgets.ts";
-import type { StatusSnapshot, StatuslineConfig, WidgetSegment } from "../lib/types.ts";
+import type { StatusSnapshot, StatuslineConfig, WidgetLines, WidgetSegment } from "../lib/types.ts";
 
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 const TEST_THEME = { fg: (_color: string, text: string) => text };
-const segments = [
-	{ id: "path" as const, accent: "path" as const, text: "left" },
-	{ id: "state" as const, accent: "state" as const, text: "right" },
-];
 
-function render(spacing: number, separator: "dot" | "bar" = "dot"): string {
-	const config = {
-		...DEFAULT_CONFIG,
-		spacing,
-		separator,
-	};
-	const line = renderStatusLine(segments, config, TEST_THEME, 200, (text) => text);
-	return (Array.isArray(line) ? line[0]! : line).replace(ANSI_PATTERN, "");
+function lines(partial: Partial<WidgetLines>): WidgetLines {
+	return { line0: [], line1: [], line2: [], line3: [], line4: [], ...partial };
+}
+
+function config(widgetLines: WidgetLines, partial: Partial<StatuslineConfig> = {}): StatuslineConfig {
+	return { ...DEFAULT_CONFIG, lines: widgetLines, ...partial };
 }
 
 const hudSnapshot: StatusSnapshot = {
@@ -63,178 +57,134 @@ const hudSnapshot: StatusSnapshot = {
 };
 
 describe("editor status projection", () => {
-	it("reuses configured widget order, separator, tones, and width priorities", () => {
-		const config: StatuslineConfig = {
-			...DEFAULT_CONFIG,
-			widgets: ["path", "model", "mode", "fast", "state"],
-			iconMode: "plain",
-			separator: "bar",
-			spacing: 1,
-		};
-		const built = buildWidgetSegments(hudSnapshot, config);
+	it("uses arbitrary LINE0 order, separator, tones, and width priorities", () => {
+		const value = config(lines({
+			line0: ["tokens", "path", "model", "mode", "fast"],
+			line1: ["state"],
+		}), { iconMode: "plain", separator: "bar", spacing: 1 });
+		const built = buildWidgetSegments(hudSnapshot, value);
 		assert.equal(
-			renderEditorStatus(built, config, TEST_THEME, 80, (text) => text),
-			"gpt-5 high │ EDIT │ fast",
+			renderEditorStatus(built, value, TEST_THEME, 80, (text) => text),
+			"in 12.5K · out 3.2K │ /home/user/proj │ gpt-5 high │ EDIT │ fast",
 		);
 		assert.equal(
-			renderEditorStatus(built, config, TEST_THEME, 12, truncateToWidth, visibleWidth),
+			renderEditorStatus(built, value, TEST_THEME, 12, truncateToWidth, visibleWidth),
 			"gpt-5 high",
 		);
 	});
 });
 
-describe("current live-compatible output characterization", () => {
-	it("keeps current stacked semantic output at 80/120/160 columns", () => {
-		const config: StatuslineConfig = {
-			...DEFAULT_CONFIG,
-			widgets: [
-				"mode", "model", "fast", "contextBar", "cost", "cache", "tokens", "path",
-				"session", "branch", "branchDiff", "progress", "state", "duration", "toolActivity",
-			],
-			layout: "stacked",
-			iconMode: "emoji",
-			contextMode: "used",
-			contextBarWidth: 8,
-			toolActivityMode: "compact",
-			widgetGroups: { mode: "project", path: "environment", branch: "environment", branchDiff: "environment" },
-		};
-		const characterized = {
+describe("explicit footer lines", () => {
+	it("preserves configured line and within-line order", () => {
+		const value = config(lines({
+			line0: ["model", "mode", "fast"],
+			line1: ["contextBar", "cost", "cache", "tokens"],
+			line2: ["path", "session", "branch", "branchDiff"],
+			line3: ["progress", "state", "duration", "toolActivity"],
+		}), { iconMode: "emoji", contextMode: "used", contextBarWidth: 8 });
+		const snapshot = {
 			...hudSnapshot,
 			auxUsage: { input: 3_700, output: 900, unsplit: 0, tokens: 4_600, cost: 0.03 },
 		};
-		const expectedByWidth: Record<number, string[]> = {
-			80: [
-				"  EDIT · gpt-5 high · ",
-				"  Context [░░░░░░░░] 4% · 🎯 23.5% · 🔼 12.5KⅠ 3.7K · 🔽 3.2KⅠ 900",
-				"  /home/user/proj · demo · 🏠 · +12 -3",
-				"  task · Ready · 🕒 12s / 1m45s · ✓ core_tools x9",
-			],
-			120: [
-				"  EDIT · gpt-5 high · ",
+		assert.deepEqual(
+			renderStatusLine(buildWidgetSegments(snapshot, value), value, TEST_THEME, 120, (text) => text),
+			[
 				"  Context [░░░░░░░░] 4% · $0.42Ⅰ $0.03 · 🎯 23.5% · 🔼 12.5KⅠ 3.7K · 🔽 3.2KⅠ 900",
 				"  /home/user/proj · demo · 🏠 · +12 -3",
 				"  task · Ready · 🕒 12s / 1m45s · ✓ core_tools x9",
 			],
-			160: [
-				"  EDIT · gpt-5 high · ",
-				"  Context [░░░░░░░░] 4% · $0.42Ⅰ $0.03 · 🎯 23.5% · 🔼 12.5KⅠ 3.7K · 🔽 3.2KⅠ 900",
-				"  /home/user/proj · demo · 🏠 · +12 -3",
-				"  task · Ready · 🕒 12s / 1m45s · ✓ core_tools x9",
-			],
-		};
-		for (const width of [80, 120, 160]) {
-			const rendered = renderStatusLine(
-				buildWidgetSegments(characterized, config),
-				config,
-				TEST_THEME,
-				width,
-				(text, max) => text.slice(0, max),
-				plainVisibleWidth,
-			);
-			assert.deepEqual(rendered, expectedByWidth[width]);
+		);
+	});
+
+	it("can render LINE0 first for footer fallback", () => {
+		const value = config(lines({ line0: ["model"], line2: ["state"] }));
+		assert.deepEqual(
+			renderStatusLine(buildWidgetSegments(hudSnapshot, value), value, TEST_THEME, 80, (text) => text, undefined, true),
+			["  gpt-5 high", "  Ready"],
+		);
+	});
+
+	it("keeps each nonempty line within target widths", () => {
+		const value = config(lines({
+			line0: ["model", "mode", "fast"],
+			line1: ["path", "session", "branch", "branchDiff"],
+			line2: ["contextBar", "tokens", "cache", "cost", "quota"],
+			line3: ["environment", "toolActivity"],
+			line4: ["progress", "duration", "state"],
+		}));
+		const segments = buildWidgetSegments(hudSnapshot, value);
+		for (const width of [40, 60, 80, 120]) {
+			for (const line of renderStatusLine(segments, value, TEST_THEME, width, truncateToWidth, visibleWidth, true)) {
+				assert.ok(visibleWidth(line) <= width, `width ${width}: ${visibleWidth(line)} > ${width}`);
+			}
 		}
 	});
 });
 
-describe("renderStatusLine widget spacing", () => {
+describe("widget spacing", () => {
+	const segments: WidgetSegment[] = [
+		{ id: "path", accent: "path", text: "left" },
+		{ id: "state", accent: "state", text: "right" },
+	];
+	function render(spacing: number, separator: "dot" | "bar" = "dot"): string {
+		const value = config(lines({ line1: ["path", "state"] }), { spacing, separator });
+		return renderStatusLine(segments, value, TEST_THEME, 200, (text) => text)[0]!.replace(ANSI_PATTERN, "");
+	}
+
 	it("renders dot and bar separators with equal side spacing", () => {
 		assert.equal(render(2), "  left  ·  right");
 		assert.equal(render(1, "bar"), "  left │ right");
-	});
-
-	it("keeps the separator when spacing is zero", () => {
 		assert.equal(render(0), "  left·right");
 	});
 
-	it("keeps related token values dot-separated inside a bar-separated HUD", () => {
-		const config = {
-			...DEFAULT_CONFIG,
-			separator: "bar" as const,
-			iconMode: "plain" as const,
-			widgets: ["tokens", "state"] as const,
-		};
-		const built = buildWidgetSegments(hudSnapshot, { ...config, widgets: [...config.widgets] });
-		const line = renderStatusLine(
-			built,
-			{ ...config, widgets: [...config.widgets] },
-			TEST_THEME,
-			200,
-			(text) => text,
+	it("keeps related token values dot-separated inside a bar-separated line", () => {
+		const value = config(lines({ line1: ["tokens", "state"] }), { separator: "bar", iconMode: "plain" });
+		assert.deepEqual(
+			renderStatusLine(buildWidgetSegments(hudSnapshot, value), value, TEST_THEME, 200, (text) => text),
+			["  in 12.5K · out 3.2K │ Ready"],
 		);
-		assert.equal(line, "  in 12.5K · out 3.2K │ Ready");
 	});
 });
 
-describe("groupSegmentsBySemantics", () => {
-	it("uses canonical groups while preserving order within each group", () => {
-		const segs: WidgetSegment[] = [
+describe("groupSegmentsByLines", () => {
+	it("uses only explicit lines and preserves configured order", () => {
+		const segments: WidgetSegment[] = [
 			{ id: "path", accent: "path", text: "p" },
 			{ id: "tokens", accent: "usage", text: "t" },
 			{ id: "model", accent: "model", text: "m" },
 			{ id: "state", accent: "state", text: "s" },
-			{ id: "context", accent: "usage", text: "c" },
 		];
-		const groups = groupSegmentsBySemantics(segs);
+		const value = config(lines({ line0: ["state", "tokens"], line3: ["model", "path"] }));
 		assert.deepEqual(
-			groups.map((group) => group.map((segment) => segment.id)),
-			[["path", "model"], ["tokens", "context"], ["state"]],
-		);
-	});
-
-	it("honors widgetGroups overrides for stacked partition", () => {
-		const segs: WidgetSegment[] = [
-			{ id: "path", accent: "path", text: "p" },
-			{ id: "tokens", accent: "usage", text: "t" },
-			{ id: "state", accent: "state", text: "s" },
-		];
-		const groups = groupSegmentsBySemantics(segs, {
-			widgetGroups: { tokens: "activity", path: "environment" },
-		});
-		assert.deepEqual(
-			groups.map((group) => group.map((segment) => segment.id)),
-			[["path"], ["tokens", "state"]],
+			groupSegmentsByLines(segments, value).map((group) => group.map((segment) => segment.id)),
+			[["state", "tokens"], [], [], ["model", "path"], []],
 		);
 	});
 });
 
 describe("responsive fitting", () => {
 	it("keeps input and output tokens together", () => {
-		const config = {
-			...DEFAULT_CONFIG,
-			iconMode: "plain" as const,
-			widgets: ["tokens", "state"] as const,
-		};
-		const segs = buildWidgetSegments(hudSnapshot, { ...config, widgets: [...config.widgets] });
-		const line = renderStatusLine(
-			segs,
-			{ ...config, widgets: [...config.widgets] },
+		const value = config(lines({ line1: ["tokens", "state"] }), { iconMode: "plain" });
+		const rendered = renderStatusLine(
+			buildWidgetSegments(hudSnapshot, value),
+			value,
 			TEST_THEME,
 			20,
 			(text, max) => text.slice(0, max),
 			plainVisibleWidth,
-		);
-		const plain = (Array.isArray(line) ? line[0]! : line).replace(ANSI_PATTERN, "");
-		assert.equal(plain.includes("in 12.5K"), plain.includes("out 3.2K"));
+		)[0]!;
+		assert.equal(rendered.includes("in 12.5K"), rendered.includes("out 3.2K"));
 	});
 
 	it("drops account quota before current context", () => {
-		const config = {
-			...DEFAULT_CONFIG,
-			widgets: ["contextBar", "quota"] as const,
-			contextBarWidth: 4,
-		};
-		const segs = buildWidgetSegments(hudSnapshot, { ...config, widgets: [...config.widgets] });
+		const value = config(lines({ line1: ["contextBar", "quota"] }), { contextBarWidth: 4 });
 		const fitted = fitSegmentsToWidth(
-			segs,
-			{ ...config, widgets: [...config.widgets] },
-			TEST_THEME,
-			27,
-			plainVisibleWidth,
+			buildWidgetSegments(hudSnapshot, value), value, TEST_THEME, 27, plainVisibleWidth,
 		);
 		assert.deepEqual(fitted.map((segment) => segment.id), ["contextBar"]);
 	});
 
-	it("keeps live tool activity ahead of the generic working state", () => {
+	it("keeps live tool activity ahead of generic working state", () => {
 		const snapshot = {
 			...hudSnapshot,
 			runState: "Working" as const,
@@ -243,130 +193,37 @@ describe("responsive fitting", () => {
 				read: { active: 0, success: 80, error: 2 },
 			},
 		};
-		const config = { ...DEFAULT_CONFIG, widgets: ["toolActivity", "state"] as const };
-		const built = buildWidgetSegments(snapshot, { ...config, widgets: [...config.widgets] });
+		const value = config(lines({ line1: ["toolActivity", "state"] }));
 		const fitted = fitSegmentsToWidth(
-			built,
-			{ ...config, widgets: [...config.widgets] },
-			TEST_THEME,
-			30,
-			plainVisibleWidth,
+			buildWidgetSegments(snapshot, value), value, TEST_THEME, 30, plainVisibleWidth,
 		);
 		assert.deepEqual(fitted.map((segment) => segment.id), ["toolActivity"]);
 	});
 });
 
-describe("terminal safety", () => {
+describe("terminal safety and host theme", () => {
 	it("strips control sequences from every rendered segment", () => {
 		const unsafe: WidgetSegment[] = [{
 			id: "session",
 			accent: "session",
 			text: "\x1b]8;;https://example.com\x07name\x1b]8;;\x07\x1b[31m!\x1b[0m\nnext",
 		}];
-		const line = renderStatusLine(unsafe, DEFAULT_CONFIG, TEST_THEME, 200, (text) => text);
-		const text = Array.isArray(line) ? line[0]! : line;
+		const value = config(lines({ line1: ["session"] }));
+		const text = renderStatusLine(unsafe, value, TEST_THEME, 200, (line) => line)[0]!;
 		assert.equal(text.includes("\x1b"), false);
 		assert.equal(text.includes("\n"), false);
 		assert.equal(text.includes("https://example.com"), false);
 		assert.match(text, /name! next/);
 	});
-});
 
-describe("host theme", () => {
-	it("uses neutral hierarchy and the native thinking-level color", () => {
+	it("uses neutral hierarchy and native thinking colors", () => {
 		const calls: Array<[string, string]> = [];
-		const theme = {
-			fg(color: string, text: string) {
-				calls.push([color, text]);
-				return text;
-			},
-		};
-		const config = { ...DEFAULT_CONFIG, widgets: ["model", "path", "state"] as const };
-		const built = buildWidgetSegments(hudSnapshot, { ...config, widgets: [...config.widgets] });
-		const line = renderStatusLine(
-			built,
-			{ ...config, widgets: [...config.widgets] },
-			theme,
-			200,
-			(text) => text,
-		);
-		assert.equal(Array.isArray(line), false);
+		const theme = { fg(color: string, text: string) { calls.push([color, text]); return text; } };
+		const value = config(lines({ line1: ["model", "path", "state"] }));
+		renderStatusLine(buildWidgetSegments(hudSnapshot, value), value, theme, 200, (text) => text);
 		assert.ok(calls.some(([color, text]) => color === "text" && text === "gpt-5"));
 		assert.ok(calls.some(([color, text]) => color === "thinkingHigh" && text === " high"));
 		assert.ok(calls.some(([color, text]) => color === "muted" && text === "/home/user/proj"));
 		assert.ok(calls.some(([color, text]) => color === "dim" && text === "Ready"));
-	});
-});
-
-describe("renderStatusLine stacked", () => {
-	it("returns canonical semantic lines while preserving within-group order", () => {
-		const config: StatuslineConfig = {
-			...DEFAULT_CONFIG,
-			layout: "stacked" as const,
-			widgets: [
-				"path",
-				"session",
-				"model",
-				"branch",
-				"tokens",
-				"cache",
-				"environment",
-				"toolActivity",
-				"state",
-			],
-		};
-		const segs = buildWidgetSegments(hudSnapshot, config);
-		const lines = renderStatusLine(segs, config, TEST_THEME, 200, (text) => text);
-		assert.ok(Array.isArray(lines));
-		assert.equal((lines as string[]).length, 4);
-		const plain = (lines as string[]).map((line) => line.replace(ANSI_PATTERN, ""));
-		// session/mode now share the environment line; project keeps model/path/branch
-		assert.match(plain[0]!, /gpt-5/);
-		assert.doesNotMatch(plain[0]!, /demo/);
-		assert.match(plain[1]!, /12\.5K/);
-		assert.match(plain[2]!, /demo/);
-		assert.match(plain[2]!, /context files/);
-		assert.match(plain[3]!, /Ready/);
-	});
-
-	it("keeps each line within target widths", () => {
-		const config: StatuslineConfig = {
-			...DEFAULT_CONFIG,
-			layout: "stacked" as const,
-			widgets: [
-				"path",
-				"session",
-				"model",
-				"branch",
-				"branchDiff",
-				"mode",
-				"fast",
-				"contextBar",
-				"tokens",
-				"cache",
-				"cost",
-				"quota",
-				"environment",
-				"toolActivity",
-				"progress",
-				"duration",
-				"state",
-			],
-		};
-		const segs = buildWidgetSegments(hudSnapshot, config);
-		for (const width of [40, 60, 80, 120]) {
-			const lines = renderStatusLine(
-				segs,
-				config,
-				TEST_THEME,
-				width,
-				(text, max) => text.slice(0, max),
-				plainVisibleWidth,
-			);
-			const list = Array.isArray(lines) ? lines : [lines];
-			for (const line of list) {
-				assert.ok(plainVisibleWidth(line) <= width, `width ${width}: ${plainVisibleWidth(line)} > ${width}`);
-			}
-		}
 	});
 });

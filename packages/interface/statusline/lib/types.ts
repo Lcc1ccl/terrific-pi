@@ -4,10 +4,12 @@ import type { WorktreeInfo } from "./worktree.ts";
 
 export type RunState = "Ready" | "Working" | "Thinking" | "Waiting";
 
-export type StatuslineLayout = "single" | "stacked";
 export type IconMode = "emoji" | "plain" | "nerd" | "ascii" | "auto";
 export type StatuslineSeparator = "dot" | "bar";
 export type ToolActivityMode = "detailed" | "compact";
+
+export const WIDGET_LINE_IDS = ["line0", "line1", "line2", "line3", "line4"] as const;
+export type WidgetLineId = (typeof WIDGET_LINE_IDS)[number];
 
 export const RUN_METRIC_WIDGET_IDS = [
 	"runTps",
@@ -81,45 +83,7 @@ export interface SegmentPart {
 	tone?: SegmentTone;
 }
 
-export type WidgetGroup = "project" | "usage" | "environment" | "activity";
-
-/** Display / stacked-line order for widget groups. */
-export const WIDGET_GROUP_ORDER: readonly WidgetGroup[] = [
-	"project",
-	"usage",
-	"environment",
-	"activity",
-] as const;
-
-/** Semantic groups for stacked layout. session/mode share environment line but stay independent widgets. */
-export const WIDGET_GROUPS: Record<WidgetId, WidgetGroup> = {
-	path: "project",
-	model: "project",
-	branch: "project",
-	branchDiff: "project",
-	fast: "project",
-	context: "usage",
-	contextBar: "usage",
-	tokens: "usage",
-	cache: "usage",
-	cost: "usage",
-	quota: "usage",
-	session: "environment",
-	mode: "environment",
-	environment: "environment",
-	runtime: "environment",
-	toolActivity: "activity",
-	progress: "activity",
-	duration: "activity",
-	state: "activity",
-	worktree: "project",
-	runTps: "usage",
-	runTtft: "usage",
-	runDuration: "usage",
-	runTokens: "usage",
-	runStalls: "usage",
-	runCostRate: "usage",
-};
+export type WidgetLines = Record<WidgetLineId, WidgetId[]>;
 
 /** Drop order: higher first. Keep model/branch/current-context/state longer. */
 export const WIDGET_PRIORITY: Record<WidgetId, number> = {
@@ -248,8 +212,7 @@ export interface StatusSnapshot {
 }
 
 export interface StatuslineConfig {
-	widgets: WidgetId[];
-	layout: StatuslineLayout;
+	lines: WidgetLines;
 	iconMode: IconMode;
 	contextMode: ContextMode;
 	contextBarWidth: number;
@@ -260,8 +223,6 @@ export interface StatuslineConfig {
 	toolActivityMode: ToolActivityMode;
 	/** Notify once after each settled agent run. */
 	runNotification?: boolean;
-	/** Optional stacked-line group overrides (defaults live in WIDGET_GROUPS). */
-	widgetGroups?: Partial<Record<WidgetId, WidgetGroup>>;
 }
 
 export interface WidgetSegment {

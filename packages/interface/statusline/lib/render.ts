@@ -1,7 +1,6 @@
 import {
 	MAX_WIDGET_SPACING,
 	MIN_WIDGET_SPACING,
-	resolveWidgetGroup,
 	WIDGET_SEPARATOR_GLYPHS,
 } from "./config.ts";
 import type {
@@ -9,11 +8,10 @@ import type {
 	SegmentTone,
 	StatuslineConfig,
 	StatuslineSeparator,
-	WidgetGroup,
-	WidgetId,
+	WidgetLineId,
 	WidgetSegment,
 } from "./types.ts";
-import { WIDGET_GROUP_ORDER } from "./types.ts";
+import { WIDGET_LINE_IDS } from "./types.ts";
 
 export type HostThemeColor =
 	| "accent"
@@ -62,11 +60,22 @@ export function plainVisibleWidth(text: string): number {
 	return stripTerminalControls(text).length;
 }
 
-function segmentGroup(
-	segment: WidgetSegment,
-	groups?: StatuslineConfig["widgetGroups"],
-): WidgetGroup {
-	return resolveWidgetGroup(segment.id, groups);
+function segmentsForLine(
+	segments: WidgetSegment[],
+	config: Pick<StatuslineConfig, "lines">,
+	line: WidgetLineId,
+): WidgetSegment[] {
+	const byId = new Map(segments.map((segment) => [segment.id, segment]));
+	return config.lines[line]
+		.map((id) => byId.get(id))
+		.filter((segment): segment is WidgetSegment => segment !== undefined);
+}
+
+export function groupSegmentsByLines(
+	segments: WidgetSegment[],
+	config: Pick<StatuslineConfig, "lines">,
+): WidgetSegment[][] {
+	return WIDGET_LINE_IDS.map((line) => segmentsForLine(segments, config, line));
 }
 
 function hostThemeColor(accent: Accent, tone: SegmentTone = "value"): HostThemeColor {
@@ -200,16 +209,6 @@ export function fitSegmentsToWidth(
 	return current;
 }
 
-export function groupSegmentsBySemantics(
-	segments: WidgetSegment[],
-	config?: Pick<StatuslineConfig, "widgetGroups">,
-): WidgetSegment[][] {
-	const order = WIDGET_GROUP_ORDER;
-	const grouped = new Map(order.map((group) => [group, [] as WidgetSegment[]]));
-	for (const segment of segments) grouped.get(segmentGroup(segment, config?.widgetGroups))!.push(segment);
-	return order.map((group) => grouped.get(group)!).filter((group) => group.length > 0);
-}
-
 function renderSingleLine(
 	segments: WidgetSegment[],
 	config: StatuslineConfig,
@@ -217,14 +216,13 @@ function renderSingleLine(
 	width: number,
 	truncate: (text: string, maxWidth: number, ellipsis: string) => string,
 	measure: (text: string) => number,
+	indent = "  ",
 ): string {
-	const fitted = fitSegmentsToWidth(segments, config, theme, width, measure);
+	const fitted = fitSegmentsToWidth(segments, config, theme, width, measure, indent);
 	const separatorEllipsis = colorizeText(theme, "dim", "…", "dim");
-	const line = colorizeSegments(fitted, config, theme);
+	const line = colorizeSegments(fitted, config, theme, indent);
 	return truncate(line, Math.max(1, width), separatorEllipsis);
 }
-
-export const EDITOR_STATUS_WIDGET_IDS: ReadonlySet<WidgetId> = new Set(["model", "mode", "fast"]);
 
 export function renderEditorStatus(
 	segments: WidgetSegment[],
@@ -235,10 +233,9 @@ export function renderEditorStatus(
 	measure: (text: string) => number = plainVisibleWidth,
 ): string {
 	if (width <= 0) return "";
-	const source = segments.filter((segment) => EDITOR_STATUS_WIDGET_IDS.has(segment.id));
+	const source = segmentsForLine(segments, config, "line0");
 	if (source.length === 0) return "";
-	const fitted = fitSegmentsToWidth(source, config, theme, width, measure, "");
-	return truncate(colorizeSegments(fitted, config, theme, ""), width, "");
+	return renderSingleLine(source, config, theme, width, truncate, measure, "");
 }
 
 export function renderStatusLine(
@@ -248,17 +245,15 @@ export function renderStatusLine(
 	width: number,
 	truncate: (text: string, maxWidth: number, ellipsis: string) => string,
 	measure: (text: string) => number = plainVisibleWidth,
-): string | string[] {
-	if (config.layout !== "stacked") {
-		return renderSingleLine(segments, config, theme, width, truncate, measure);
-	}
-
-	const groups = groupSegmentsBySemantics(segments, config);
+	includeLine0 = false,
+): string[] {
+	const start = includeLine0 ? 0 : 1;
 	const lines: string[] = [];
-	for (const group of groups) {
-		if (group.length === 0) continue;
-		const line = renderSingleLine(group, config, theme, width, truncate, measure);
-		if (line.trim().length > 0) lines.push(line);
+	for (const line of WIDGET_LINE_IDS.slice(start)) {
+		const source = segmentsForLine(segments, config, line);
+		if (source.length === 0) continue;
+		const rendered = renderSingleLine(source, config, theme, width, truncate, measure);
+		if (rendered.trim().length > 0) lines.push(rendered);
 	}
-	return lines.length > 0 ? lines : [renderSingleLine([], config, theme, width, truncate, measure)];
+	return lines;
 }

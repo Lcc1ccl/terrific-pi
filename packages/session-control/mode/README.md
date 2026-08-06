@@ -19,7 +19,7 @@ Install the `terrific-pi` root package:
 pi install /path/to/terrific-pi
 ```
 
-Enable badge: add `"mode"` to `~/.pi/agent/statusline.json` widgets.
+Enable the badge by placing `"mode"` in any `~/.pi/agent/statusline.json` line, normally `lines.line0`.
 
 ## Configure
 

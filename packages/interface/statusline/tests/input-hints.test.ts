@@ -24,7 +24,7 @@ it("shows injected submit and cancel bindings for prefilled inputs", async () =>
 		const renders: string[] = [];
 		const inputSequences = [
 			["n", "\r"],
-			["n", "n", "n", "\r"],
+			["n", "n", "\r"],
 			["q", "\x1b"],
 			["q"],
 			["q"],

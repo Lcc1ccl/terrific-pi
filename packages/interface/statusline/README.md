@@ -6,8 +6,8 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 
 ## Features
 
-- Configurable widget order, `·` / `│` separator, and numeric spacing
-- `layout: "single" | "stacked"` with canonical project/usage/environment/activity lines (`session`/`mode` share the environment line); the new units do not add another layout
+- Five explicit widget lines with independent order: `LINE0` for editor metadata and `LINE1`-`LINE4` for footer rows
+- Any widget can be assigned to any line; no project/usage/environment/activity classification
 - **Minimal profile**: pi built-in footer core + mode/fast/state, with abbreviated labels (`ctx`/`CH`, keep `in`/`out`/`$`)
 - `toolActivityMode: "detailed" | "compact"` for per-tool or core_tools/aux_tools aggregates
 - `iconMode: "emoji" | "plain"` (plugin-owned glyphs only; bars/colors unchanged)
@@ -15,7 +15,7 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 - Session name (when set via `/name`)
 - Model + thinking level using pi's native thinking colors
 - Execution mode and fast priority badges when active
-- Automatic editor placement: when Appearance owns the editor, enabled model/thinking/mode/fast widgets move to its bottom-right border and are removed from the footer; otherwise footer rendering is unchanged
+- Automatic editor placement: when Appearance owns the editor, every available widget assigned to `LINE0` renders in its bottom-right border; otherwise `LINE0` falls back to the first footer row
 - Active-branch token usage (`🔼input` / `🔽output`, or plain `in` / `out`)
 - Active-branch cumulative cache hit rate (`🎯…%` or `cache …%`)
 - Active-branch main cost (`$x.xx`, hidden when zero)
@@ -27,22 +27,25 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 - Git branch (`main`/`master` is `🏠` in emoji mode) + committed branch diff (`+N -M`)
 - Optional `worktree` unit for porcelain-v2 branch/ahead/behind/stash/conflict/staged/modified/untracked state
 - Optional `runtime` unit for deterministic project runtime/version detection
-- Optional settled-run metric widgets: `runTps`, `runTtft`, `runDuration`, `runTokens`, `runStalls`, and `runCostRate`; each is independently ordered, grouped, and toggled
+- Optional settled-run metric widgets: `runTps`, `runTtft`, `runDuration`, `runTokens`, `runStalls`, and `runCostRate`; each is independently placed and toggled
 - Optional settled-run notification, independent from the metric widgets
 - Extension statuses (dedicated mode, fast, and ponytail statuses excluded)
 - Agent duration: current request / current process active total (includes tools and child pi processes)
 - Run state: Thinking / Working / Waiting / Ready
 - Interactive `/statusline` configurator and `/statusline reload`
 
-## Default layout
+## Default lines
 
-Package defaults stay single-line emoji and do **not** enable the new widgets:
+The package default assigns model metadata to `LINE0` and the ordinary footer to `LINE1`. Optional widgets remain disabled.
+
+With Appearance enabled:
 
 ```text
-~/proj · session · model high ·  · 🔼 1.5K · 🔽 800 · 🎯 66.7% · $0.42 · Context [██████░░░░] 60% · 🏠 · +12 -3 · 🕒 12s / 1m45s · Ready
+editor bottom-right: model high · EDIT · 
+footer LINE1:       ~/proj · session · 🔼 1.5K · 🔽 800 · 🎯 66.7% · $0.42 · Context [██████░░░░] 60% · 🏠 · +12 -3 · 🕒 12s / 1m45s · Ready
 ```
 
-(`mode` is enabled by default but only appears while `/mode` is non-default/active.) With the root package's Appearance editor enabled, the model/thinking/mode/fast portion is rendered in the editor border instead of this footer line; `/statusline` remains its configuration owner.
+`mode` and `fast` are configured by default but render only while active. Without an active Appearance editor owner, nonempty `LINE0` is rendered as the first footer row so configured information is not lost. `/statusline` remains the configuration owner in both cases.
 
 ## Install
 
@@ -60,34 +63,44 @@ Optional config file:
 - file override: `PI_STATUSLINE_CONFIG=/path/to.json`
 - legacy directory fallback: `PI_AGENT_DIR`
 
+`lines` is the only persisted widget source of truth:
+
+- `line0` renders in the editor bottom-right border when Appearance owns it.
+- `line1` through `line4` render as independent footer rows below the editor.
+- Presence enables a widget; absence disables it.
+- Array order is the render order within that line.
+- Any widget can be placed on any line.
+- Duplicate ids keep their first occurrence in `line0` to `line4` order.
+- Empty or currently unavailable lines consume no terminal rows.
+
 `separator` accepts `"dot"` (`·`) or `"bar"` (`│`). Default: `"dot"`. It applies between widgets; related values inside a widget remain dot-separated.
 
 `spacing` is the number of terminal space cells placed on each side of the widget separator. Default: `1`; minimum: `0`; maximum: `4`.
 
 `contextBarWidth` is an integer terminal-cell width. Default: `10`; minimum: `4`; maximum: `40`.
 
-Single-line layout follows the configured order exactly. Stacked layout uses canonical project/usage/environment/activity lines and preserves configured order within each line.
-
 ```json
 {
-  "layout": "single",
+  "lines": {
+    "line0": ["model", "mode", "fast"],
+    "line1": [
+      "path",
+      "session",
+      "tokens",
+      "cache",
+      "cost",
+      "contextBar",
+      "branch",
+      "branchDiff",
+      "progress",
+      "duration",
+      "state"
+    ],
+    "line2": [],
+    "line3": [],
+    "line4": []
+  },
   "iconMode": "emoji",
-  "widgets": [
-    "path",
-    "session",
-    "model",
-    "mode",
-    "fast",
-    "tokens",
-    "cache",
-    "cost",
-    "contextBar",
-    "branch",
-    "branchDiff",
-    "progress",
-    "duration",
-    "state"
-  ],
   "contextMode": "remaining",
   "contextBarWidth": 10,
   "minimal": false,
@@ -98,32 +111,24 @@ Single-line layout follows the configured order exactly. Stacked layout uses can
 }
 ```
 
-Package default is a single-line showcase (not the minimal profile). `mode`/`fast` render only while active. `toolActivityMode` defaults to `compact` so enabling `toolActivity` later stays dense. In `/statusline`, **Context & usage** is shown only when at least one of `context`, `contextBar`, or `toolActivity` is enabled.
+Legacy `widgets`, `layout`, and `widgetGroups` files remain readable. On load, `model`/`mode`/`fast` migrate to `LINE0`; old single layouts migrate remaining widgets to `LINE1`; old stacked groups migrate to `LINE1`-`LINE4`. The next successful save writes only `lines`.
+
+`toolActivityMode` defaults to `compact` so enabling `toolActivity` later stays dense. In `/statusline`, **Context & usage** is shown only when at least one of `context`, `contextBar`, or `toolActivity` is enabled on any line.
 
 ### Minimal profile
 
-Based on **pi's built-in footer** (path/branch/session, tokens in/out, cache hit, `$` cost, context %, model, extension statuses), plus light plugin extras (`mode`/`fast` when active, run `state`).
-
-`/statusline` → **Minimal profile** → `on` writes:
+Based on pi's built-in footer core plus `mode`, `fast`, and run `state`. `/statusline` -> **Minimal profile** -> `on` writes:
 
 ```json
 {
-  "layout": "single",
+  "lines": {
+    "line0": ["model", "mode", "fast"],
+    "line1": ["path", "session", "branch", "tokens", "cache", "cost", "context", "progress", "state"],
+    "line2": [],
+    "line3": [],
+    "line4": []
+  },
   "iconMode": "plain",
-  "widgets": [
-    "path",
-    "session",
-    "model",
-    "branch",
-    "tokens",
-    "cache",
-    "cost",
-    "context",
-    "mode",
-    "fast",
-    "progress",
-    "state"
-  ],
   "contextMode": "used",
   "contextBarWidth": 10,
   "minimal": true,
@@ -133,47 +138,35 @@ Based on **pi's built-in footer** (path/branch/session, tokens in/out, cache hit
 }
 ```
 
-Example:
+Example with Appearance enabled:
 
 ```text
-~/proj · session · model high · main · in 1.5KⅠ 3.7K · out 800Ⅰ 900 · CH 66.7% · $0.42Ⅰ $0.03 · ctx 40% · EDIT · fast · task 1/2 · Ready
+editor bottom-right: model high · EDIT · fast
+footer LINE1:       ~/proj · session · main · in 1.5KⅠ 3.7K · out 800Ⅰ 900 · CH 66.7% · $0.42Ⅰ $0.03 · ctx 40% · task 1/2 · Ready
 ```
 
-- **on**: overwrites widgets/layout/iconMode/contextMode/separator/spacing/toolActivityMode, sets `minimal: true`, and preserves `runNotification`
-- **off**: sets `minimal: false` only (widgets stay as configured)
-- `minimal: true` alone (JSON) enables **abbreviated labels** without changing the widget list:
+- **on**: overwrites lines/iconMode/contextMode/separator/spacing/toolActivityMode, sets `minimal: true`, and preserves `runNotification`
+- **off**: sets `minimal: false` only; lines stay configured
+- `minimal: true` alone enables abbreviated labels without changing lines:
   - tokens keep `in`/`out` (or emoji arrows)
   - cost keeps `$`
-  - cache → `CH …%` (pi-style)
-  - context / contextBar → `ctx …`
-  - duration → `t …`
-- omitted from the profile (still available via Widgets): `branchDiff`, `contextBar`, `duration`, `quota`, `environment`, `toolActivity`, `worktree`, `runtime`, and all `run*` metric widgets
+  - cache -> `CH ...%`
+  - context / contextBar -> `ctx ...`
+  - duration -> `t ...`
+- omitted from the profile: `branchDiff`, `contextBar`, `duration`, `quota`, `environment`, `toolActivity`, `worktree`, `runtime`, and all `run*` metric widgets
 
-### Recommended stacked HUD
+### Recommended multi-line HUD
 
 ```json
 {
-  "layout": "stacked",
+  "lines": {
+    "line0": ["model", "mode", "fast"],
+    "line1": ["path", "session", "branch", "branchDiff"],
+    "line2": ["contextBar", "tokens", "cache", "cost", "quota"],
+    "line3": ["environment", "runtime", "worktree"],
+    "line4": ["toolActivity", "progress", "duration", "state"]
+  },
   "iconMode": "plain",
-  "widgets": [
-    "path",
-    "session",
-    "model",
-    "branch",
-    "branchDiff",
-    "mode",
-    "fast",
-    "contextBar",
-    "tokens",
-    "cache",
-    "cost",
-    "quota",
-    "environment",
-    "toolActivity",
-    "progress",
-    "duration",
-    "state"
-  ],
   "contextMode": "used",
   "contextBarWidth": 10,
   "minimal": false,
@@ -182,13 +175,13 @@ Example:
 }
 ```
 
-Example stacked output:
+Example footer rows:
 
 ```text
-~/vendor/terrific-pi │ [Fable 5] │ gpt-5 high │ main │ +12 -3 │ EDIT │ fast
+~/vendor/terrific-pi │ session │ main │ +12 -3
 Context [█░░░░░░░░░] 4% │ in 12.5KⅠ 3.7K · out 3.2KⅠ 0.9K │ cache 76.9% │ $0.42Ⅰ $0.03 │ usage 5h [░░░░░░] 7% · 7d [██░░░░] 33%
-2 context files · 67 skills · 7 tools
-ok Read x6 · ok Bash x3 │ time 12s / 1m45s │ Ready
+2 context files · 67 skills · 7 tools │ node 22.10.0 │ git main
+ok Read x6 · ok Bash x3 │ task 1/2 │ time 12s / 1m45s │ Ready
 ```
 
 ### Color hierarchy
@@ -207,9 +200,9 @@ The footer follows the active pi theme rather than maintaining separate RGB pale
 | id | description |
 |----|-------------|
 | `path` | cwd with `~` abbreviation |
-| `session` | session display name (stacked: environment line; still independently toggleable/orderable) |
+| `session` | session display name |
 | `model` | model id + thinking level |
-| `mode` | active `/mode` badge with quiet risk-ladder colors (ASK dim · PLAN muted · EDIT text · AUTO soft thinkingLow; stacked: environment line) |
+| `mode` | active `/mode` badge with quiet risk-ladder colors (ASK dim · PLAN muted · EDIT text · AUTO soft thinkingLow) |
 | `fast` | `` (or `fast` in plain mode) while `/fast` is on |
 | `tokens` | active-branch input/output totals; auxiliary usage is a dim `Ⅰ` suffix (e.g. `12.5KⅠ 3.7K`) |
 | `cache` | active-branch cumulative cache hit rate |
@@ -243,7 +236,7 @@ Auxiliary model usage is **not** a separate widget. Branch-local `terrific-pi:au
 
 `quota` is shown only when **all** of the following hold:
 
-1. `quota` is present in `widgets`
+1. `quota` is present in any configured line
 2. current model uses Pi native `/login` OAuth (`modelRegistry.isUsingOAuth(model)`)
 3. provider is official allowlist:
    - Codex: `provider=openai-codex`, `api=openai-codex-responses`, `baseUrl=https://chatgpt.com/backend-api`
@@ -279,8 +272,8 @@ These are account-level signals, not a guarantee of the current Pi session budge
 
 In TUI mode, `/statusline` opens a nested menu:
 
-- **Widgets**: sectioned by project/usage/environment/activity; `Space` toggle, `g` cycle group, ↑/↓ select, ←/→ move **any** row across sections (adopts destination group; enablement unrelated to sort), Enter done. Mock preview uses sample data; live footer still updates on each save.
-- **Appearance**: layout, icon mode, separator, spacing, **Minimal profile**
+- **Widgets**: partitioned by `LINE0`-`LINE4`; `Space` toggles, `g` cycles the selected widget through lines, Up/Down selects, Left/Right reorders across line boundaries, Enter finishes. Any widget can occupy any line.
+- **Appearance**: icon mode, separator, spacing, **Minimal profile**
 - **Context & usage**: contextMode, contextBarWidth (only if `contextBar` enabled), toolActivityMode (only if `toolActivity` enabled)
 - **Run notification**: one direct on/off toggle; independent from the `run*` widgets
 - show / reload / confirmed reset config
@@ -325,7 +318,7 @@ statusline/
 
 ## Ownership and attribution
 
-`statusline` remains the only production `setFooter()` owner. The `worktree`, `runtime`, and six `run*` metric additions are ordinary independently ordered/grouped/toggled widget units inside the existing `single` and `stacked` layouts; they do not introduce an Open TUI layout or claim header/editor/transcript surfaces. Derived Open TUI portions are attributed in `LICENSES/pi-open-tui-MIT.txt`.
+`statusline` remains the only production `setFooter()` owner. Every widget, including `worktree`, `runtime`, and the six `run*` metrics, is an ordinary independently placed/toggled unit in `LINE0`-`LINE4`. Appearance only supplies the editor surface used by `LINE0`; statusline does not claim header/editor/transcript ownership. Derived Open TUI portions are attributed in `LICENSES/pi-open-tui-MIT.txt`.
 
 ## Develop
 

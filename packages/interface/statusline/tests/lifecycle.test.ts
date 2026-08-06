@@ -167,6 +167,36 @@ describe("statusline migration lifecycle", () => {
 		assert.match(footer.render(120).join("\n"), /model high.*EDIT.*fast/);
 	});
 
+	it("projects arbitrary LINE0 widgets through Appearance", async () => {
+		const { cwd } = config({
+			lines: {
+				line0: ["path", "state"],
+				line1: ["model"],
+				line2: [],
+				line3: [],
+				line4: [],
+			},
+			iconMode: "plain",
+		});
+		const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
+		const ctx = app.makeCtx(cwd);
+		ctx.model.reasoning = true;
+		await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+		const footer = app.mountFooter();
+		assert.match(footer?.render(120).join("\n") ?? "", /statusline-lifecycle-.*Ready.*model/s);
+
+		let source: { render(width: number): string } | undefined;
+		app.emitBus("terrific-pi:statusline:editor-v1", {
+			version: 1,
+			active: true,
+			ownsEditor: () => true,
+			attach(value: { render(width: number): string }) { source = value; },
+		});
+		assert.match(source?.render(120) ?? "", /statusline-lifecycle-.*Ready/);
+		assert.match(footer?.render(120).join("\n") ?? "", /model high/);
+		assert.doesNotMatch(footer?.render(120).join("\n") ?? "", /statusline-lifecycle-|Ready/);
+	});
+
 	it("replays an editor attachment requested before the footer source mounts", async () => {
 		const { cwd } = config({
 			widgets: ["path", "model", "mode", "fast"],

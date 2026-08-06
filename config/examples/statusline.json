@@ -1,17 +1,24 @@
 {
-  "widgets": [
-    "path",
-    "model",
-    "fast",
-    "mode",
-    "cache",
-    "cost",
-    "contextBar",
-    "branch",
-    "progress",
-    "state",
-    "duration"
-  ],
+  "lines": {
+    "line0": [
+      "model",
+      "mode",
+      "fast"
+    ],
+    "line1": [
+      "path",
+      "cache",
+      "cost",
+      "contextBar",
+      "branch",
+      "progress",
+      "state",
+      "duration"
+    ],
+    "line2": [],
+    "line3": [],
+    "line4": []
+  },
   "contextMode": "used",
   "contextBarWidth": 10,
   "minimal": false,

@@ -6,13 +6,13 @@ import type {
 	ContextMode,
 	IconMode,
 	StatuslineConfig,
-	StatuslineLayout,
 	StatuslineSeparator,
 	ToolActivityMode,
-	WidgetGroup,
 	WidgetId,
+	WidgetLineId,
+	WidgetLines,
 } from "./types.ts";
-import { RUN_METRIC_WIDGET_IDS, WIDGET_GROUP_ORDER, WIDGET_GROUPS } from "./types.ts";
+import { RUN_METRIC_WIDGET_IDS, WIDGET_LINE_IDS } from "./types.ts";
 
 export const WIDGET_IDS = [
 	"path",
@@ -53,13 +53,37 @@ export const DEFAULT_CONTEXT_BAR_WIDTH = 10;
 export const MIN_CONTEXT_BAR_WIDTH = 4;
 export const MAX_CONTEXT_BAR_WIDTH = 40;
 
-export const DEFAULT_CONFIG: StatuslineConfig = {
-	widgets: [
+export function emptyWidgetLines(): WidgetLines {
+	return { line0: [], line1: [], line2: [], line3: [], line4: [] };
+}
+
+export function cloneWidgetLines(lines: WidgetLines): WidgetLines {
+	return {
+		line0: [...lines.line0],
+		line1: [...lines.line1],
+		line2: [...lines.line2],
+		line3: [...lines.line3],
+		line4: [...lines.line4],
+	};
+}
+
+export function enabledWidgets(config: Pick<StatuslineConfig, "lines">): WidgetId[] {
+	return WIDGET_LINE_IDS.flatMap((line) => config.lines[line]);
+}
+
+export function hasWidget(config: Pick<StatuslineConfig, "lines">, id: WidgetId): boolean {
+	return WIDGET_LINE_IDS.some((line) => config.lines[line].includes(id));
+}
+
+export function widgetLineOf(lines: WidgetLines, id: WidgetId): WidgetLineId | undefined {
+	return WIDGET_LINE_IDS.find((line) => lines[line].includes(id));
+}
+
+export const DEFAULT_LINES: WidgetLines = {
+	line0: ["model", "mode", "fast"],
+	line1: [
 		"path",
 		"session",
-		"model",
-		"mode",
-		"fast",
 		"tokens",
 		"cache",
 		"cost",
@@ -70,41 +94,35 @@ export const DEFAULT_CONFIG: StatuslineConfig = {
 		"duration",
 		"state",
 	],
-	layout: "single",
+	line2: [],
+	line3: [],
+	line4: [],
+};
+
+export const DEFAULT_CONFIG: StatuslineConfig = {
+	lines: cloneWidgetLines(DEFAULT_LINES),
 	iconMode: "emoji",
 	contextMode: "remaining",
 	contextBarWidth: DEFAULT_CONTEXT_BAR_WIDTH,
 	minimal: false,
 	separator: "dot",
 	spacing: DEFAULT_WIDGET_SPACING,
-	// Prefer compact buckets if/when toolActivity is enabled later.
 	toolActivityMode: "compact",
 	runNotification: false,
 };
 
-/**
- * Minimal profile ≈ pi built-in footer core + light plugin extras.
- * Pi core: path/branch/session, tokens in/out, cache hit, $, context %, model, statuses.
- * Plugin adds: mode/fast (active-only), run state. Abbr labels: ctx/CH; keep in/out/$.
- */
-export const MINIMAL_WIDGETS: WidgetId[] = [
-	"path",
-	"session",
-	"model",
-	"branch",
-	"tokens",
-	"cache",
-	"cost",
-	"context",
-	"mode",
-	"fast",
-	"progress",
-	"state",
-];
+export const MINIMAL_LINES: WidgetLines = {
+	line0: ["model", "mode", "fast"],
+	line1: ["path", "session", "branch", "tokens", "cache", "cost", "context", "progress", "state"],
+	line2: [],
+	line3: [],
+	line4: [],
+};
+
+export const MINIMAL_WIDGETS: WidgetId[] = WIDGET_LINE_IDS.flatMap((line) => MINIMAL_LINES[line]);
 
 export const MINIMAL_PROFILE: StatuslineConfig = {
-	widgets: [...MINIMAL_WIDGETS],
-	layout: "single",
+	lines: cloneWidgetLines(MINIMAL_LINES),
 	iconMode: "plain",
 	contextMode: "used",
 	contextBarWidth: DEFAULT_CONTEXT_BAR_WIDTH,
@@ -115,24 +133,26 @@ export const MINIMAL_PROFILE: StatuslineConfig = {
 	runNotification: false,
 };
 
+export function cloneStatuslineConfig(config: StatuslineConfig): StatuslineConfig {
+	return { ...config, lines: cloneWidgetLines(config.lines) };
+}
+
 export function cloneMinimalProfile(): StatuslineConfig {
-	return {
-		...MINIMAL_PROFILE,
-		widgets: [...MINIMAL_PROFILE.widgets],
-	};
+	return cloneStatuslineConfig(MINIMAL_PROFILE);
 }
 
 export function isMinimalProfile(config: StatuslineConfig): boolean {
 	return (
 		config.minimal
-		&& config.layout === MINIMAL_PROFILE.layout
 		&& config.iconMode === MINIMAL_PROFILE.iconMode
 		&& config.contextMode === MINIMAL_PROFILE.contextMode
 		&& config.separator === MINIMAL_PROFILE.separator
 		&& config.spacing === MINIMAL_PROFILE.spacing
 		&& config.toolActivityMode === MINIMAL_PROFILE.toolActivityMode
-		&& config.widgets.length === MINIMAL_PROFILE.widgets.length
-		&& config.widgets.every((id, index) => id === MINIMAL_PROFILE.widgets[index])
+		&& WIDGET_LINE_IDS.every((line) => (
+			config.lines[line].length === MINIMAL_PROFILE.lines[line].length
+			&& config.lines[line].every((id, index) => id === MINIMAL_PROFILE.lines[line][index])
+		))
 	);
 }
 
@@ -140,18 +160,31 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function asWidgetIds(value: unknown): WidgetId[] | undefined {
+function asWidgetIds(value: unknown, seen = new Set<WidgetId>()): WidgetId[] | undefined {
 	if (!Array.isArray(value)) return undefined;
-	const widgets = value.filter((item): item is WidgetId => typeof item === "string" && WIDGET_ID_SET.has(item));
-	return [...new Set(widgets)];
+	const widgets: WidgetId[] = [];
+	for (const item of value) {
+		if (typeof item !== "string" || !WIDGET_ID_SET.has(item)) continue;
+		const id = item as WidgetId;
+		if (seen.has(id)) continue;
+		seen.add(id);
+		widgets.push(id);
+	}
+	return widgets;
+}
+
+function asWidgetLines(value: unknown): WidgetLines | undefined {
+	if (!isRecord(value)) return undefined;
+	const hasRecognizedArray = WIDGET_LINE_IDS.some((line) => Array.isArray(value[line]));
+	if (!hasRecognizedArray) return undefined;
+	const lines = emptyWidgetLines();
+	const seen = new Set<WidgetId>();
+	for (const line of WIDGET_LINE_IDS) lines[line] = asWidgetIds(value[line], seen) ?? [];
+	return lines;
 }
 
 function asContextMode(value: unknown): ContextMode | undefined {
 	return value === "remaining" || value === "used" ? value : undefined;
-}
-
-function asLayout(value: unknown): StatuslineLayout | undefined {
-	return value === "single" || value === "stacked" ? value : undefined;
 }
 
 function asIconMode(value: unknown): IconMode | undefined {
@@ -178,56 +211,90 @@ function asToolActivityMode(value: unknown): ToolActivityMode | undefined {
 	return value === "detailed" || value === "compact" ? value : undefined;
 }
 
-const WIDGET_GROUP_SET = new Set<string>(WIDGET_GROUP_ORDER);
+type LegacyWidgetGroup = "project" | "usage" | "environment" | "activity";
 
-function asWidgetGroups(value: unknown): Partial<Record<WidgetId, WidgetGroup>> | undefined {
-	if (!isRecord(value)) return undefined;
-	const out: Partial<Record<WidgetId, WidgetGroup>> = {};
-	for (const [key, group] of Object.entries(value)) {
+const LEGACY_DEFAULT_WIDGETS: WidgetId[] = [
+	"path", "session", "model", "mode", "fast", "tokens", "cache", "cost", "contextBar",
+	"branch", "branchDiff", "progress", "duration", "state",
+];
+
+const LEGACY_WIDGET_GROUPS: Record<WidgetId, LegacyWidgetGroup> = {
+	path: "project",
+	model: "project",
+	branch: "project",
+	branchDiff: "project",
+	fast: "project",
+	context: "usage",
+	contextBar: "usage",
+	tokens: "usage",
+	cache: "usage",
+	cost: "usage",
+	quota: "usage",
+	session: "environment",
+	mode: "environment",
+	environment: "environment",
+	runtime: "environment",
+	toolActivity: "activity",
+	progress: "activity",
+	duration: "activity",
+	state: "activity",
+	worktree: "project",
+	runTps: "usage",
+	runTtft: "usage",
+	runDuration: "usage",
+	runTokens: "usage",
+	runStalls: "usage",
+	runCostRate: "usage",
+};
+
+const LEGACY_GROUP_LINES: Record<LegacyWidgetGroup, WidgetLineId> = {
+	project: "line1",
+	usage: "line2",
+	environment: "line3",
+	activity: "line4",
+};
+
+function legacyWidgetGroups(value: unknown): Partial<Record<WidgetId, LegacyWidgetGroup>> {
+	if (!isRecord(value)) return {};
+	const groups: Partial<Record<WidgetId, LegacyWidgetGroup>> = {};
+	for (const [key, rawGroup] of Object.entries(value)) {
 		if (!WIDGET_ID_SET.has(key)) continue;
-		if (typeof group !== "string" || !WIDGET_GROUP_SET.has(group)) continue;
-		const id = key as WidgetId;
-		const next = group as WidgetGroup;
-		// Keep only real overrides of package defaults.
-		if (WIDGET_GROUPS[id] === next) continue;
-		out[id] = next;
+		if (rawGroup !== "project" && rawGroup !== "usage" && rawGroup !== "environment" && rawGroup !== "activity") continue;
+		groups[key as WidgetId] = rawGroup;
 	}
-	return Object.keys(out).length > 0 ? out : undefined;
+	return groups;
 }
 
-export function resolveWidgetGroup(
-	id: WidgetId,
-	overrides?: Partial<Record<WidgetId, WidgetGroup>>,
-): WidgetGroup {
-	return overrides?.[id] ?? WIDGET_GROUPS[id] ?? "activity";
-}
+function migrateLegacyLines(raw: Record<string, unknown>): WidgetLines | undefined {
+	const widgets = raw.widgets === undefined
+		? [...LEGACY_DEFAULT_WIDGETS]
+		: asWidgetIds(raw.widgets) ?? [];
+	if (widgets.length === 0) return undefined;
 
-/** Cycle project → usage → environment → activity. */
-export function nextWidgetGroup(group: WidgetGroup): WidgetGroup {
-	const index = WIDGET_GROUP_ORDER.indexOf(group);
-	return WIDGET_GROUP_ORDER[(index + 1) % WIDGET_GROUP_ORDER.length]!;
-}
-
-/** Store override only when different from package default. */
-export function withWidgetGroupOverride(
-	overrides: Partial<Record<WidgetId, WidgetGroup>> | undefined,
-	id: WidgetId,
-	group: WidgetGroup,
-): Partial<Record<WidgetId, WidgetGroup>> | undefined {
-	const next: Partial<Record<WidgetId, WidgetGroup>> = { ...overrides };
-	if (WIDGET_GROUPS[id] === group) delete next[id];
-	else next[id] = group;
-	return Object.keys(next).length > 0 ? next : undefined;
+	const lines = emptyWidgetLines();
+	const stacked = raw.layout === "stacked";
+	const overrides = legacyWidgetGroups(raw.widgetGroups);
+	for (const id of widgets) {
+		if (id === "model" || id === "mode" || id === "fast") {
+			lines.line0.push(id);
+			continue;
+		}
+		const line = stacked
+			? LEGACY_GROUP_LINES[overrides[id] ?? LEGACY_WIDGET_GROUPS[id]]
+			: "line1";
+		lines[line].push(id);
+	}
+	return lines;
 }
 
 export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
-	if (!isRecord(raw)) return {
-		...DEFAULT_CONFIG,
-		widgets: [...DEFAULT_CONFIG.widgets],
-	};
+	if (!isRecord(raw)) return cloneStatuslineConfig(DEFAULT_CONFIG);
 
-	const widgets = asWidgetIds(raw.widgets);
-	const layout = asLayout(raw.layout);
+	const parsedLines = asWidgetLines(raw.lines);
+	const candidateLines = parsedLines ?? migrateLegacyLines(raw);
+	const lines = candidateLines && WIDGET_LINE_IDS.some((line) => candidateLines[line].length > 0)
+		? candidateLines
+		: cloneWidgetLines(DEFAULT_LINES);
 	const iconMode = asIconMode(raw.iconMode);
 	const contextMode = asContextMode(raw.contextMode);
 	const contextBarWidth = asContextBarWidth(raw.contextBarWidth);
@@ -236,11 +303,9 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 	const spacing = asWidgetSpacing(raw.spacing);
 	const toolActivityMode = asToolActivityMode(raw.toolActivityMode);
 	const runNotification = typeof raw.runNotification === "boolean" ? raw.runNotification : undefined;
-	const widgetGroups = asWidgetGroups(raw.widgetGroups);
 
 	return {
-		widgets: widgets && widgets.length > 0 ? widgets : [...DEFAULT_CONFIG.widgets],
-		layout: layout ?? DEFAULT_CONFIG.layout,
+		lines,
 		iconMode: iconMode ?? DEFAULT_CONFIG.iconMode,
 		contextMode: contextMode ?? DEFAULT_CONFIG.contextMode,
 		contextBarWidth: contextBarWidth ?? DEFAULT_CONFIG.contextBarWidth,
@@ -249,7 +314,6 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 		spacing: spacing ?? DEFAULT_CONFIG.spacing,
 		toolActivityMode: toolActivityMode ?? DEFAULT_CONFIG.toolActivityMode,
 		runNotification: runNotification ?? DEFAULT_CONFIG.runNotification,
-		...(widgetGroups ? { widgetGroups } : {}),
 	};
 }
 
@@ -272,8 +336,7 @@ export function loadStatuslineConfigResult(path: string): ConfigLoadResult {
 
 export function saveStatuslineConfig(path: string, config: StatuslineConfig): void {
 	const payload: StatuslineConfig = {
-		widgets: [...config.widgets],
-		layout: config.layout,
+		lines: cloneWidgetLines(config.lines),
 		iconMode: config.iconMode,
 		contextMode: config.contextMode,
 		contextBarWidth: config.contextBarWidth,
@@ -282,11 +345,8 @@ export function saveStatuslineConfig(path: string, config: StatuslineConfig): vo
 		spacing: config.spacing,
 		toolActivityMode: config.toolActivityMode ?? DEFAULT_CONFIG.toolActivityMode,
 		runNotification: Boolean(config.runNotification),
-		...(config.widgetGroups && Object.keys(config.widgetGroups).length > 0
-			? { widgetGroups: { ...config.widgetGroups } }
-			: {}),
 	};
-	if (!config.runNotification) delete (payload as Partial<StatuslineConfig>).runNotification;
+	if (!config.runNotification) delete payload.runNotification;
 	const directory = dirname(path);
 	const temporary = join(directory, `.${basename(path)}.${process.pid}.${Date.now()}.tmp`);
 	mkdirSync(directory, { recursive: true });

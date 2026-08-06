@@ -1,29 +1,31 @@
 import {
 	cloneMinimalProfile,
+	cloneWidgetLines,
 	DEFAULT_CONFIG,
 	DEFAULT_CONTEXT_BAR_WIDTH,
 	DEFAULT_WIDGET_SPACING,
+	emptyWidgetLines,
+	enabledWidgets,
+	hasWidget,
 	isMinimalProfile,
 	MAX_CONTEXT_BAR_WIDTH,
 	MAX_WIDGET_SPACING,
 	MIN_CONTEXT_BAR_WIDTH,
 	MIN_WIDGET_SPACING,
-	MINIMAL_PROFILE,
-	resolveWidgetGroup,
+	MINIMAL_WIDGETS,
 	WIDGET_SEPARATOR_GLYPHS,
-	withWidgetGroupOverride,
 } from "./config.ts";
 import type {
 	ContextMode,
 	IconMode,
 	StatuslineConfig,
-	StatuslineLayout,
 	StatuslineSeparator,
 	ToolActivityMode,
-	WidgetGroup,
 	WidgetId,
+	WidgetLineId,
+	WidgetLines,
 } from "./types.ts";
-import { WIDGET_GROUP_ORDER } from "./types.ts";
+import { WIDGET_LINE_IDS } from "./types.ts";
 
 export type MutationResult<T> =
 	| { ok: true; value: T }
@@ -32,6 +34,7 @@ export type MutationResult<T> =
 export type WidgetEditorItem = {
 	id: WidgetId;
 	enabled: boolean;
+	line: WidgetLineId;
 };
 
 export type WidgetEditorAction = "cancel" | "done" | "up" | "down" | "left" | "right" | "toggle";
@@ -59,20 +62,18 @@ export function widgetEditorAction(
 }
 
 export type ConfigureUi = {
-	/** Top-level selector backed by a wrapping SelectList. */
 	selectMain(title: string, items: string[]): Promise<string | undefined>;
 	select(title: string, items: string[]): Promise<string | undefined>;
 	input(title: string, initialValue: string): Promise<string | undefined>;
 	confirm(title: string, message: string): Promise<boolean>;
-	/** Codex-style multi-select: Space toggle, g cycle group, ↑/↓ select, ←/→ move. */
+	/** Space toggle, g cycle line, Up/Down select, Left/Right move. */
 	editWidgets(
 		title: string,
 		allWidgets: readonly WidgetId[],
-		enabled: WidgetId[],
-		widgetGroups: StatuslineConfig["widgetGroups"],
-		onChange: (enabled: WidgetId[], widgetGroups: StatuslineConfig["widgetGroups"]) => boolean,
+		lines: WidgetLines,
+		onChange: (lines: WidgetLines) => boolean,
 		onReject?: (error: string) => void,
-	): Promise<WidgetId[] | undefined>;
+	): Promise<WidgetLines | undefined>;
 	notify(message: string, level?: "info" | "warning" | "error"): void;
 };
 
@@ -85,17 +86,6 @@ export type ConfigureDeps = {
 	ui: ConfigureUi;
 };
 
-export function toggleWidget(widgets: WidgetId[], id: WidgetId): MutationResult<WidgetId[]> {
-	const index = widgets.indexOf(id);
-	if (index >= 0) {
-		if (widgets.length <= 1) {
-			return { ok: false, error: "At least one widget must remain enabled" };
-		}
-		return { ok: true, value: widgets.filter((widget) => widget !== id) };
-	}
-	return { ok: true, value: [...widgets, id] };
-}
-
 /** Swap item at index with neighbor. Returns undefined if out of bounds. */
 export function swapAdjacent<T>(
 	items: readonly T[],
@@ -103,9 +93,7 @@ export function swapAdjacent<T>(
 	delta: -1 | 1,
 ): { items: T[]; index: number } | undefined {
 	const target = index + delta;
-	if (index < 0 || index >= items.length || target < 0 || target >= items.length) {
-		return undefined;
-	}
+	if (index < 0 || index >= items.length || target < 0 || target >= items.length) return undefined;
 	const next = [...items];
 	const current = next[index]!;
 	next[index] = next[target]!;
@@ -113,162 +101,41 @@ export function swapAdjacent<T>(
 	return { items: next, index: target };
 }
 
-export function widgetGroupOf(
-	id: string,
-	overrides?: StatuslineConfig["widgetGroups"],
-): WidgetGroup {
-	return resolveWidgetGroup(id as WidgetId, overrides);
+export function flattenWidgetLines(lines: WidgetLines): WidgetId[] {
+	return WIDGET_LINE_IDS.flatMap((line) => lines[line]);
 }
 
-/** Widgets in stacked visual order: project → usage → environment → activity. */
-export function flattenByGroup(
-	order: readonly string[],
-	overrides?: StatuslineConfig["widgetGroups"],
-): WidgetId[] {
-	const out: WidgetId[] = [];
-	const seen = new Set<string>();
-	for (const group of WIDGET_GROUP_ORDER) {
-		for (const id of order) {
-			if (seen.has(id)) continue;
-			if (resolveWidgetGroup(id as WidgetId, overrides) !== group) continue;
+/** Add disabled catalog entries to transient LINE1 while preserving configured line order. */
+export function initialEditorLines(lines: WidgetLines, allWidgets: readonly WidgetId[]): WidgetLines {
+	const all = new Set<WidgetId>(allWidgets);
+	const seen = new Set<WidgetId>();
+	const editorLines = emptyWidgetLines();
+	for (const line of WIDGET_LINE_IDS) {
+		for (const id of lines[line]) {
+			if (!all.has(id) || seen.has(id)) continue;
 			seen.add(id);
-			out.push(id as WidgetId);
+			editorLines[line].push(id);
 		}
-	}
-	return out;
-}
-
-/** @deprecated alias — enabled-only lists still use the same flatten. */
-export function flattenEnabledByGroup(
-	enabled: readonly string[],
-	overrides?: StatuslineConfig["widgetGroups"],
-): WidgetId[] {
-	return flattenByGroup(enabled, overrides);
-}
-
-/**
- * Move any widget (enabled or not) along partition visual order.
- *
- * Model: one linear order of all widgets + per-widget group. Visual list is
- * group-major; each partition is a contiguous range.
- *
- * - Same partition: swap with the neighbor.
- * - Cross right: become destination partition's **first**.
- * - Cross left: become destination partition's **last**.
- */
-export function moveInGroups(
-	order: readonly string[],
-	overrides: StatuslineConfig["widgetGroups"] | undefined,
-	id: string,
-	delta: -1 | 1,
-): { order: WidgetId[]; widgetGroups: StatuslineConfig["widgetGroups"] } | undefined {
-	const visual = flattenByGroup(order, overrides);
-	const index = visual.indexOf(id as WidgetId);
-	if (index < 0) return undefined;
-	const target = index + delta;
-	if (target < 0 || target >= visual.length) return undefined;
-
-	const item = visual[index]!;
-	const currentGroup = resolveWidgetGroup(item, overrides);
-	const neighborGroup = resolveWidgetGroup(visual[target]!, overrides);
-
-	if (neighborGroup === currentGroup) {
-		const nextVisual = [...visual];
-		nextVisual[index] = nextVisual[target]!;
-		nextVisual[target] = item;
-		return { order: nextVisual, widgetGroups: overrides };
-	}
-
-	const destGroup = neighborGroup;
-	const without = visual.filter((_, i) => i !== index);
-	const destIndexes = without
-		.map((widget, i) => (resolveWidgetGroup(widget, overrides) === destGroup ? i : -1))
-		.filter((i) => i >= 0);
-
-	let insertAt: number;
-	if (destIndexes.length === 0) {
-		insertAt = delta > 0 ? without.length : 0;
-	} else if (delta > 0) {
-		insertAt = destIndexes[0]!;
-	} else {
-		insertAt = destIndexes[destIndexes.length - 1]! + 1;
-	}
-
-	const nextVisual = [...without];
-	nextVisual.splice(insertAt, 0, item);
-	const widgetGroups = withWidgetGroupOverride(overrides, item, destGroup);
-	return { order: nextVisual, widgetGroups };
-}
-
-/** @deprecated use moveInGroups */
-export function moveEnabledInGroups(
-	enabled: readonly string[],
-	overrides: StatuslineConfig["widgetGroups"] | undefined,
-	id: string,
-	delta: -1 | 1,
-): { enabled: WidgetId[]; widgetGroups: StatuslineConfig["widgetGroups"] } | undefined {
-	const moved = moveInGroups(enabled, overrides, id, delta);
-	if (!moved) return undefined;
-	return { enabled: moved.order, widgetGroups: moved.widgetGroups };
-}
-
-/** Initial full catalog order: enabled (config order) then remaining catalog ids. */
-export function initialWidgetOrder(
-	enabled: readonly string[],
-	allWidgets: readonly string[],
-): WidgetId[] {
-	const allSet = new Set(allWidgets);
-	const seen = new Set<string>();
-	const order: WidgetId[] = [];
-	for (const id of enabled) {
-		if (!allSet.has(id) || seen.has(id)) continue;
-		seen.add(id);
-		order.push(id as WidgetId);
 	}
 	for (const id of allWidgets) {
 		if (seen.has(id)) continue;
 		seen.add(id);
-		order.push(id as WidgetId);
+		editorLines.line1.push(id);
 	}
-	return order;
+	return editorLines;
 }
 
-/**
- * Editor rows by partition using full order (enabled and disabled interleave by order).
- */
+export function enabledLines(editorLines: WidgetLines, enabled: ReadonlySet<WidgetId>): WidgetLines {
+	const lines = emptyWidgetLines();
+	for (const line of WIDGET_LINE_IDS) lines[line] = editorLines[line].filter((id) => enabled.has(id));
+	return lines;
+}
+
 export function buildWidgetEditorItems(
-	enabled: readonly string[],
-	allWidgets: readonly string[],
-	overrides?: StatuslineConfig["widgetGroups"],
-	order: readonly string[] = initialWidgetOrder(enabled, allWidgets),
+	lines: WidgetLines,
+	enabled: ReadonlySet<WidgetId>,
 ): WidgetEditorItem[] {
-	const allSet = new Set(allWidgets);
-	const enabledSet = new Set(
-		enabled.filter((id, index) => allSet.has(id) && enabled.indexOf(id) === index),
-	);
-	const ordered = flattenByGroup(
-		order.filter((id) => allSet.has(id)),
-		overrides,
-	);
-	const seen = new Set(ordered);
-	const items: WidgetEditorItem[] = ordered.map((id) => ({
-		id,
-		enabled: enabledSet.has(id),
-	}));
-	// Any catalog id missing from order (shouldn't happen) append by group defaults.
-	for (const group of WIDGET_GROUP_ORDER) {
-		for (const id of allWidgets) {
-			if (seen.has(id as WidgetId)) continue;
-			if (resolveWidgetGroup(id as WidgetId, overrides) !== group) continue;
-			seen.add(id as WidgetId);
-			items.push({ id: id as WidgetId, enabled: enabledSet.has(id) });
-		}
-	}
-	return items;
-}
-
-export function enabledFromEditorItems(items: readonly WidgetEditorItem[]): WidgetId[] {
-	return items.filter((item) => item.enabled).map((item) => item.id);
+	return WIDGET_LINE_IDS.flatMap((line) => lines[line].map((id) => ({ id, line, enabled: enabled.has(id) })));
 }
 
 export function toggleEditorItem(
@@ -276,50 +143,49 @@ export function toggleEditorItem(
 	index: number,
 ): MutationResult<WidgetEditorItem[]> {
 	const current = items[index];
-	if (!current) {
-		return { ok: false, error: "Invalid selection" };
+	if (!current) return { ok: false, error: "Invalid selection" };
+	if (current.enabled && items.filter((item) => item.enabled).length <= 1) {
+		return { ok: false, error: "At least one widget must remain enabled" };
 	}
-
-	if (current.enabled) {
-		const enabledCount = items.reduce((n, item) => n + (item.enabled ? 1 : 0), 0);
-		if (enabledCount <= 1) {
-			return { ok: false, error: "At least one widget must remain enabled" };
-		}
-	}
-
-	const next = items.map((item, i) =>
-		i === index ? { ...item, enabled: !item.enabled } : item,
-	);
-	return { ok: true, value: next };
+	return {
+		ok: true,
+		value: items.map((item, itemIndex) => itemIndex === index ? { ...item, enabled: !item.enabled } : item),
+	};
 }
 
-export function moveEditorItem(
-	items: readonly WidgetEditorItem[],
-	index: number,
-	delta: -1 | 1,
-): MutationResult<{ items: WidgetEditorItem[]; index: number }> {
-	const swapped = swapAdjacent(items, index, delta);
-	if (!swapped) {
-		return { ok: false, error: delta < 0 ? "Already first" : "Already last" };
-	}
-	return { ok: true, value: swapped };
-}
-
-export function moveWidget(
-	widgets: WidgetId[],
+/** Move within a line, or cross its edge into the immediately adjacent line. */
+export function moveWidgetInLines(
+	lines: WidgetLines,
 	id: WidgetId,
-	direction: "up" | "down",
-): MutationResult<WidgetId[]> {
-	const index = widgets.indexOf(id);
-	if (index < 0) {
-		return { ok: false, error: `Widget not enabled: ${id}` };
+	delta: -1 | 1,
+): WidgetLines | undefined {
+	const sourceLine = WIDGET_LINE_IDS.find((line) => lines[line].includes(id));
+	if (!sourceLine) return undefined;
+	const sourceIndex = lines[sourceLine].indexOf(id);
+	const targetIndex = sourceIndex + delta;
+	const next = cloneWidgetLines(lines);
+	if (targetIndex >= 0 && targetIndex < lines[sourceLine].length) {
+		const swapped = swapAdjacent(next[sourceLine], sourceIndex, delta);
+		if (!swapped) return undefined;
+		next[sourceLine] = swapped.items;
+		return next;
 	}
+	const destinationLine = WIDGET_LINE_IDS[WIDGET_LINE_IDS.indexOf(sourceLine) + delta];
+	if (!destinationLine) return undefined;
+	next[sourceLine] = next[sourceLine].filter((widget) => widget !== id);
+	if (delta > 0) next[destinationLine].unshift(id);
+	else next[destinationLine].push(id);
+	return next;
+}
 
-	const swapped = swapAdjacent(widgets, index, direction === "up" ? -1 : 1);
-	if (!swapped) {
-		return { ok: false, error: direction === "up" ? "Already first" : "Already last" };
-	}
-	return { ok: true, value: swapped.items };
+export function cycleWidgetLine(lines: WidgetLines, id: WidgetId): WidgetLines | undefined {
+	const current = WIDGET_LINE_IDS.find((line) => lines[line].includes(id));
+	if (!current) return undefined;
+	const nextLine = WIDGET_LINE_IDS[(WIDGET_LINE_IDS.indexOf(current) + 1) % WIDGET_LINE_IDS.length]!;
+	const next = cloneWidgetLines(lines);
+	next[current] = next[current].filter((widget) => widget !== id);
+	next[nextLine].push(id);
+	return next;
 }
 
 export function formatSettingChoices<T extends string>(
@@ -374,10 +240,13 @@ function separatorLabel(separator: StatuslineSeparator | undefined): string {
 	return `${value} (${WIDGET_SEPARATOR_GLYPHS[value]})`;
 }
 
+function lineSummary(config: StatuslineConfig): string[] {
+	return WIDGET_LINE_IDS.map((line) => `${line.toUpperCase()}: ${config.lines[line].join(", ") || "(empty)"}`);
+}
+
 export function formatConfigSummary(config: StatuslineConfig, configPath: string): string {
 	return [
-		`widgets: ${config.widgets.join(", ")}`,
-		`layout: ${config.layout}`,
+		...lineSummary(config),
 		`iconMode: ${config.iconMode}`,
 		`contextMode: ${config.contextMode}`,
 		`contextBarWidth: ${config.contextBarWidth} (default ${DEFAULT_CONTEXT_BAR_WIDTH}, min ${MIN_CONTEXT_BAR_WIDTH}, max ${MAX_CONTEXT_BAR_WIDTH})`,
@@ -391,26 +260,18 @@ export function formatConfigSummary(config: StatuslineConfig, configPath: string
 }
 
 function mainMenuTitle(config: StatuslineConfig, configPath: string): string {
-	const minimalLabel = isMinimalProfile(config)
-		? "profile"
-		: config.minimal
-			? "abbr labels"
-			: "off";
+	const minimalLabel = isMinimalProfile(config) ? "profile" : config.minimal ? "abbr labels" : "off";
 	return [
 		"Statusline Config",
-		`widgets: ${config.widgets.join(", ")}`,
-		`layout: ${config.layout} · iconMode: ${config.iconMode} · separator: ${separatorLabel(config.separator)} · spacing: ${config.spacing}`,
+		...lineSummary(config),
+		`iconMode: ${config.iconMode} · separator: ${separatorLabel(config.separator)} · spacing: ${config.spacing}`,
 		`contextMode: ${config.contextMode} · bar: ${config.contextBarWidth} · toolActivityMode: ${config.toolActivityMode}`,
 		`minimal: ${minimalLabel} · runNotification: ${config.runNotification ? "on" : "off"}`,
 		`config: ${configPath}`,
 	].join("\n");
 }
 
-function applyOrNotify(
-	deps: ConfigureDeps,
-	next: StatuslineConfig,
-	success: string,
-): boolean {
+function applyOrNotify(deps: ConfigureDeps, next: StatuslineConfig, success: string): boolean {
 	const result = deps.applyConfig(next);
 	if (!result.ok) {
 		deps.ui.notify(result.error, "error");
@@ -423,40 +284,12 @@ function applyOrNotify(
 async function editWidgetsLoop(deps: ConfigureDeps, allWidgets: readonly WidgetId[]): Promise<void> {
 	const config = deps.getConfig();
 	await deps.ui.editWidgets(
-		"Widgets",
+		"Widgets by LINE",
 		allWidgets,
-		[...config.widgets],
-		config.widgetGroups,
-		(widgets, widgetGroups) => {
-			const current = deps.getConfig();
-			const next: StatuslineConfig = { ...current, widgets };
-			if (widgetGroups && Object.keys(widgetGroups).length > 0) next.widgetGroups = widgetGroups;
-			else delete next.widgetGroups;
-			return applyOrNotify(
-				deps,
-				next,
-				`widgets: ${widgets.join(", ")}${widgetGroups && Object.keys(widgetGroups).length > 0 ? " · groups updated" : ""}`,
-			);
-		},
+		cloneWidgetLines(config.lines),
+		(lines) => applyOrNotify(deps, { ...deps.getConfig(), lines: cloneWidgetLines(lines) }, "widget lines updated"),
 		(error) => deps.ui.notify(error, "warning"),
 	);
-}
-
-async function setLayout(deps: ConfigureDeps): Promise<void> {
-	const config = deps.getConfig();
-	const layout = await selectSetting(
-		deps,
-		"Layout — single line, or stacked HUD rows (project/usage/env/activity)",
-		["single", "stacked"] satisfies readonly StatuslineLayout[],
-		config.layout,
-		DEFAULT_CONFIG.layout,
-	);
-	if (!layout) return;
-	if (layout === config.layout) {
-		deps.ui.notify(`layout already ${layout}`, "info");
-		return;
-	}
-	applyOrNotify(deps, { ...config, layout }, `layout: ${layout}`);
 }
 
 async function setIconMode(deps: ConfigureDeps): Promise<void> {
@@ -508,7 +341,6 @@ async function setContextMode(deps: ConfigureDeps): Promise<void> {
 		deps.ui.notify(`contextMode already ${contextMode}`, "info");
 		return;
 	}
-
 	applyOrNotify(deps, { ...config, contextMode }, `contextMode: ${contextMode}`);
 }
 
@@ -519,54 +351,44 @@ async function setContextBarWidth(deps: ConfigureDeps): Promise<void> {
 		String(config.contextBarWidth),
 	);
 	if (raw === undefined) return;
-
 	const parsed = parseContextBarWidth(raw);
 	if (!parsed.ok) {
 		deps.ui.notify(parsed.error, "error");
 		return;
 	}
-
 	applyOrNotify(deps, { ...config, contextBarWidth: parsed.value }, `contextBarWidth: ${parsed.value}`);
 }
 
 async function setMinimalMode(deps: ConfigureDeps): Promise<void> {
 	const config = deps.getConfig();
 	const current = isMinimalProfile(config) ? "on" : "off";
-	const defaultValue = DEFAULT_CONFIG.minimal ? "on" : "off";
 	const choice = await selectSetting(
 		deps,
 		[
 			"Minimal profile",
-			"pi-core widgets + mode/fast/state",
-			`on  = ${MINIMAL_PROFILE.widgets.join(", ")}`,
-			"     + single/plain · abbr labels (ctx/CH, keep in/out/$)",
-			"off = clear abbr labels only (widgets unchanged)",
+			`on  = ${MINIMAL_WIDGETS.join(", ")}`,
+			"     + explicit LINE0/LINE1 · plain icons · abbreviated labels",
+			"off = clear abbreviated labels only (lines unchanged)",
 		].join("\n"),
 		["on", "off"],
 		current,
-		defaultValue,
+		DEFAULT_CONFIG.minimal ? "on" : "off",
 	);
 	if (!choice) return;
-
 	if (choice === "on") {
 		if (isMinimalProfile(config)) {
 			deps.ui.notify("minimal profile already applied", "info");
 			return;
 		}
 		const profile = { ...cloneMinimalProfile(), runNotification: config.runNotification };
-		applyOrNotify(
-			deps,
-			profile,
-			`minimal profile: ${profile.widgets.join(", ")} · single/plain · abbr labels`,
-		);
+		applyOrNotify(deps, profile, "minimal profile applied");
 		return;
 	}
-
 	if (!config.minimal) {
 		deps.ui.notify("minimal already off", "info");
 		return;
 	}
-	applyOrNotify(deps, { ...config, minimal: false }, "minimal: false (widgets unchanged)");
+	applyOrNotify(deps, { ...config, minimal: false }, "minimal: false (lines unchanged)");
 }
 
 async function setToolActivityMode(deps: ConfigureDeps): Promise<void> {
@@ -594,60 +416,35 @@ async function setWidgetSpacing(deps: ConfigureDeps): Promise<void> {
 		String(config.spacing),
 	);
 	if (raw === undefined) return;
-
 	const parsed = parseWidgetSpacing(raw);
 	if (!parsed.ok) {
 		deps.ui.notify(parsed.error, "error");
 		return;
 	}
-
 	applyOrNotify(deps, { ...config, spacing: parsed.value }, `spacing: ${parsed.value}`);
 }
 
 async function runAppearanceMenu(deps: ConfigureDeps): Promise<void> {
 	while (true) {
 		const choice = await deps.ui.select(
-			[
-				"Appearance",
-				"layout · icons · separator · spacing · minimal profile",
-			].join("\n"),
-			[
-				"Layout",
-				"Icon mode",
-				"Widget separator",
-				"Widget spacing",
-				"Minimal profile",
-				"Back",
-			],
+			["Appearance", "icons · separator · spacing · minimal profile"].join("\n"),
+			["Icon mode", "Widget separator", "Widget spacing", "Minimal profile", "Back"],
 		);
 		if (!choice || choice === "Back") return;
 		switch (choice) {
-			case "Layout":
-				await setLayout(deps);
-				break;
-			case "Icon mode":
-				await setIconMode(deps);
-				break;
-			case "Widget separator":
-				await setWidgetSeparator(deps);
-				break;
-			case "Widget spacing":
-				await setWidgetSpacing(deps);
-				break;
-			case "Minimal profile":
-				await setMinimalMode(deps);
-				break;
-			default:
-				break;
+			case "Icon mode": await setIconMode(deps); break;
+			case "Widget separator": await setWidgetSeparator(deps); break;
+			case "Widget spacing": await setWidgetSpacing(deps); break;
+			case "Minimal profile": await setMinimalMode(deps); break;
 		}
 	}
 }
 
 export function contextUsageItems(config: StatuslineConfig): string[] {
 	const items: string[] = [];
-	if (config.widgets.includes("context") || config.widgets.includes("contextBar")) items.push("Context mode");
-	if (config.widgets.includes("contextBar")) items.push("Context bar width");
-	if (config.widgets.includes("toolActivity")) items.push("Tool activity mode");
+	if (hasWidget(config, "context") || hasWidget(config, "contextBar")) items.push("Context mode");
+	if (hasWidget(config, "contextBar")) items.push("Context bar width");
+	if (hasWidget(config, "toolActivity")) items.push("Tool activity mode");
 	return items;
 }
 
@@ -659,25 +456,14 @@ async function runContextUsageMenu(deps: ConfigureDeps): Promise<void> {
 			return;
 		}
 		const choice = await deps.ui.select(
-			[
-				"Context & usage",
-				"only settings for enabled widgets are shown",
-			].join("\n"),
+			["Context & usage", "only settings for enabled widgets are shown"].join("\n"),
 			[...items, "Back"],
 		);
 		if (!choice || choice === "Back") return;
 		switch (choice) {
-			case "Context mode":
-				await setContextMode(deps);
-				break;
-			case "Context bar width":
-				await setContextBarWidth(deps);
-				break;
-			case "Tool activity mode":
-				await setToolActivityMode(deps);
-				break;
-			default:
-				break;
+			case "Context mode": await setContextMode(deps); break;
+			case "Context bar width": await setContextBarWidth(deps); break;
+			case "Tool activity mode": await setToolActivityMode(deps); break;
 		}
 	}
 }
@@ -699,9 +485,7 @@ export async function runStatuslineConfigurator(
 			"Reset to defaults",
 			"Done",
 		]);
-
 		if (!choice || choice === "Done") return;
-
 		switch (choice) {
 			case "Widgets":
 				await editWidgetsLoop(deps, allWidgets);
@@ -723,11 +507,8 @@ export async function runStatuslineConfigurator(
 				break;
 			case "Reload from file": {
 				const reloaded = deps.reloadConfig();
-				if (!reloaded.ok) {
-					deps.ui.notify(reloaded.error, "error");
-					break;
-				}
-				deps.ui.notify(`Reloaded (${reloaded.value.widgets.join(", ")})`, "info");
+				if (!reloaded.ok) deps.ui.notify(reloaded.error, "error");
+				else deps.ui.notify(`Reloaded (${enabledWidgets(reloaded.value).join(", ")})`, "info");
 				break;
 			}
 			case "Reset to defaults": {
@@ -737,15 +518,10 @@ export async function runStatuslineConfigurator(
 				);
 				if (!confirmed) break;
 				const reset = deps.resetConfig();
-				if (!reset.ok) {
-					deps.ui.notify(reset.error, "error");
-					break;
-				}
-				deps.ui.notify("Reset to defaults", "info");
+				if (!reset.ok) deps.ui.notify(reset.error, "error");
+				else deps.ui.notify("Reset to defaults", "info");
 				break;
 			}
-			default:
-				break;
 		}
 	}
 }
