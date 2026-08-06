@@ -173,13 +173,17 @@ export class TurnTelemetryTracker {
 			total: message.usage?.totalTokens,
 			cost: message.usage?.cost?.total,
 		}));
-		const usageAvailable = values.every((usage) =>
-			[usage.input, usage.output, usage.total, usage.cost].every((value) => typeof value === "number" && Number.isFinite(value)),
-		);
-		const inputTokens = usageAvailable ? values.reduce((sum, usage) => sum + usage.input!, 0) : null;
-		const outputTokens = usageAvailable ? values.reduce((sum, usage) => sum + usage.output!, 0) : null;
-		const totalTokens = usageAvailable ? values.reduce((sum, usage) => sum + usage.total!, 0) : null;
-		const costUsd = usageAvailable ? values.reduce((sum, usage) => sum + usage.cost!, 0) : null;
+		const sum = (key: "input" | "output" | "total" | "cost"): number | null => {
+			const items = values.map((usage) => usage[key]);
+			return items.every((value): value is number => typeof value === "number" && Number.isFinite(value))
+				? items.reduce((total, value) => total + value, 0)
+				: null;
+		};
+		const inputTokens = sum("input");
+		const outputTokens = sum("output");
+		const totalTokens = sum("total");
+		const costUsd = sum("cost");
+		const usageAvailable = inputTokens !== null && outputTokens !== null;
 		const measurementMs = outputTokens !== null && outputTokens > 0 && turn.generationMs > 0 ? turn.generationMs : null;
 		return {
 			tps: measurementMs === null ? null : round(outputTokens! / (measurementMs / 1_000), 1),
@@ -207,13 +211,15 @@ export class TurnTelemetryTracker {
 		this.agentTurns = [];
 		this.turn = undefined;
 		if (start === null || turns.length === 0) return;
-		const usageAvailable = turns.every((turn) => turn.usageAvailable);
 		const sum = (key: "inputTokens" | "outputTokens" | "totalTokens" | "costUsd") =>
-			usageAvailable ? turns.reduce((total, turn) => total + (turn[key] ?? 0), 0) : null;
+			turns.every((turn) => turn[key] !== null)
+				? turns.reduce((total, turn) => total + turn[key]!, 0)
+				: null;
 		const inputTokens = sum("inputTokens");
 		const outputTokens = sum("outputTokens");
 		const totalTokens = sum("totalTokens");
 		const costUsd = sum("costUsd");
+		const usageAvailable = inputTokens !== null && outputTokens !== null;
 		const generationMs = turns.reduce((total, turn) => total + turn.generationMs, 0);
 		const measurementMs = outputTokens !== null && outputTokens > 0 && generationMs > 0 ? generationMs : null;
 		this.lastSettled = {

@@ -27,7 +27,8 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 - Git branch (`main`/`master` is `🏠` in emoji mode) + committed branch diff (`+N -M`)
 - Optional `worktree` unit for porcelain-v2 branch/ahead/behind/stash/conflict/staged/modified/untracked state
 - Optional `runtime` unit for deterministic project runtime/version detection
-- Optional settled-run `performance` unit (TPS, TTFT, duration, tokens, stalls, and rate); it can render as a widget or one notification, never both
+- Optional settled-run metric widgets: `runTps`, `runTtft`, `runDuration`, `runTokens`, `runStalls`, and `runCostRate`; each is independently ordered, grouped, and toggled
+- Optional settled-run notification, independent from the metric widgets
 - Extension statuses (dedicated mode, fast, and ponytail statuses excluded)
 - Agent duration: current request / current process active total (includes tools and child pi processes)
 - Run state: Thinking / Working / Waiting / Ready
@@ -92,7 +93,8 @@ Single-line layout follows the configured order exactly. Stacked layout uses can
   "minimal": false,
   "separator": "dot",
   "spacing": 1,
-  "toolActivityMode": "compact"
+  "toolActivityMode": "compact",
+  "runNotification": false
 }
 ```
 
@@ -137,7 +139,7 @@ Example:
 ~/proj · session · model high · main · in 1.5KⅠ 3.7K · out 800Ⅰ 900 · CH 66.7% · $0.42Ⅰ $0.03 · ctx 40% · EDIT · fast · task 1/2 · Ready
 ```
 
-- **on**: overwrites widgets/layout/iconMode/contextMode/separator/spacing/toolActivityMode and sets `minimal: true`
+- **on**: overwrites widgets/layout/iconMode/contextMode/separator/spacing/toolActivityMode, sets `minimal: true`, and preserves `runNotification`
 - **off**: sets `minimal: false` only (widgets stay as configured)
 - `minimal: true` alone (JSON) enables **abbreviated labels** without changing the widget list:
   - tokens keep `in`/`out` (or emoji arrows)
@@ -145,7 +147,7 @@ Example:
   - cache → `CH …%` (pi-style)
   - context / contextBar → `ctx …`
   - duration → `t …`
-- omitted from the profile (still available via Widgets): `branchDiff`, `contextBar`, `duration`, `quota`, `environment`, `toolActivity`, `worktree`, `runtime`, `performance`
+- omitted from the profile (still available via Widgets): `branchDiff`, `contextBar`, `duration`, `quota`, `environment`, `toolActivity`, `worktree`, `runtime`, and all `run*` metric widgets
 
 ### Recommended stacked HUD
 
@@ -221,10 +223,17 @@ The footer follows the active pi theme rather than maintaining separate RGB pale
 | `toolActivity` | current agent-run tool counts; `detailed` keeps per-tool rows, `compact` shows error total + `core_tools` (bash/edit/read/write) + `aux_tools` (web_research/aux_summarize/git_finalize); metadata-only `process_update` is excluded |
 | `worktree` | porcelain-v2 branch/ahead/behind/stash/conflict/rename/delete/staged/modified/untracked summary; disabled means no Git status command |
 | `runtime` | project-marker runtime and optional version; ambiguous projects render `runtime ?`; disabled means no version command |
-| `performance` | one settled agent-run snapshot: configurable TPS/TTFT/run duration/tokens/stalls/cost rate; `telemetry.display` chooses widget, notification, or off |
+| `runTps` | aggregate output tokens per generation second for the last settled agent run |
+| `runTtft` | first-turn time to first token for the last settled agent run |
+| `runDuration` | wall duration of the last settled agent run |
+| `runTokens` | input/output usage for the last settled agent run; unavailable usage renders `usage ?` |
+| `runStalls` | streamed stall count and duration for the last settled agent run; hidden when zero |
+| `runCostRate` | effective USD per million tokens for the last settled agent run; hidden when unavailable |
 | `progress` | extension status texts (excludes dedicated badges and `auxiliary`, which lives in Taskboard) |
 | `duration` | current-request / current-process active time (`🕒` prefix in emoji mode); includes tools and child pi processes, excludes idle between requests |
 | `state` | Ready / Thinking / Working / Waiting (tools, subagent, or Taskboard wait/block) |
+
+`runNotification` defaults to `false` and includes all available run metrics. Enabling any `run*` widget or the notification starts the same event-driven tracker; widgets and notification may be enabled together. Each metric validates only its own required fields, so missing cost metadata does not hide available token or TPS data. The tracker keeps one settled snapshot and clears widget values when the next agent run starts.
 
 `toolActivity` resets at each agent run and counts business tools only. Taskboard's `process_update` publishes session metadata and is ignored at both tool start and tool end, preventing duplicate progress in the footer and editor-above HUD. Set `toolActivityMode` via `/statusline` or `statusline.json`.
 
@@ -273,6 +282,7 @@ In TUI mode, `/statusline` opens a nested menu:
 - **Widgets**: sectioned by project/usage/environment/activity; `Space` toggle, `g` cycle group, ↑/↓ select, ←/→ move **any** row across sections (adopts destination group; enablement unrelated to sort), Enter done. Mock preview uses sample data; live footer still updates on each save.
 - **Appearance**: layout, icon mode, separator, spacing, **Minimal profile**
 - **Context & usage**: contextMode, contextBarWidth (only if `contextBar` enabled), toolActivityMode (only if `toolActivity` enabled)
+- **Run notification**: one direct on/off toggle; independent from the `run*` widgets
 - show / reload / confirmed reset config
 - enum menus put the current value first and mark current/default values; numeric inputs are prefilled
 
@@ -288,6 +298,7 @@ Each successful change is atomically written to the config file and the footer r
 | branch | pi footer data; branch diff is local Git committed-line data only and excludes the working tree |
 | mode, fast, progress | pi extension status map; dedicated mode/fast/ponytail statuses are excluded from progress, and terminal controls are removed |
 | duration, tools, environment | process-local event data; tool counts reset per agent run and are not restored from session history |
+| run metrics / notification | one process-local snapshot produced at `agent_settled`; cleared at the next agent run and not restored from session history |
 | quota | official provider account usage endpoints; account-level, cached, and independent of active-branch totals |
 
 ## Structure
@@ -314,7 +325,7 @@ statusline/
 
 ## Ownership and attribution
 
-`statusline` remains the only production `setFooter()` owner. The `worktree`, `runtime`, and `performance` additions are ordinary independently ordered/grouped/toggled widget units inside the existing `single` and `stacked` layouts; they do not introduce an Open TUI layout or claim header/editor/transcript surfaces. Derived Open TUI portions are attributed in `LICENSES/pi-open-tui-MIT.txt`.
+`statusline` remains the only production `setFooter()` owner. The `worktree`, `runtime`, and six `run*` metric additions are ordinary independently ordered/grouped/toggled widget units inside the existing `single` and `stacked` layouts; they do not introduce an Open TUI layout or claim header/editor/transcript surfaces. Derived Open TUI portions are attributed in `LICENSES/pi-open-tui-MIT.txt`.
 
 ## Develop
 

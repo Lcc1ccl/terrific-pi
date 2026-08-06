@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { DEFAULT_CONFIG } from "../lib/config.ts";
-import { formatPerformance, formatRuntime, formatWorktree } from "../lib/format.ts";
+import { formatRunNotification, formatRuntime, formatWorktree } from "../lib/format.ts";
 import { resolveGlyphs, resolveIconMode } from "../lib/glyphs.ts";
 import { plainVisibleWidth, renderStatusLine } from "../lib/render.ts";
 import type { StatusSnapshot, StatuslineConfig } from "../lib/types.ts";
@@ -50,15 +50,14 @@ const snapshot: StatusSnapshot = {
 	runState: "Ready",
 };
 
-const telemetry = {
-	display: "widget" as const,
-	tps: true,
-	ttft: true,
-	duration: true,
-	tokens: true,
-	stalls: true,
-	cost: true,
-};
+const runMetricWidgets = [
+	"runTps",
+	"runTtft",
+	"runDuration",
+	"runTokens",
+	"runStalls",
+	"runCostRate",
+] as const;
 
 describe("glyph modes", () => {
 	it("resolves nerd ascii and auto while retaining emoji/plain", () => {
@@ -75,42 +74,70 @@ describe("glyph modes", () => {
 	});
 });
 
-describe("new display unit formatters", () => {
-	it("formats worktree runtime and performance as semantic widget content", () => {
-		assert.match(formatWorktree(snapshot.worktree!, "ascii").text, /feature\/迁移.*\^v2\/3.*S4.*=1.*x2.*!6.*r1.*A5.*\?7/);
-		assert.equal(formatRuntime(snapshot.runtime!, "ascii").text, "node 22.10.0");
-		assert.equal(
-			formatPerformance(snapshot.performance!, telemetry, "plain").text,
-			"TPS 42.5 · TTFT 1.2s · run 5.0s · in 50 · out 20 · stall 1/4.3s · $4.00/M",
-		);
-		assert.equal(formatRuntime({ name: "runtime", ambiguous: true }, "plain").text, "runtime ?");
+describe("run metric widgets", () => {
+	it("formats each settled-run metric as an independent segment", () => {
+		const segments = buildWidgetSegments(snapshot, {
+			...DEFAULT_CONFIG,
+			widgets: [...runMetricWidgets],
+			iconMode: "plain",
+		});
+		assert.deepEqual(segments.map((segment) => segment.id), runMetricWidgets);
+		assert.deepEqual(segments.map((segment) => segment.text), [
+			"TPS 42.5",
+			"TTFT 1.2s",
+			"run 5.0s",
+			"in 50 · out 20",
+			"stall 1/4.3s",
+			"$4.00/M",
+		]);
 	});
 
-	it("marks invalid usage unavailable without hiding timing", () => {
-		const body = formatPerformance({
+	it("keeps timing visible when usage is unavailable", () => {
+		const segments = buildWidgetSegments({
+			...snapshot,
+			performance: {
+				...snapshot.performance!,
+				tps: null,
+				inputTokens: null,
+				outputTokens: null,
+				rateUsdPerMTokens: null,
+				usageAvailable: false,
+			},
+		}, {
+			...DEFAULT_CONFIG,
+			widgets: ["runTps", "runTtft", "runTokens", "runCostRate"],
+			iconMode: "plain",
+		});
+		assert.deepEqual(segments.map((segment) => segment.text), ["TPS ?", "TTFT 1.2s", "usage ?"]);
+	});
+
+	it("formats notification text without separators for omitted metrics", () => {
+		assert.equal(formatRunNotification({
 			...snapshot.performance!,
 			tps: null,
 			inputTokens: null,
 			outputTokens: null,
+			stallMs: 0,
+			stallCount: 0,
+			rateUsdPerMTokens: null,
 			usageAvailable: false,
-		}, telemetry, "plain");
-		assert.match(body.text, /TPS \?/);
-		assert.match(body.text, /TTFT 1\.2s/);
-		assert.match(body.text, /usage \?/);
+		}, "plain").text, "TPS ? · TTFT 1.2s · run 5.0s · usage ?");
 	});
 });
 
 describe("ordinary widget integration", () => {
-	it("builds new widgets in configured order and semantic groups", () => {
+	it("builds project and run widgets in configured order and semantic groups", () => {
 		const config: StatuslineConfig = {
 			...DEFAULT_CONFIG,
-			widgets: ["runtime", "performance", "worktree"],
+			widgets: ["runtime", "runTtft", "runTps", "worktree"],
 			iconMode: "ascii",
-			telemetry,
 		};
 		const segments = buildWidgetSegments(snapshot, config);
-		assert.deepEqual(segments.map((segment) => segment.id), ["runtime", "performance", "worktree"]);
-		assert.deepEqual(segments.map((segment) => segment.accent), ["neutral", "usage", "branch"]);
+		assert.deepEqual(segments.map((segment) => segment.id), ["runtime", "runTtft", "runTps", "worktree"]);
+		assert.deepEqual(segments.map((segment) => segment.accent), ["neutral", "usage", "usage", "branch"]);
+		assert.match(formatWorktree(snapshot.worktree!, "ascii").text, /feature\/迁移.*\^v2\/3.*S4.*=1.*x2.*!6.*r1.*A5.*\?7/);
+		assert.equal(formatRuntime(snapshot.runtime!, "ascii").text, "node 22.10.0");
+		assert.equal(formatRuntime({ name: "runtime", ambiguous: true }, "plain").text, "runtime ?");
 	});
 
 	it("renders single and stacked layouts safely at 40/80/120/160 columns", () => {
@@ -118,9 +145,8 @@ describe("ordinary widget integration", () => {
 			const config: StatuslineConfig = {
 				...DEFAULT_CONFIG,
 				layout,
-				widgets: ["path", "model", "worktree", "runtime", "performance", "state"],
+				widgets: ["path", "model", "worktree", "runtime", ...runMetricWidgets, "state"],
 				iconMode: "nerd",
-				telemetry,
 			};
 			const segments = buildWidgetSegments(snapshot, config);
 			for (const width of [40, 80, 120, 160]) {
@@ -142,7 +168,7 @@ describe("ordinary widget integration", () => {
 	});
 
 	it("keeps formatter/build p95 bounded", () => {
-		const config = { ...DEFAULT_CONFIG, widgets: ["worktree", "runtime", "performance"] as const, telemetry };
+		const config = { ...DEFAULT_CONFIG, widgets: ["worktree", "runtime", ...runMetricWidgets] as const };
 		const samples: number[] = [];
 		for (let sample = 0; sample < 20; sample++) {
 			const started = performance.now();

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { DEFAULT_CONFIG, mergeStatuslineConfig } from "../lib/config.ts";
 import { TurnTelemetryTracker } from "../lib/telemetry.ts";
 
 function message(output = 20, input = 50, total = input + output, cost = total * 0.000004) {
@@ -43,23 +42,29 @@ function completeTurn(
 	tracker.handle({ type: "turn_end" });
 }
 
-describe("telemetry config", () => {
-	it("is optional and defaults to display off without adding performance", () => {
-		assert.equal(DEFAULT_CONFIG.telemetry!.display, "off");
-		assert.equal(DEFAULT_CONFIG.widgets.includes("performance"), false);
-		assert.equal(mergeStatuslineConfig({}).telemetry!.display, "off");
-		assert.deepEqual(mergeStatuslineConfig({ telemetry: { display: "widget", tps: false } }).telemetry, {
-			display: "widget",
-			tps: false,
-			ttft: true,
-			duration: true,
-			tokens: true,
-			stalls: true,
-			cost: true,
-		});
-		assert.equal(mergeStatuslineConfig({ telemetry: { display: "invalid" } }).telemetry!.display, "off");
+function settleUsage(usage: {
+	input?: number;
+	output?: number;
+	totalTokens?: number;
+	cost?: { total?: number };
+}) {
+	let now = 0;
+	const tracker = new TurnTelemetryTracker(() => now);
+	const msg = { role: "assistant" as const, usage };
+	tracker.handle({ type: "agent_start" });
+	tracker.handle({ type: "turn_start" });
+	tracker.handle({ type: "message_start", message: msg });
+	now = 100;
+	tracker.handle({
+		type: "message_update",
+		message: msg,
+		assistantMessageEvent: { type: "text_delta", delta: "x" },
 	});
-});
+	now = 500;
+	tracker.handle({ type: "message_end", message: msg });
+	tracker.handle({ type: "turn_end" });
+	return tracker.handle({ type: "agent_settled" });
+}
 
 describe("TurnTelemetryTracker", () => {
 	it("emits only one aggregate snapshot when an agent run settles", () => {
@@ -129,7 +134,29 @@ describe("TurnTelemetryTracker", () => {
 		assert.equal(settled?.stallMs, 1_100);
 	});
 
-	it("marks non-finite usage unavailable without throwing", () => {
+	it("derives each run metric only from its required usage fields", () => {
+		const tokensOnly = settleUsage({ input: 10, output: 20 });
+		assert.equal(tokensOnly?.inputTokens, 10);
+		assert.equal(tokensOnly?.outputTokens, 20);
+		assert.equal(tokensOnly?.tps, 40);
+		assert.equal(tokensOnly?.totalTokens, null);
+		assert.equal(tokensOnly?.costUsd, null);
+		assert.equal(tokensOnly?.rateUsdPerMTokens, null);
+		assert.equal(tokensOnly?.usageAvailable, true);
+
+		const rateWithoutInput = settleUsage({
+			output: 20,
+			totalTokens: 30,
+			cost: { total: 0.00012 },
+		});
+		assert.equal(rateWithoutInput?.inputTokens, null);
+		assert.equal(rateWithoutInput?.outputTokens, 20);
+		assert.equal(rateWithoutInput?.tps, 40);
+		assert.equal(rateWithoutInput?.rateUsdPerMTokens, 4);
+		assert.equal(rateWithoutInput?.usageAvailable, false);
+	});
+
+	it("keeps finite fields while marking malformed fields unavailable", () => {
 		let now = 0;
 		const tracker = new TurnTelemetryTracker(() => now);
 		const setNow = (value: number) => { now = value; };
@@ -138,7 +165,7 @@ describe("TurnTelemetryTracker", () => {
 		const settled = tracker.handle({ type: "agent_settled" });
 		assert.equal(settled?.usageAvailable, false);
 		assert.equal(settled?.tps, null);
-		assert.equal(settled?.inputTokens, null);
+		assert.equal(settled?.inputTokens, 10);
 		assert.equal(settled?.outputTokens, null);
 	});
 

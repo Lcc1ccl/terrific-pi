@@ -233,6 +233,8 @@ describe("formatConfigSummary", () => {
 		assert.match(summary, /contextBarWidth: 10 \(default 10, min 4, max 40\)/);
 		assert.match(summary, /minimal: false/);
 		assert.match(summary, /toolActivityMode: detailed/);
+		assert.match(summary, /runNotification: off/);
+		assert.doesNotMatch(summary, /telemetry:/);
 		assert.match(summary, /separator: dot \(·\)/);
 		assert.match(summary, /spacing: 1 \(default 1, min 0, max 4\)/);
 		assert.match(summary, /config: \/tmp\/statusline\.json/);
@@ -279,6 +281,46 @@ describe("main menu selector", () => {
 
 		assert.equal(mainCalls, 1);
 		assert.equal(nestedCalls, 0);
+	});
+});
+
+describe("run notification toggle", () => {
+	it("toggles independently from run metric widgets", async () => {
+		let config: StatuslineConfig = {
+			widgets: ["path", "runTtft"],
+			layout: "single",
+			iconMode: "plain",
+			contextMode: "remaining",
+			contextBarWidth: 10,
+			minimal: false,
+			separator: "dot",
+			spacing: 1,
+			toolActivityMode: "compact",
+			runNotification: false,
+		};
+		const choices = ["Run notification: off", "Done"];
+
+		await runStatuslineConfigurator({
+			getConfig: () => config,
+			getConfigPath: () => "/tmp/statusline.json",
+			applyConfig: (next) => {
+				config = next;
+				return { ok: true, value: undefined };
+			},
+			reloadConfig: () => ({ ok: true, value: config }),
+			resetConfig: () => ({ ok: true, value: undefined }),
+			ui: {
+				selectMain: async () => choices.shift(),
+				select: async () => undefined,
+				input: async () => undefined,
+				editWidgets: async () => undefined,
+				confirm: async () => true,
+				notify: () => {},
+			},
+		}, ["path", "runTtft"]);
+
+		assert.equal(config.runNotification, true);
+		assert.deepEqual(config.widgets, ["path", "runTtft"]);
 	});
 });
 
@@ -412,7 +454,7 @@ describe("appearance submenu", () => {
 		assert.deepEqual(mainItems, [
 			"Widgets",
 			"Appearance",
-			"Telemetry",
+			"Run notification: off",
 			"Show config",
 			"Reload from file",
 			"Reset to defaults",
@@ -582,6 +624,7 @@ describe("minimal profile menu", () => {
 			separator: "bar",
 			spacing: 2,
 			toolActivityMode: "detailed",
+			runNotification: true,
 		};
 		const mainChoices = ["Appearance", "Done"];
 		const appearanceChoices = ["Minimal profile", "Back"];
@@ -636,6 +679,7 @@ describe("minimal profile menu", () => {
 		assert.equal(config.contextMode, "used");
 		assert.equal(config.separator, "dot");
 		assert.equal(config.toolActivityMode, "compact");
+		assert.equal(config.runNotification, true);
 	});
 
 	it("clears abbr labels only when turning off", async () => {

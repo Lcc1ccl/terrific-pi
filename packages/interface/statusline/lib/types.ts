@@ -9,6 +9,17 @@ export type IconMode = "emoji" | "plain" | "nerd" | "ascii" | "auto";
 export type StatuslineSeparator = "dot" | "bar";
 export type ToolActivityMode = "detailed" | "compact";
 
+export const RUN_METRIC_WIDGET_IDS = [
+	"runTps",
+	"runTtft",
+	"runDuration",
+	"runTokens",
+	"runStalls",
+	"runCostRate",
+] as const;
+
+export type RunMetricWidgetId = (typeof RUN_METRIC_WIDGET_IDS)[number];
+
 export type WidgetId =
 	| "path"
 	| "session"
@@ -30,7 +41,7 @@ export type WidgetId =
 	| "toolActivity"
 	| "worktree"
 	| "runtime"
-	| "performance";
+	| RunMetricWidgetId;
 
 export type ContextMode = "remaining" | "used";
 
@@ -102,7 +113,12 @@ export const WIDGET_GROUPS: Record<WidgetId, WidgetGroup> = {
 	duration: "activity",
 	state: "activity",
 	worktree: "project",
-	performance: "usage",
+	runTps: "usage",
+	runTtft: "usage",
+	runDuration: "usage",
+	runTokens: "usage",
+	runStalls: "usage",
+	runCostRate: "usage",
 };
 
 /** Drop order: higher first. Keep model/branch/current-context/state longer. */
@@ -127,7 +143,12 @@ export const WIDGET_PRIORITY: Record<WidgetId, number> = {
 	state: 5,
 	worktree: 28,
 	runtime: 75,
-	performance: 78,
+	runTps: 78,
+	runTtft: 78,
+	runDuration: 78,
+	runTokens: 78,
+	runStalls: 78,
+	runCostRate: 78,
 };
 
 export type QuotaProvider = "codex" | "claude";
@@ -195,16 +216,6 @@ export interface AuxiliaryUsageView {
 	hasUnknownCost?: boolean;
 }
 
-export interface TelemetryConfig {
-	display: "off" | "widget" | "notification";
-	tps: boolean;
-	ttft: boolean;
-	duration: boolean;
-	tokens: boolean;
-	stalls: boolean;
-	cost: boolean;
-}
-
 export interface StatusSnapshot {
 	cwd: string;
 	sessionName?: string;
@@ -247,7 +258,8 @@ export interface StatuslineConfig {
 	spacing: number;
 	/** detailed = per-tool; compact = core_tools + aux_tools aggregates. */
 	toolActivityMode: ToolActivityMode;
-	telemetry?: TelemetryConfig;
+	/** Notify once after each settled agent run. */
+	runNotification?: boolean;
 	/** Optional stacked-line group overrides (defaults live in WIDGET_GROUPS). */
 	widgetGroups?: Partial<Record<WidgetId, WidgetGroup>>;
 }

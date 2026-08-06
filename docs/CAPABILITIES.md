@@ -6,7 +6,7 @@ This document is the current capability map for the core `terrific-pi` distribut
 
 | Domain | Package | Entry | Responsibility |
 |---|---|---|---|
-| Interface | statusline | `/statusline`, automatic footer | Sole status-widget owner; model/editor metadata, usage, context, Git, runtime, and footer layout |
+| Interface | statusline | `/statusline`, automatic footer | Sole status-widget owner; model/editor metadata, usage, settled-run metrics/notification, context, Git, runtime, and footer layout |
 | Interface | appearance | `/appearance`, startup | Header and editor surfaces only |
 | Interface | taskboard | `/taskboard`, `process_update` | Structured task milestones, waiting/blocked state, and task HUD |
 | Interface | presentation | `/presentation`, automatic renderers | Transcript presentation, system entries, and file receipts |
@@ -38,7 +38,7 @@ Dedicated status keys are not duplicated into generic progress. Runtime code has
 | File | Sections or data |
 |---|---|
 | `terrific.json` | appearance, auxiliary, btw, context, fast, mode, modelProfile, presentation, taskboard |
-| `statusline.json` | footer widgets and layout |
+| `statusline.json` | footer widgets, settled-run notification, and layout |
 | `settings.json` | root package entry and Pi model defaults |
 | `models.json` | custom providers/models and provider-sync output |
 

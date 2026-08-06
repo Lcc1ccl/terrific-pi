@@ -12,16 +12,17 @@ import {
 	MAX_CONTEXT_BAR_WIDTH,
 	MIN_CONTEXT_BAR_WIDTH,
 } from "./config.ts";
+import { RUN_METRIC_WIDGET_IDS } from "./types.ts";
 import type {
 	ContextMode,
 	IconMode,
 	QuotaSnapshot,
+	RunMetricWidgetId,
 	SegmentPart,
 	SegmentTone,
 	TokenTotals,
 	ToolActivity,
 	ToolActivityMode,
-	TelemetryConfig,
 } from "./types.ts";
 
 /** Core agent tools collapsed in compact toolActivity mode. */
@@ -541,54 +542,71 @@ export function formatRuntime(info: RuntimeInfo, iconMode: IconMode): SegmentCon
 	]);
 }
 
-function formatTelemetryDuration(ms: number): string {
+function formatRunMetricDuration(ms: number): string {
 	return ms < 60_000 ? `${(ms / 1_000).toFixed(1)}s` : formatDuration(ms);
 }
 
-export function formatPerformance(
+export function formatRunMetric(
 	view: TurnPerformanceView,
-	config: TelemetryConfig,
+	id: RunMetricWidgetId,
 	iconMode: IconMode,
-): SegmentContent {
+): SegmentContent | undefined {
 	const glyphs = resolveGlyphs(iconMode);
-	const items: SegmentPart[][] = [];
 	const resolved = resolveIconMode(iconMode);
 	const label = (glyph: string, name: string) => resolved === "plain" ? name : `${glyph} ${name}`;
-	if (config.tps) items.push([
-		{ text: `${label(glyphs.speed, "TPS")} `, tone: "label" },
-		{ text: view.tps === null ? "?" : view.tps.toFixed(1), tone: view.tps === null ? "dim" : "active" },
-	]);
-	if (config.ttft) items.push([
-		{ text: `${label(glyphs.latency, "TTFT")} `, tone: "label" },
-		{ text: formatTelemetryDuration(view.ttftMs), tone: "value" },
-	]);
-	if (config.duration) items.push([
-		{ text: `${label(glyphs.done, "run")} `, tone: "label" },
-		{ text: formatTelemetryDuration(view.totalMs), tone: "value" },
-	]);
-	if (config.tokens) {
-		if (view.usageAvailable) {
-			items.push([
+
+	switch (id) {
+		case "runTps":
+			return content([
+				{ text: `${label(glyphs.speed, "TPS")} `, tone: "label" },
+				{ text: view.tps === null ? "?" : view.tps.toFixed(1), tone: view.tps === null ? "dim" : "active" },
+			]);
+		case "runTtft":
+			return content([
+				{ text: `${label(glyphs.latency, "TTFT")} `, tone: "label" },
+				{ text: formatRunMetricDuration(view.ttftMs), tone: "value" },
+			]);
+		case "runDuration":
+			return content([
+				{ text: `${label(glyphs.done, "run")} `, tone: "label" },
+				{ text: formatRunMetricDuration(view.totalMs), tone: "value" },
+			]);
+		case "runTokens":
+			if (!view.usageAvailable) {
+				return content([{ text: "usage ", tone: "label" }, { text: "?", tone: "dim" }]);
+			}
+			return content([
 				{ text: `${label(glyphs.input, "in")} `, tone: "label" },
 				{ text: formatTokensCompact(view.inputTokens ?? 0), tone: "value" },
-			]);
-			items.push([
+				{ text: " · ", tone: "dim" },
 				{ text: `${label(glyphs.output, "out")} `, tone: "label" },
 				{ text: formatTokensCompact(view.outputTokens ?? 0), tone: "value" },
 			]);
-		} else {
-			items.push([{ text: "usage ", tone: "label" }, { text: "?", tone: "dim" }]);
-		}
+		case "runStalls":
+			if (view.stallMs <= 0) return undefined;
+			return content([
+				{ text: `${label(glyphs.stall, "stall")} `, tone: "warn" },
+				{ text: `${view.stallCount}/${formatRunMetricDuration(view.stallMs)}`, tone: "warn" },
+			]);
+		case "runCostRate":
+			if (view.rateUsdPerMTokens === null) return undefined;
+			return content([
+				{ text: "$", tone: "label" },
+				{ text: `${view.rateUsdPerMTokens.toFixed(2)}/M`, tone: "warn" },
+			]);
 	}
-	if (config.stalls && view.stallMs > 0) items.push([
-		{ text: `${label(glyphs.stall, "stall")} `, tone: "warn" },
-		{ text: `${view.stallCount}/${formatTelemetryDuration(view.stallMs)}`, tone: "warn" },
-	]);
-	if (config.cost && view.rateUsdPerMTokens !== null) items.push([
-		{ text: "$", tone: "label" },
-		{ text: `${view.rateUsdPerMTokens.toFixed(2)}/M`, tone: "warn" },
-	]);
-	const parts = items.flatMap((item, index) => index === 0 ? item : [{ text: " · ", tone: "dim" as const }, ...item]);
+}
+
+export function formatRunNotification(
+	view: TurnPerformanceView,
+	iconMode: IconMode,
+): SegmentContent {
+	const items = RUN_METRIC_WIDGET_IDS
+		.map((id) => formatRunMetric(view, id, iconMode))
+		.filter((item): item is SegmentContent => item !== undefined);
+	const parts = items.flatMap((item, index) =>
+		index === 0 ? item.parts : [{ text: " · ", tone: "dim" as const }, ...item.parts]
+	);
 	return content(parts);
 }
 

@@ -16,7 +16,7 @@ import {
 import { selectMenu } from "../lib/select-menu.ts";
 import { AgentDurationTracker } from "../lib/duration.ts";
 import { QuotaMonitor } from "../lib/quota.ts";
-import { formatPerformance } from "../lib/format.ts";
+import { formatRunNotification } from "../lib/format.ts";
 import { readRuntimeInfo, type RuntimeInfo } from "../lib/runtime-info.ts";
 import { TurnTelemetryTracker, type TurnPerformanceView } from "../lib/telemetry.ts";
 import { readWorktreeInfo, type WorktreeInfo } from "../lib/worktree.ts";
@@ -26,6 +26,7 @@ import {
 	renderStatusLine,
 } from "../lib/render.ts";
 import { WidgetsSetupComponent } from "../lib/widgets-setup.ts";
+import { RUN_METRIC_WIDGET_IDS } from "../lib/types.ts";
 import type {
 	BranchChangeStats,
 	EnvironmentCounts,
@@ -164,7 +165,6 @@ export default function statusline(pi: ExtensionAPI) {
 			return false;
 		}
 	};
-	const currentTelemetry = () => config.telemetry ?? DEFAULT_CONFIG.telemetry!;
 	const unsubscribeEditorStatus = pi.events.on(EDITOR_STATUS_EVENT, (value) => {
 		const request = asEditorStatusRequest(value);
 		if (!request) return;
@@ -184,9 +184,10 @@ export default function statusline(pi: ExtensionAPI) {
 	const cloneConfig = (value: StatuslineConfig): StatuslineConfig => ({
 		...value,
 		widgets: [...value.widgets],
-		telemetry: { ...(value.telemetry ?? DEFAULT_CONFIG.telemetry!) },
 		...(value.widgetGroups ? { widgetGroups: { ...value.widgetGroups } } : {}),
 	});
+	const runMetricsEnabled = () => RUN_METRIC_WIDGET_IDS.some((id) => config.widgets.includes(id));
+	const runTrackingEnabled = () => Boolean(config.runNotification) || runMetricsEnabled();
 
 	const syncQuota = async (ctx: QuotaContext) => {
 		const enabled = config.widgets.includes("quota");
@@ -564,7 +565,6 @@ export default function statusline(pi: ExtensionAPI) {
 				const extensionStatuses = footerData.getExtensionStatuses();
 				const modeStatus = extensionStatuses.get(MODE_STATUS_KEY);
 				const fastStatus = extensionStatuses.get(FAST_STATUS_KEY);
-				const telemetry = currentTelemetry();
 				return {
 					cwd: ctx.cwd,
 					sessionName: ctx.sessionManager.getSessionName(),
@@ -596,7 +596,7 @@ export default function statusline(pi: ExtensionAPI) {
 						: undefined,
 					worktree: config.widgets.includes("worktree") ? worktree : undefined,
 					runtime: config.widgets.includes("runtime") ? runtime : undefined,
-					performance: telemetry.display === "widget" ? performanceView : undefined,
+					performance: runMetricsEnabled() ? performanceView : undefined,
 				};
 			};
 			const source: EditorStatusSource = {
@@ -659,31 +659,31 @@ export default function statusline(pi: ExtensionAPI) {
 	pi.on("agent_start", async (event) => {
 		resetToolActivity();
 		performanceView = undefined;
-		if (currentTelemetry().display !== "off") telemetryTracker.handle(event);
+		if (runTrackingEnabled()) telemetryTracker.handle(event);
 		durationTracker.startRound();
 		startDurationTick();
 		setRunState("Thinking");
 	});
 	pi.on("turn_start", async (event) => {
-		if (currentTelemetry().display !== "off") telemetryTracker.handle(event);
+		if (runTrackingEnabled()) telemetryTracker.handle(event);
 		setRunState("Thinking");
 	});
 	pi.on("message_start", async (event) => {
-		if (currentTelemetry().display !== "off") telemetryTracker.handle(event);
+		if (runTrackingEnabled()) telemetryTracker.handle(event);
 	});
 	pi.on("message_end", async (event, ctx) => {
-		if (currentTelemetry().display !== "off") telemetryTracker.handle(event);
+		if (runTrackingEnabled()) telemetryTracker.handle(event);
 		if (event.message.role !== "assistant") return;
 		refreshUsage(ctx);
 	});
 	pi.on("message_update", async (event) => {
-		if (currentTelemetry().display !== "off") telemetryTracker.handle(event);
+		if (runTrackingEnabled()) telemetryTracker.handle(event);
 		if (activeTools.size > 0) return;
 		const state = runStateForAssistantEvent(event.assistantMessageEvent.type);
 		if (state) setRunState(state);
 	});
 	pi.on("turn_end", async (event) => {
-		if (currentTelemetry().display !== "off") telemetryTracker.handle(event);
+		if (runTrackingEnabled()) telemetryTracker.handle(event);
 	});
 	pi.on("agent_end", async (event) => {
 		const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
@@ -694,11 +694,10 @@ export default function statusline(pi: ExtensionAPI) {
 		}
 	});
 	pi.on("agent_settled", async (event, ctx) => {
-		const telemetry = currentTelemetry();
-		const settled = telemetry.display !== "off" ? telemetryTracker.handle(event) : undefined;
-		performanceView = telemetry.display === "widget" ? settled : undefined;
-		if (settled && telemetry.display === "notification" && ctx.mode === "tui") {
-			ctx.ui.notify(formatPerformance(settled, telemetry, config.iconMode).text, "info");
+		const settled = runTrackingEnabled() ? telemetryTracker.handle(event) : undefined;
+		if (settled && runMetricsEnabled()) performanceView = settled;
+		if (settled && config.runNotification && ctx.mode === "tui") {
+			ctx.ui.notify(formatRunNotification(settled, config.iconMode).text, "info");
 		}
 		clearActiveTools();
 		durationTracker.endRound();

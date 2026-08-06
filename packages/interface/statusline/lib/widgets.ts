@@ -25,7 +25,7 @@ import {
 	formatToolActivity,
 	formatWorktree,
 	formatRuntime,
-	formatPerformance,
+	formatRunMetric,
 	thinkingLevelTone,
 	type SegmentContent,
 } from "./format.ts";
@@ -138,7 +138,7 @@ export const PREVIEW_SNAPSHOT: StatusSnapshot = {
 	runtime: { name: "nodejs", version: "22.10.0" },
 	performance: {
 		tps: 42.5, ttftMs: 1_200, totalMs: 5_000, inputTokens: 50, outputTokens: 20,
-		stallMs: 0, stallCount: 0, rateUsdPerMTokens: 4, generationMs: 470,
+		stallMs: 4_300, stallCount: 1, rateUsdPerMTokens: 4, generationMs: 470,
 		totalTokens: 70, costUsd: 0.00028, measurementMs: 470, usageAvailable: true,
 	},
 };
@@ -433,11 +433,15 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 			case "runtime":
 				if (snapshot.runtime) pushContent(segments, id, "neutral", formatRuntime(snapshot.runtime, iconMode), priority);
 				break;
-			case "performance": {
-				const telemetry = config.telemetry ?? DEFAULT_CONFIG.telemetry!;
-				if (snapshot.performance && telemetry.display === "widget") {
-					pushContent(segments, id, "usage", formatPerformance(snapshot.performance, telemetry, iconMode), priority);
-				}
+			case "runTps":
+			case "runTtft":
+			case "runDuration":
+			case "runTokens":
+			case "runStalls":
+			case "runCostRate": {
+				if (!snapshot.performance) break;
+				const body = formatRunMetric(snapshot.performance, id, iconMode);
+				if (body) pushContent(segments, id, "usage", body, priority);
 				break;
 			}
 		}

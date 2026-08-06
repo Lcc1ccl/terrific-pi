@@ -79,7 +79,7 @@ Phase 0-6 使用 SHA-256 证明三个 live JSON 文件未变化。Phase 7 的允
 | Git dirty/staged/untracked/stash/ahead/behind | 重写 | 新 `worktree` widget |
 | detached HEAD hash/tag | 重写 | `worktree` widget 可选 detail |
 | runtime 检测与版本 | 选择性移植并修正 | 新 `runtime` widget |
-| TPS/TTFT/stall/run cost rate | 移植纯 tracker | 新 `performance` widget或可选 notification |
+| TPS/TTFT/stall/run cost rate | 移植纯 tracker | 六个独立 `run*` widgets + 可选 notification |
 | Nerd Font/ASCII glyph | 扩展现有 icon mode | `statusline` glyph resolver |
 | startup header/dashboard | 选择性移植 | `appearance` |
 | rounded editor | 选择性移植 | `appearance`，rollout 前卸载 `pi-vision-handoff` |
@@ -105,7 +105,7 @@ settings.json (Phase 0-6 保持不变；Phase 7 执行明确替换)
   ├─ statusline                     唯一 footer owner
   │    ├─ existing single/stacked layouts
   │    ├─ existing widget ordering/widgetGroups
-  │    ├─ worktree/runtime/performance units (opt-in)
+  │    ├─ worktree/runtime + six run-metric units (opt-in)
   │    └─ current /statusline config owner
   │
   ├─ taskboard                      任务事实与 HUD，不变
@@ -128,36 +128,39 @@ statusline.json
 
 ### 5.1 `statusline.json`
 
-现有字段保持兼容。新增字段必须 optional，旧配置解析和保存不能改变语义。
+本次纠正直接移除错误的 `performance`/`telemetry` 展示 schema，不为尚未发布的旧配置增加迁移层。新字段仍保持 optional，缺失时使用关闭态。
 
-建议 schema：
+目标 schema：
 
 ```json
 {
   "iconMode": "emoji | plain | nerd | ascii | auto",
-  "widgets": ["...", "worktree", "runtime", "performance"],
-  "widgetGroups": [["...", "worktree"], ["runtime", "performance"]],
-  "telemetry": {
-    "display": "off | widget | notification",
-    "tps": true,
-    "ttft": true,
-    "duration": true,
-    "tokens": true,
-    "stalls": true,
-    "cost": true
-  }
+  "widgets": [
+    "...",
+    "worktree",
+    "runtime",
+    "runTps",
+    "runTtft",
+    "runDuration",
+    "runTokens",
+    "runStalls",
+    "runCostRate"
+  ],
+  "widgetGroups": { "runTtft": "activity" },
+  "runNotification": false
 }
 ```
 
-兼容规则：
+规则：
 
 - 不新增 `layout: open` 或任何 Open TUI 固定行列布局。
-- 新单位与现有 widgets 一样可独立启用、禁用、排序和编组。
+- 六个 `run*` 指标与现有 widgets 一样可独立启用、禁用、排序和编组。
 - 当前 `single/stacked`、`widgetGroups` 和响应式 drop 行为保持。
 - 当前 `iconMode: emoji` 保持，不自动切为 `auto`。
 - 新 widgets 不加入现有 `DEFAULT_CONFIG` 和 minimal profile。
-- `telemetry` 缺失等价于 `display: off`。
-- `display: notification` 与 `performance` widget 互斥；配置器只允许一个主 renderer。
+- `runNotification` 缺失等价于 `false`，并作为 `/statusline` 中的独立开关；应用 visual/minimal profile 时保留该值。
+- 任一 `run*` widget 或 `runNotification` 启用时，共用的 tracker 才采集；两种输出可同时启用。
+- 旧 `performance` widget 和 `telemetry` 对象不再识别。
 - `/statusline reset` 仍恢复当前 package 默认，而不是 Open TUI profile。
 
 ### 5.2 `terrific.json.appearance`
@@ -224,7 +227,7 @@ statusline.json
 2. 复用 Pi 事件：`agent_start`、`turn_start`、`message_start/update/end`、`turn_end`、`agent_settled`。
 3. `agent_settled` 产出一次 last-run snapshot；tool gap 不进入 generation time。
 4. 在 `session_start/shutdown/tree`、中断、异常和新 generation 边界清空 transient 状态。
-5. telemetry 关闭时不创建 timer、不通知、不增加 footer 行。
+5. 没有 `run*` widget 且 `runNotification` 关闭时不采集、不通知、不增加 footer 行。
 6. 非有限 usage 不抛出到 extension event loop；该次样本标记 unavailable 并保留 Pi 主流程。
 
 验收：
@@ -234,32 +237,33 @@ statusline.json
 - print/json/rpc 模式零通知。
 - current statusline output characterization 完全不变。
 
-回滚：删除 telemetry 接线和 optional schema；无 session/config migration。
+回滚：删除 tracker 与 run-metric 接线；无 session migration。
 
-### Phase 2：Performance widget 与可选通知
+### Phase 2：Run metric widgets 与可选通知
 
-目标：让 telemetry 进入现有 footer owner，不新增 renderer。
+目标：让 settled-run 指标以普通展示单位进入现有 footer owner，不新增 renderer。
 
 目标文件：
 
-- `lib/types.ts`：`TurnPerformanceView`、`performance` widget
-- `lib/format.ts`：纯 formatter
-- `lib/widgets.ts`：widget builder
-- `lib/configure.ts`：Telemetry 菜单
+- `lib/types.ts`：`TurnPerformanceView` 与六个 `run*` widget ids
+- `lib/format.ts`：单指标 formatter 与通知聚合 formatter
+- `lib/widgets.ts`：普通 widget builder
+- `lib/configure.ts`：独立 `Run notification` 开关
 - `lib/render.ts`：沿用现有响应式 drop
 
 实现：
 
-1. `performance` 显示 last settled run，例如 `TPS 42.5 · TTFT 1.2s · stall 1/4.3s`。
-2. 下一个 agent run 开始时可显示 sampling 状态或隐藏，不能显示旧数据为当前运行事实。
-3. notification 仅在 `display=notification` 时触发，每个 settled agent run 最多一次。
-4. `display=widget` 时禁止重复 notification。
-5. telemetry tokens/cost 仅表示本次 agent run；session 累计继续由现有 tokens/cost widgets 负责。
+1. `runTps`、`runTtft`、`runDuration`、`runTokens`、`runStalls`、`runCostRate` 分别生成独立 segment。
+2. 下一个 agent run 开始时隐藏上一次 snapshot，不能显示旧数据为当前运行事实。
+3. `runNotification` 开启时每个 settled agent run 最多通知一次。
+4. notification 与任意 `run*` widgets 解耦并允许同时启用，共用同一 settled snapshot。
+5. run tokens/cost rate 仅表示本次 agent run；session 累计继续由现有 `tokens`/`cost` widgets 负责。
+6. 各指标只按自身依赖判定可用性；缺少 cost/total 不得隐藏可用的 tokens/TPS，缺少 input 不得隐藏可用的 TPS/cost rate。
 
 验收：
 
-- 80/120/160 列不溢出。
-- `performance` 与 `duration/state/toolActivity` 不重复同一文本。
+- 40/80/120/160 列不溢出。
+- 六个指标均可独立排序、编组、启停和响应式 drop。
 - taskboard waiting/blocked、auxiliary usage 和 subagent 工具流程不改变。
 
 ### Phase 3：Worktree 与 runtime 数据能力
@@ -304,7 +308,7 @@ statusline.json
 
 实现：
 
-1. `worktree`、`runtime`、`performance` 都注册为普通 widget，可独立启用、禁用、排序和分组。
+1. `worktree`、`runtime` 与六个 `run*` 指标都注册为普通 widget，可独立启用、禁用、排序和分组。
 2. 不新增 layout enum，不增加固定两行、左右区或第三 progress 行。
 3. 所有事实来自现有 `StatusSnapshot` 及 Phase 1-3 新字段。
 4. extension statuses 继续使用现有 `EXCLUDED_PROGRESS_KEYS`；不复制上游“显示全部 status”行为。
@@ -366,7 +370,7 @@ Editor：
 Settings：
 
 1. 注册 `/appearance`，管理 General/Header/Editor/Language。
-2. 不提供 Footer/Telemetry tab；footer 配置完整留给 `/statusline`。
+2. 不提供 Footer/run-metrics tab；footer 配置完整留给 `/statusline`。
 3. 配置写入 `terrific.json.appearance` section，复用原子 section update 模式。
 4. runtime 变更写盘后提示 `/reload`，不在旧 command frame 中抢占或清空 UI owner。
 
@@ -452,8 +456,8 @@ Settings：
 ### Statusline
 
 - [x] 仍只有一个生产 `setFooter()` owner
-- [x] telemetry 每 agent run 最多一个 settled snapshot
-- [x] performance widget 与 notification 不重复
+- [x] tracker 每 agent run 最多一个 settled snapshot
+- [x] 六个 run metrics 是独立 widgets，notification 与其解耦并可同时启用
 - [x] worktree 支持 subdir/worktree/diverged/detached
 - [x] runtime disabled 时不启动版本命令
 - [x] `single/stacked` 不回归
@@ -481,7 +485,7 @@ Settings：
 
 ## 9. 回滚
 
-- Phase 1-4：新单位和 telemetry 均 opt-in；删除对应 widget/schema 接线即可，无 layout 或 session migration。
+- Phase 1-4：新单位与通知均 opt-in；删除对应 widget/notification 接线即可，无 layout 或 session migration。
 - Phase 5-6：删除 source-only `appearance` 目录及登记即可；默认安装和 live 配置尚未引用它。
 - Phase 7：移除 appearance/config section，重新 `pi install npm:pi-vision-handoff@0.8.1`，恢复备份配置并 `/reload`。
 - 所有阶段独立提交，禁止将 statusline 单位迁移、appearance UI 和 live 插件替换混在同一 commit。

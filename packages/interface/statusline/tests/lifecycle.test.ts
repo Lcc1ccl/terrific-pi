@@ -137,7 +137,6 @@ describe("statusline migration lifecycle", () => {
 		const { cwd } = config({
 			widgets: ["path", "model", "mode", "fast", "state"],
 			iconMode: "plain",
-			telemetry: { display: "off" },
 		});
 		const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
 		const ctx = app.makeCtx(cwd);
@@ -172,7 +171,6 @@ describe("statusline migration lifecycle", () => {
 		const { cwd } = config({
 			widgets: ["path", "model", "mode", "fast"],
 			iconMode: "plain",
-			telemetry: { display: "off" },
 		});
 		const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
 		const ctx = app.makeCtx(cwd);
@@ -198,7 +196,6 @@ describe("statusline migration lifecycle", () => {
 		const { cwd } = config({
 			widgets: ["model", "mode", "fast"],
 			iconMode: "plain",
-			telemetry: { display: "off" },
 		});
 		const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
 		const ctx = app.makeCtx(cwd);
@@ -219,7 +216,7 @@ describe("statusline migration lifecycle", () => {
 	});
 
 	it("performs zero exec calls when worktree runtime and branchDiff are disabled", async () => {
-		const { cwd } = config({ widgets: ["path"], telemetry: { display: "off" } });
+		const { cwd } = config({ widgets: ["path"] });
 		let calls = 0;
 		const app = harness(async () => {
 			calls += 1;
@@ -233,7 +230,7 @@ describe("statusline migration lifecycle", () => {
 	});
 
 	it("queries enabled worktree and runtime through pi.exec without shell", async () => {
-		const { cwd } = config({ widgets: ["worktree", "runtime"], telemetry: { display: "off" } });
+		const { cwd } = config({ widgets: ["worktree", "runtime"] });
 		writeFileSync(join(cwd, "package.json"), "{}\n");
 		const calls: Array<[string, string[], { cwd: string; timeout: number }]> = [];
 		const app = harness(async (command, args, options) => {
@@ -250,21 +247,48 @@ describe("statusline migration lifecycle", () => {
 		assert.equal(calls.every(([command]) => command !== "sh" && command !== "bash"), true);
 	});
 
-	it("notifies at most once per settled run and never duplicates the widget", async () => {
-		for (const [display, expected] of [["notification", 1], ["widget", 0]] as const) {
-			const { cwd } = config({ widgets: display === "widget" ? ["performance"] : ["path"], telemetry: { display } });
+	it("renders run widgets and notifies at most once from the same settled snapshot", async () => {
+		const { cwd } = config({ widgets: ["runTtft"], iconMode: "plain", runNotification: true });
+		const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
+		const ctx = app.makeCtx(cwd);
+		await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+		const footer = app.mountFooter();
+		await settledRun(app, ctx);
+		await app.emit("agent_settled", { type: "agent_settled" }, ctx);
+		assert.equal(app.notifications.filter((text) => text.includes("TTFT")).length, 1);
+		assert.match(footer?.render(120).join("\n") ?? "", /TTFT /);
+	});
+
+	it("collects and renders a run widget without enabling notifications", async () => {
+		const { cwd } = config({ widgets: ["runTtft"], iconMode: "plain" });
+		const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
+		const ctx = app.makeCtx(cwd);
+		await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+		const footer = app.mountFooter();
+		await settledRun(app, ctx);
+		assert.match(footer?.render(120).join("\n") ?? "", /TTFT /);
+		assert.equal(app.notifications.length, 0);
+	});
+
+	it("clears settled run widgets on tree and compact without re-notifying", async () => {
+		for (const eventName of ["session_tree", "session_compact"]) {
+			const { cwd } = config({ widgets: ["runTtft"], iconMode: "plain", runNotification: true });
 			const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
 			const ctx = app.makeCtx(cwd);
 			await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+			const footer = app.mountFooter();
 			await settledRun(app, ctx);
+			assert.match(footer?.render(120).join("\n") ?? "", /TTFT /, eventName);
+			await app.emit(eventName, { type: eventName }, ctx);
+			assert.doesNotMatch(footer?.render(120).join("\n") ?? "", /TTFT /, eventName);
 			await app.emit("agent_settled", { type: "agent_settled" }, ctx);
-			assert.equal(app.notifications.filter((text) => text.includes("TPS")).length, expected, display);
+			assert.equal(app.notifications.filter((text) => text.includes("TTFT")).length, 1, eventName);
 		}
 	});
 
 	it("does not notify in print json or rpc modes", async () => {
 		for (const mode of ["print", "json", "rpc"]) {
-			const { cwd } = config({ widgets: ["path"], telemetry: { display: "notification" } });
+			const { cwd } = config({ widgets: ["path"], runNotification: true });
 			const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
 			const tuiCtx = app.makeCtx(cwd);
 			await app.emit("session_start", { type: "session_start", reason: "startup" }, tuiCtx);
@@ -275,7 +299,7 @@ describe("statusline migration lifecycle", () => {
 
 	it("resets aborted/error agent_end attempts and emits only the successful retry", async () => {
 		for (const stopReason of ["aborted", "error"]) {
-			const { cwd } = config({ widgets: ["path"], telemetry: { display: "notification" } });
+			const { cwd } = config({ widgets: ["path"], runNotification: true });
 			const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
 			const ctx = app.makeCtx(cwd);
 			await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
@@ -298,7 +322,7 @@ describe("statusline migration lifecycle", () => {
 	});
 
 	it("reload enables project widgets immediately for the current cwd", async () => {
-		const { cwd, path } = config({ widgets: ["path"], telemetry: { display: "off" } });
+		const { cwd, path } = config({ widgets: ["path"] });
 		let calls = 0;
 		const app = harness(async () => {
 			calls += 1;
@@ -307,21 +331,21 @@ describe("statusline migration lifecycle", () => {
 		const ctx = app.makeCtx(cwd);
 		await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
 		app.mountFooter();
-		writeFileSync(path, JSON.stringify({ widgets: ["worktree"], telemetry: { display: "off" } }));
+		writeFileSync(path, JSON.stringify({ widgets: ["worktree"] }));
 		await app.commands.get("statusline").handler("reload", ctx);
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		assert.equal(calls, 1);
 	});
 
 	it("reload disable clears old project values and invalidates a pending request", async () => {
-		const { cwd, path } = config({ widgets: ["worktree"], telemetry: { display: "off" } });
+		const { cwd, path } = config({ widgets: ["worktree"] });
 		let resolveExec!: (value: any) => void;
 		const app = harness(async () => new Promise((resolve) => { resolveExec = resolve; }));
 		const ctx = app.makeCtx(cwd);
 		await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
 		const footer = app.mountFooter();
 		await new Promise((resolve) => setTimeout(resolve, 5));
-		writeFileSync(path, JSON.stringify({ widgets: ["path"], telemetry: { display: "off" } }));
+		writeFileSync(path, JSON.stringify({ widgets: ["path"] }));
 		await app.commands.get("statusline").handler("reload", ctx);
 		resolveExec({ code: 0, stdout: "# branch.oid abc\n# branch.head stale\n", stderr: "" });
 		await new Promise((resolve) => setTimeout(resolve, 5));
@@ -329,7 +353,7 @@ describe("statusline migration lifecycle", () => {
 	});
 
 	it("keeps generation B mounted when generation A resolves late", async () => {
-		const { cwd, path } = config({ widgets: ["worktree"], telemetry: { display: "off" } });
+		const { cwd, path } = config({ widgets: ["worktree"] });
 		let calls = 0;
 		let resolveA!: (value: any) => void;
 		const app = harness(async () => {
@@ -341,7 +365,7 @@ describe("statusline migration lifecycle", () => {
 		await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
 		const footer = app.mountFooter();
 		await new Promise((resolve) => setTimeout(resolve, 5));
-		writeFileSync(path, JSON.stringify({ widgets: ["worktree"], telemetry: { display: "off" } }));
+		writeFileSync(path, JSON.stringify({ widgets: ["worktree"] }));
 		await app.commands.get("statusline").handler("reload", ctx);
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		assert.equal(calls, 2);
@@ -354,7 +378,7 @@ describe("statusline migration lifecycle", () => {
 	});
 
 	it("apply invalidates the reload request and keeps the newest project generation", async () => {
-		const { cwd } = config({ widgets: ["worktree"], iconMode: "emoji", telemetry: { display: "off" } });
+		const { cwd } = config({ widgets: ["worktree"], iconMode: "emoji" });
 		const pending: Array<(value: any) => void> = [];
 		let calls = 0;
 		const app = harness(async () => {
@@ -386,7 +410,7 @@ describe("statusline migration lifecycle", () => {
 	});
 
 	it("rejects stale async results after shutdown generation changes", async () => {
-		const { cwd } = config({ widgets: ["worktree"], telemetry: { display: "off" } });
+		const { cwd } = config({ widgets: ["worktree"] });
 		let resolveExec!: (value: any) => void;
 		const pending = new Promise((resolve) => { resolveExec = resolve; });
 		const app = harness(async () => pending);

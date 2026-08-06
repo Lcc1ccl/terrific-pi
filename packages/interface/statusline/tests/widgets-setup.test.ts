@@ -34,7 +34,7 @@ describe("formatWidgetsPreview", () => {
 
 	it("mock preview still shows optional widgets with sample data", () => {
 		const lines = formatWidgetsPreviewLines(
-			["quota", "environment", "toolActivity", "mode", "cost"],
+			["quota", "environment", "toolActivity", "mode", "cost", "runTtft", "runStalls"],
 			{ ...DEFAULT_CONFIG, iconMode: "plain", toolActivityMode: "detailed" },
 		);
 		const joined = lines.join(" ");
@@ -43,6 +43,8 @@ describe("formatWidgetsPreview", () => {
 		assert.match(joined, /Read|ok/);
 		assert.match(joined, /EDIT/);
 		assert.match(joined, /\$0\.42/);
+		assert.match(joined, /TTFT 1\.2s/);
+		assert.match(joined, /stall 1\/4\.3s/);
 	});
 
 	it("stacked mock preview returns one line per partition with data", () => {

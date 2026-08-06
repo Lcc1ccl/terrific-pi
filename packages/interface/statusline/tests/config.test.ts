@@ -37,14 +37,20 @@ describe("mergeStatuslineConfig", () => {
 		assert.equal(DEFAULT_CONFIG.spacing, 1);
 	});
 
-	it("defaults layout single and iconMode emoji without auto-inserting new widgets", () => {
+	it("defaults layout single and iconMode emoji without auto-inserting optional widgets", () => {
 		assert.equal(DEFAULT_CONFIG.layout, "single");
 		assert.equal(DEFAULT_CONFIG.iconMode, "emoji");
+		assert.equal(DEFAULT_CONFIG.runNotification, false);
 		assert.equal(DEFAULT_CONFIG.widgets.includes("quota"), false);
 		assert.equal(DEFAULT_CONFIG.widgets.includes("environment"), false);
 		assert.equal(DEFAULT_CONFIG.widgets.includes("toolActivity"), false);
 		assert.equal(DEFAULT_CONFIG.toolActivityMode, "compact");
 		assert.equal(DEFAULT_CONFIG.widgets.includes("mode"), true);
+		assert.equal(WIDGET_IDS.includes("performance" as never), false);
+		for (const id of ["runTps", "runTtft", "runDuration", "runTokens", "runStalls", "runCostRate"] as const) {
+			assert.equal(WIDGET_IDS.includes(id), true, id);
+			assert.equal(DEFAULT_CONFIG.widgets.includes(id), false, id);
+		}
 		assert.equal(WIDGET_IDS.includes("auxUsage" as never), false);
 	});
 
@@ -114,6 +120,17 @@ describe("mergeStatuslineConfig", () => {
 		assert.equal(merged.separator, "bar");
 		assert.equal(merged.spacing, 2);
 		assert.equal(merged.toolActivityMode, "compact");
+	});
+
+	it("accepts run metric widgets and drops removed performance/telemetry config", () => {
+		const merged = mergeStatuslineConfig({
+			widgets: ["runTtft", "performance", "runTps"],
+			runNotification: true,
+			telemetry: { display: "notification", ttft: true },
+		});
+		assert.deepEqual(merged.widgets, ["runTtft", "runTps"]);
+		assert.equal(merged.runNotification, true);
+		assert.equal(Object.hasOwn(merged, "telemetry"), false);
 	});
 
 	it("rejects arbitrary separator strings", () => {
@@ -230,6 +247,7 @@ describe("saveStatuslineConfig", () => {
 			separator: "bar" as const,
 			spacing: 2,
 			toolActivityMode: "compact" as const,
+			runNotification: true,
 		};
 
 		saveStatuslineConfig(nested, { ...config, widgets: [...config.widgets] });
@@ -246,6 +264,7 @@ describe("saveStatuslineConfig", () => {
 			separator: "bar",
 			spacing: 2,
 			toolActivityMode: "compact",
+			runNotification: true,
 		});
 		assert.deepEqual(loadConfig(nested), {
 			widgets: ["path", "cost"],
@@ -257,7 +276,7 @@ describe("saveStatuslineConfig", () => {
 			separator: "bar",
 			spacing: 2,
 			toolActivityMode: "compact",
-			telemetry: DEFAULT_CONFIG.telemetry,
+			runNotification: true,
 		});
 	});
 });
