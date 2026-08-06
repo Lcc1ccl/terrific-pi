@@ -1,0 +1,84 @@
+{
+  "name": "terrific-pi",
+  "version": "0.1.0",
+  "description": "Interface, session-control, and auxiliary runtime enhancements for Pi",
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "tui", "productivity"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/Lcc1ccl/terrific-pi.git"
+  },
+  "files": [
+    "AGENTS.md",
+    "LICENSE",
+    "README.md",
+    "config/examples",
+    "scripts",
+    "skills/pi-provider-sync/SKILL.md",
+    "skills/pi-provider-sync/sync_provider_models.py",
+    "packages/interface/statusline/extensions",
+    "packages/interface/statusline/lib",
+    "packages/interface/appearance/extensions",
+    "packages/interface/appearance/lib",
+    "packages/interface/taskboard/extensions",
+    "packages/interface/taskboard/lib",
+    "packages/interface/presentation/extensions",
+    "packages/interface/presentation/lib",
+    "packages/session-control/mode/extensions",
+    "packages/session-control/mode/lib",
+    "packages/session-control/fast/extensions",
+    "packages/session-control/fast/lib",
+    "packages/session-control/context/extensions",
+    "packages/session-control/context/lib",
+    "packages/session-control/model-profile/extensions",
+    "packages/session-control/model-profile/lib",
+    "packages/runtime/auxiliary/extensions",
+    "packages/runtime/auxiliary/lib",
+    "packages/runtime/btw/extensions",
+    "packages/runtime/btw/lib",
+    "packages/*/*/package.json",
+    "packages/*/*/README.md",
+    "packages/interface/*/LICENSES"
+  ],
+  "pi": {
+    "extensions": [
+      "./packages/interface/statusline/extensions/statusline.ts",
+      "./packages/interface/appearance/extensions/appearance.ts",
+      "./packages/interface/taskboard/extensions/taskboard.ts",
+      "./packages/interface/presentation/extensions/presentation.ts",
+      "./packages/session-control/mode/extensions/mode.ts",
+      "./packages/session-control/fast/extensions/fast.ts",
+      "./packages/session-control/context/extensions/context.ts",
+      "./packages/session-control/model-profile/extensions/model-profile.ts",
+      "./packages/runtime/auxiliary/extensions/auxiliary.ts",
+      "./packages/runtime/btw/extensions/btw.ts"
+    ],
+    "skills": ["./skills"]
+  },
+  "terrificPi": {
+    "optionalPiPackages": [
+      "git:github.com/nicobailon/pi-subagents@bd32df2cc1a951b588f6f93f67f3b9adac406303",
+      "npm:pi-web-access@0.13.0"
+    ]
+  },
+  "scripts": {
+    "check": "node scripts/check.mjs"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-agent-core": "0.83.0",
+    "@earendil-works/pi-ai": "0.83.0",
+    "@earendil-works/pi-coding-agent": "0.83.0",
+    "@earendil-works/pi-tui": "0.83.0",
+    "@types/node": "^26.0.0",
+    "typebox": "1.1.38",
+    "typescript": "^6.0.3"
+  }
+}

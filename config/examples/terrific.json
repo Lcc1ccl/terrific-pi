@@ -1,0 +1,87 @@
+{
+  "context": {
+    "topEntries": 10
+  },
+  "fast": {
+    "enabled": false
+  },
+  "taskboard": {
+    "defaultViewMode": "compact",
+    "activityMode": "full"
+  },
+  "presentation": {
+    "enabled": true,
+    "workspace": true,
+    "systemEvents": true,
+    "artifacts": true,
+    "userMessageBox": true,
+    "compactTools": true,
+    "maxExpandedArtifacts": 8
+  },
+  "mode": {
+    "default": "edit",
+    "persistPerSession": true
+  },
+  "btw": {
+    "thinking": "minimal",
+    "maxContextTokens": 80000,
+    "maxOutputTokens": 2000
+  },
+  "auxiliary": {
+    "enabled": true,
+    "default": {
+      "model": "openai/gpt-5.4-mini",
+      "thinking": "off",
+      "timeoutMs": 60000,
+      "maxOutputTokens": 2048,
+      "maxRetries": 1,
+      "fallbackModels": []
+    },
+    "tasks": {
+      "compression": {
+        "useAuxiliary": true,
+        "thinking": "low",
+        "timeoutMs": 120000,
+        "maxOutputTokens": 12000,
+        "maxRetries": 0
+      },
+      "title_generation": {
+        "useAuxiliary": true,
+        "maxOutputTokens": 96,
+        "timeoutMs": 30000
+      },
+      "text_summary": {
+        "useAuxiliary": true,
+        "maxOutputTokens": 3000,
+        "fallbackModels": [
+          "openai/gpt-5.6-luna"
+        ]
+      },
+      "commit_message": {
+        "useAuxiliary": true,
+        "maxOutputTokens": 256,
+        "timeoutMs": 30000
+      },
+      "btw": {
+        "useAuxiliary": true,
+        "model": "openai/gpt-5.4-mini",
+        "thinking": "low",
+        "maxOutputTokens": 2000
+      },
+      "web_research": {
+        "useAuxiliary": true,
+        "model": "openai/gpt-5.6-luna",
+        "thinking": "low",
+        "timeoutMs": 300000,
+        "fallbackModels": [
+          "openai/gpt-5.4-mini"
+        ]
+      }
+    },
+    "git": {
+      "confirm": true,
+      "allowHeadless": false,
+      "allowPush": true
+    }
+  }
+}
