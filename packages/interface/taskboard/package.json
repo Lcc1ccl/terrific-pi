@@ -1,0 +1,32 @@
+{
+  "name": "taskboard",
+  "version": "0.2.0",
+  "description": "Structured task board and live tool activity HUD for Pi",
+  "type": "module",
+  "private": true,
+  "keywords": ["pi-package", "pi-extension", "taskboard", "progress", "hud"],
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./extensions/taskboard.ts"]
+  },
+  "scripts": {
+    "test": "node --test --experimental-strip-types tests/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "check": "npm run typecheck && npm test"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.80.10",
+    "@earendil-works/pi-coding-agent": "0.80.10",
+    "@earendil-works/pi-tui": "0.80.10",
+    "@types/node": "^26.0.0",
+    "typebox": "1.1.38",
+    "typescript": "^6.0.3"
+  },
+  "files": ["extensions", "lib", "package.json", "README.md", "tsconfig.json"]
+}

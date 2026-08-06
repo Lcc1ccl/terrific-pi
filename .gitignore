@@ -27,7 +27,6 @@ auth.json
 .pi-subagents/
 
 # Build / cache
-dist/
 build/
 .cache/
 coverage/

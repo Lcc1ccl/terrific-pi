@@ -1,5 +1,7 @@
 # terrific-pi 历史会话复盘与长期契约
 
+> 当前归属提示：Pilot 与 Docsflow 已迁至独立 `terrific-pi-automation` 发行边界；本文保留拆分前历史事实，不作为当前安装或目录规格。
+>
 > 证据窗口：2026-07-17 至 2026-07-22。
 > 本文记录历史动机、踩坑与长期工程契约，不替代当前代码、测试、`AGENTS.md` 或 `docs/CAPABILITIES.md`。
 
