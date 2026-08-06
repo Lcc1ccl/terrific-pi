@@ -332,6 +332,7 @@ export function guardPilotWorkerToolCall(
 		const lexical = path.isAbsolute(requested) ? path.resolve(requested) : path.resolve(policy.cwd, requested);
 		if (isGitMetadataPath(policy.cwd, lexical)) throw new Error("Write path targets protected Git metadata.");
 		const target = canonicalWriteTarget(lexical);
+		if (isGitMetadataPath(policy.cwd, target)) throw new Error("Write path targets protected Git metadata.");
 		if (!policy.writeRoots.some((root) => isWithin(root, target))) {
 			throw new Error(`Write path is outside the authorized roots: ${writable.path}`);
 		}

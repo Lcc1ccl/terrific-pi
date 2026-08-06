@@ -303,11 +303,11 @@ assert not any("pi-tool-display/config.json" in name or "pi-compact-transcript/c
 assert "source_root=" not in manifest and "/home/" not in manifest, "manifest leaked a local source path"
 PY
 
-HOST_PI_PACKAGE="$ROOT/extensions/presentation/node_modules/@earendil-works/pi-coding-agent"
+HOST_PI_PACKAGE="$ROOT/extensions/statusline/node_modules/@earendil-works/pi-coding-agent"
 HOST_PI_TUI="$HOST_PI_PACKAGE/node_modules/@earendil-works/pi-tui"
-[[ -d "$HOST_PI_PACKAGE" && -d "$HOST_PI_TUI" ]] || { echo "missing Pi 0.81.1 peers for installed payload tests" >&2; exit 1; }
-[[ "$(node -p "require('$HOST_PI_PACKAGE/package.json').version")" == "0.81.1" ]] \
-	|| { echo "installed payload gate requires Pi 0.81.1" >&2; exit 1; }
+[[ -d "$HOST_PI_PACKAGE" && -d "$HOST_PI_TUI" ]] || { echo "missing Pi 0.83.0 peers for installed payload tests" >&2; exit 1; }
+[[ "$(node -p "require('$HOST_PI_PACKAGE/package.json').version")" == "0.83.0" ]] \
+	|| { echo "installed payload gate requires Pi 0.83.0" >&2; exit 1; }
 mkdir -p "$RESTORE_PI_HOME/vendor/terrific-pi/node_modules/@earendil-works"
 ln -s "$HOST_PI_PACKAGE" "$RESTORE_PI_HOME/vendor/terrific-pi/node_modules/@earendil-works/pi-coding-agent"
 ln -s "$HOST_PI_TUI" "$RESTORE_PI_HOME/vendor/terrific-pi/node_modules/@earendil-works/pi-tui"

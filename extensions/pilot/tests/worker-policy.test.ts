@@ -26,7 +26,7 @@ afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-async function policyFixture(task = "Implement.") {
+async function policyFixture(task = "Implement.", writeRoots = ["src"]) {
 	const root = mkdtempSync(path.join(tmpdir(), "pilot-worker-policy-"));
 	roots.push(root);
 	const project = path.join(root, "project");
@@ -41,7 +41,7 @@ async function policyFixture(task = "Implement.") {
 			task,
 			cwd: project,
 			allowedTools: tools,
-			writeRoots: ["src"],
+			writeRoots,
 			expectedAgent: expectedPilotProfile("pilot.worker"),
 		},
 	});
@@ -130,6 +130,27 @@ describe("Pilot Worker runtime policy", () => {
 		assert.match(
 			guardPilotWorkerToolCall(parsed.policy, undefined, "write", { path: "src/escape/outside.ts" })?.reason ?? "",
 			/outside the authorized roots/,
+		);
+		discardPilotDelegationPolicy({ events, requestId: "test", policy });
+	});
+
+	test("blocks symlink aliases into Git metadata when the project root is writable", async () => {
+		const { project, events, policy } = await policyFixture("Implement.", ["."]);
+		const runtime = createPilotWorkerCapability(policy);
+		const parsed = parsePilotWorkerPolicyPrompt({
+			prompt: `${createPilotWorkerPolicyHeader(runtime)}\nImplement.`,
+			cwd: project,
+			activeTools: bootstrapTools,
+			childAgent: "pilot.worker",
+		});
+		assert.equal(parsed.ok, true);
+		if (!parsed.ok) return;
+
+		mkdirSync(path.join(project, ".git"));
+		symlinkSync(path.join(project, ".git"), path.join(project, "git-alias"), "dir");
+		assert.match(
+			guardPilotWorkerToolCall(parsed.policy, undefined, "write", { path: "git-alias/config" })?.reason ?? "",
+			/protected Git metadata/,
 		);
 		discardPilotDelegationPolicy({ events, requestId: "test", policy });
 	});

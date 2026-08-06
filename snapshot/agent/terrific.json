@@ -1,13 +1,18 @@
 {
+  "taskboard": {
+    "activityMode": "full"
+  },
   "auxiliary": {
     "enabled": true,
     "default": {
-      "model": "openai/gpt-5.6-luna",
+      "model": "xiaomi/mimo-v2.5",
       "thinking": "high",
       "timeoutMs": 60000,
       "maxOutputTokens": 2048,
       "maxRetries": 1,
-      "fallbackModels": []
+      "fallbackModels": [
+        "xiaomi/mimo-v2.5-pro"
+      ]
     },
     "tasks": {
       "compression": {
@@ -15,32 +20,32 @@
         "timeoutMs": 120000,
         "maxOutputTokens": 12000,
         "maxRetries": 0,
-        "model": "openai/gpt-5.6-luna"
+        "model": "xiaomi/mimo-v2.5"
       },
       "title_generation": {
         "maxOutputTokens": 96,
         "timeoutMs": 30000,
-        "model": "openai/gpt-5.6-luna"
+        "model": "xiaomi/mimo-v2.5"
       },
       "text_summary": {
         "maxOutputTokens": 3000,
         "fallbackModels": [
           "openai/gpt-5.6-luna"
         ],
-        "model": "openai/gpt-5.6-luna"
+        "model": "xiaomi/mimo-v2.5"
       },
       "commit_message": {
         "maxOutputTokens": 256,
         "timeoutMs": 30000,
-        "model": "openai/gpt-5.6-luna"
+        "model": "xiaomi/mimo-v2.5"
       },
       "btw": {
-        "model": "openai/gpt-5.6-luna",
+        "model": "xiaomi/mimo-v2.5",
         "thinking": "low",
         "maxOutputTokens": 2000
       },
       "web_research": {
-        "model": "openai/gpt-5.6-luna",
+        "model": "xiaomi/mimo-v2.5",
         "thinking": "low",
         "timeoutMs": 300000,
         "fallbackModels": [
@@ -78,43 +83,40 @@
     "profiles": [
       {
         "id": "1",
-        "alias": "lunamax",
+        "alias": "sol",
         "provider": "openai",
-        "model": "gpt-5.6-luna",
-        "thinking": "max",
+        "model": "gpt-5.6-sol",
+        "thinking": "medium",
         "hotkey": "alt+1"
       },
       {
         "id": "2",
-        "alias": "terramax",
+        "alias": "lunamax",
         "provider": "openai",
-        "model": "gpt-5.6-terra",
+        "model": "gpt-5.6-luna",
         "thinking": "max",
         "hotkey": "alt+2"
       },
       {
         "id": "3",
-        "alias": "solmax",
+        "alias": "terramax",
         "provider": "openai",
-        "model": "gpt-5.6-sol",
+        "model": "gpt-5.6-terra",
         "thinking": "max",
         "hotkey": "alt+3"
       },
       {
         "id": "4",
-        "alias": "grok",
-        "provider": "grok",
-        "model": "grok-4.5",
-        "thinking": "high",
+        "alias": "solmax",
+        "provider": "openai",
+        "model": "gpt-5.6-sol",
+        "thinking": "max",
         "hotkey": "alt+4"
       }
     ]
   },
   "fast": {
     "enabled": true
-  },
-  "taskboard": {
-    "activityMode": "full"
   },
   "presentation": {
     "enabled": true,
@@ -124,5 +126,11 @@
     "userMessageBox": true,
     "compactTools": true,
     "maxExpandedArtifacts": 16
+  },
+  "appearance": {
+    "enabled": true,
+    "settingsLanguage": "en",
+    "header": true,
+    "editor": true
   }
 }
