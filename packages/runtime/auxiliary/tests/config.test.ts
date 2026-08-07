@@ -23,6 +23,11 @@ describe("auxiliary config", () => {
 		assert.deepEqual(loaded.warnings, []);
 	});
 
+	test("defaults usage reports off and accepts an explicit toggle", () => {
+		assert.equal(DEFAULT_AUXILIARY_CONFIG.usageReports, false);
+		assert.equal(mergeAuxiliaryConfig({ auxiliary: { usageReports: true } }).config.usageReports, true);
+	});
+
 	test("uses only the global agent config path", () => {
 		assert.equal(resolveAuxiliaryConfigPath("/agent"), "/agent/terrific.json");
 	});

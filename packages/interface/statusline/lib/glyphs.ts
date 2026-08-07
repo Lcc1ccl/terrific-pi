@@ -6,7 +6,10 @@ import type { IconMode } from "./types.ts";
 export type ResolvedIconMode = Exclude<IconMode, "auto">;
 
 export interface StatuslineGlyphs {
-	git: string;
+	branch: string;
+	worktree: string;
+	folder: string;
+	context: string;
 	runtime: string;
 	speed: string;
 	latency: string;
@@ -26,7 +29,6 @@ export interface StatuslineGlyphs {
 	untracked: string;
 	renamed: string;
 	deleted: string;
-	home: string;
 	fast: string;
 	quota: string;
 	success: string;
@@ -36,29 +38,33 @@ export interface StatuslineGlyphs {
 
 const GLYPHS: Record<ResolvedIconMode, StatuslineGlyphs> = {
 	emoji: {
-		git: "🌿", runtime: "⚙", speed: "🚀", latency: "⏳", done: "✓", input: "🔼", output: "🔽",
+		branch: "⑂", worktree: "🌳", folder: "📁", context: "🪟",
+		runtime: "⚙", speed: "🚀", latency: "⏳", done: "✓", input: "🔼", output: "🔽",
 		cache: "🎯", cost: "$", stall: "⚠", ahead: "↑", behind: "↓", diverged: "⇕", conflicted: "=",
 		stashed: "≡", modified: "!", staged: "+", untracked: "?", renamed: "→", deleted: "✗",
-		home: "🏠", fast: "⚡", quota: "📊", success: "✓", error: "✗", duration: "🕒",
+		fast: "⚡", quota: "📊", success: "✓", error: "✗", duration: "🕒",
 	},
 	plain: {
-		git: "git", runtime: "runtime", speed: "TPS", latency: "TTFT", done: "run", input: "in", output: "out",
+		branch: "", worktree: "git", folder: "", context: "context",
+		runtime: "runtime", speed: "TPS", latency: "TTFT", done: "run", input: "in", output: "out",
 		cache: "cache", cost: "$", stall: "stall", ahead: "ahead ", behind: "behind ", diverged: "diverged ",
 		conflicted: "conflict ", stashed: "stash ", modified: "modified ", staged: "staged ", untracked: "untracked ",
 		renamed: "renamed ", deleted: "deleted ",
-		home: "", fast: "fast", quota: "usage", success: "ok", error: "error", duration: "time",
+		fast: "fast", quota: "usage", success: "ok", error: "error", duration: "time",
 	},
 	nerd: {
-		git: "", runtime: "", speed: "󰓅", latency: "", done: "", input: "", output: "",
+		branch: "", worktree: "", folder: "", context: "",
+		runtime: "", speed: "󰓅", latency: "", done: "", input: "", output: "",
 		cache: "", cost: "", stall: "", ahead: "↑", behind: "↓", diverged: "⇕", conflicted: "=",
 		stashed: "$", modified: "!", staged: "+", untracked: "?", renamed: "»", deleted: "✘",
-		home: "", fast: "", quota: "󰓎", success: "", error: "", duration: "",
+		fast: "", quota: "󰓎", success: "", error: "", duration: "",
 	},
 	ascii: {
-		git: "*", runtime: "R", speed: ">", latency: "~", done: "+", input: "^", output: "v",
+		branch: "@", worktree: "*", folder: "/", context: "[]",
+		runtime: "R", speed: ">", latency: "~", done: "+", input: "^", output: "v",
 		cache: "c", cost: "$", stall: "!", ahead: "^", behind: "v", diverged: "^v", conflicted: "=",
 		stashed: "S", modified: "!", staged: "A", untracked: "?", renamed: "r", deleted: "x",
-		home: "@", fast: "F", quota: "%", success: "+", error: "x", duration: "t",
+		fast: "F", quota: "%", success: "+", error: "x", duration: "t",
 	},
 };
 

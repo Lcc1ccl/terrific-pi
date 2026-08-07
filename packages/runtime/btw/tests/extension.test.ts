@@ -61,3 +61,32 @@ it("labels the global BTW target separately from the effective project value", a
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
 	}
 });
+
+it("emits a settled usage scope from the real /btw command path", async () => {
+	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "btw-scope-"));
+	let command: any;
+	const emitted: Array<{ name: string; value: any }> = [];
+	try {
+		btwExtension({
+			events: { emit(name: string, value: unknown) { emitted.push({ name, value }); } },
+			registerCommand(_name: string, value: unknown) { command = value; },
+			on() {},
+		} as never);
+		await command.handler("question", {
+			cwd: "/workspace",
+			hasUI: true,
+			mode: "tui",
+			isProjectTrusted: () => false,
+			modelRegistry: { find: () => undefined },
+			ui: { notify() {} },
+		});
+		const settled = emitted.filter((event) => event.name === "terrific-pi:auxiliary-usage:scope-settled-v1");
+		assert.equal(settled.length, 1);
+		assert.equal(settled[0]?.value.version, 1);
+		assert.match(settled[0]?.value.scopeId ?? "", /^[0-9a-f-]{36}$/i);
+	} finally {
+		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+	}
+});

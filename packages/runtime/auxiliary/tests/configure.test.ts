@@ -123,6 +123,20 @@ describe("auxiliary configurator", () => {
 		assert.deepEqual(saved.docsflow, { vaultEnabled: false });
 	});
 
+	test("toggles per-call and settled-turn usage reports from the main menu", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-usage-reports-"));
+		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({ auxiliary: {} }), "utf8");
+		const ui = new ScriptedUi(["Usage reports", "On", "Done"]);
+
+		await runAuxiliaryConfigurator({ agentDir, modelRefs: [], ui });
+
+		assert.equal(readConfig(agentDir).auxiliary.usageReports, true);
+		const main = ui.dialogs.find((item) => item.title.startsWith("Auxiliary Models"));
+		const usageItem = main?.options.find((option) => option.startsWith("Usage reports"));
+		assert.ok(usageItem);
+		assert.match(main?.descriptions[usageItem] ?? "", /each auxiliary call.*settled main turn.*scoped command/i);
+	});
+
 	test("keeps exactly six public routes without a vision replacement", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "aux-configure-hidden-routes-"));
 		writeFileSync(join(agentDir, "terrific.json"), JSON.stringify({ auxiliary: {} }), "utf8");

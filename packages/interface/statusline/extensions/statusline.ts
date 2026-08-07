@@ -37,7 +37,7 @@ import type {
 	StatusSnapshot,
 	ToolActivity,
 } from "../lib/types.ts";
-import { aggregateAuxiliaryUsage, aggregateSessionUsage, hasAuxUsage } from "../lib/usage.ts";
+import { aggregateSessionUsage } from "../lib/usage.ts";
 import {
 	buildWidgetSegments,
 	FAST_STATUS_KEY,
@@ -62,15 +62,14 @@ function parseNumstat(output: string): BranchChangeStats {
 	return { additions, deletions };
 }
 
-const AUXILIARY_USAGE_CHANGED_EVENT = "terrific-pi:auxiliary-usage:changed-v1";
-const EDITOR_STATUS_EVENT = "terrific-pi:statusline:editor-v1";
+const EDITOR_STATUS_EVENT = "terrific-pi:statusline:editor-v2";
 
 type EditorStatusSource = {
-	render(width: number): string;
+	render(line: "line0" | "line1", width: number): string;
 };
 
 type EditorStatusRequest = {
-	version: 1;
+	version: 2;
 	active: boolean;
 	attach?: (source: EditorStatusSource) => void;
 	ownsEditor?: () => boolean;
@@ -79,7 +78,7 @@ type EditorStatusRequest = {
 function asEditorStatusRequest(value: unknown): EditorStatusRequest | undefined {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
 	const request = value as Partial<EditorStatusRequest>;
-	if (request.version !== 1 || typeof request.active !== "boolean") return undefined;
+	if (request.version !== 2 || typeof request.active !== "boolean") return undefined;
 	if (request.active && (typeof request.attach !== "function" || typeof request.ownsEditor !== "function")) return undefined;
 	return request as EditorStatusRequest;
 }
@@ -124,10 +123,8 @@ export default function statusline(pi: ExtensionAPI) {
 	let configPath = resolveRuntimeConfigPath();
 	let configLoadError: string | undefined;
 	let quotaContext: QuotaContext | undefined;
-	let usageContext: UsageContext | undefined;
 	let currentCwd: string | undefined;
 	let usage = aggregateSessionUsage([]);
-	let auxiliaryUsage = aggregateAuxiliaryUsage([]);
 	const activeTools = new Set<string>();
 	const toolCallNames = new Map<string, string>();
 	const toolStats: Record<string, ToolActivity> = {};
@@ -216,13 +213,8 @@ export default function statusline(pi: ExtensionAPI) {
 	const refreshUsage = (ctx: UsageContext) => {
 		const branch = ctx.sessionManager.getBranch();
 		usage = aggregateSessionUsage(branch);
-		auxiliaryUsage = aggregateAuxiliaryUsage(branch);
 		requestRender();
 	};
-
-	pi.events.on(AUXILIARY_USAGE_CHANGED_EVENT, () => {
-		if (usageContext) refreshUsage(usageContext);
-	});
 
 	const applyConfig = (next: StatuslineConfig, overwriteInvalid = false): MutationResult<void> => {
 		if (configLoadError && !overwriteInvalid) {
@@ -524,7 +516,6 @@ export default function statusline(pi: ExtensionAPI) {
 		projectRefreshTimer = undefined;
 		renderRequest = undefined;
 		quotaContext = ctx;
-		usageContext = ctx;
 		currentCwd = ctx.cwd;
 		quotaMonitor.clear();
 		runState = "Ready";
@@ -571,7 +562,6 @@ export default function statusline(pi: ExtensionAPI) {
 					fast: fastStatus ? sanitizeStatus(fastStatus) || undefined : undefined,
 					tokens: usage.tokens,
 					cost: usage.cost,
-					auxUsage: hasAuxUsage(auxiliaryUsage) ? auxiliaryUsage : undefined,
 					context: context
 						? {
 							tokens: context.tokens,
@@ -596,13 +586,14 @@ export default function statusline(pi: ExtensionAPI) {
 				};
 			};
 			const source: EditorStatusSource = {
-				render: (width) => renderEditorStatus(
+				render: (line, width) => renderEditorStatus(
 					buildWidgetSegments(currentSnapshot(), config),
 					config,
 					theme,
 					width,
 					truncateToWidth,
 					visibleWidth,
+					line,
 				),
 			};
 			editorStatusSource = source;
@@ -627,7 +618,7 @@ export default function statusline(pi: ExtensionAPI) {
 						width,
 						truncateToWidth,
 						visibleWidth,
-						!ownsEditorStatus(),
+						ownsEditorStatus() ? "line2" : "line0",
 					);
 				},
 			};
@@ -734,7 +725,6 @@ export default function statusline(pi: ExtensionAPI) {
 	});
 	pi.on("session_tree", async (_event, ctx) => {
 		quotaContext = ctx;
-		usageContext = ctx;
 		telemetryTracker.reset("tree");
 		performanceView = undefined;
 		resetToolActivity();
@@ -770,11 +760,9 @@ export default function statusline(pi: ExtensionAPI) {
 		unsubscribeEditorStatus();
 		clearActiveTools();
 		quotaContext = undefined;
-		usageContext = undefined;
 		currentCwd = undefined;
 		quotaMonitor.dispose();
 		usage = aggregateSessionUsage([]);
-		auxiliaryUsage = aggregateAuxiliaryUsage([]);
 		environment = undefined;
 	});
 }

@@ -29,6 +29,7 @@
   },
   "auxiliary": {
     "enabled": true,
+    "usageReports": false,
     "default": {
       "model": "openai/gpt-5.4-mini",
       "thinking": "off",

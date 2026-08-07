@@ -113,7 +113,7 @@ export class WidgetsSetupComponent {
 				`${this.key("tui.select.confirm", "enter")} done`,
 				`${this.key("tui.select.cancel", "escape")} back`,
 			].join(" · ")),
-			th.fg("dim", "LINE0 = editor bottom-right; LINE1-4 = footer rows"),
+			th.fg("dim", "LINE0 = editor top-left; LINE1 = editor bottom-right; LINE2-4 = footer rows"),
 			"",
 		];
 

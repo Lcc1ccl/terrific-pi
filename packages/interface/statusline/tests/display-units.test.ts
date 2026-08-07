@@ -70,10 +70,18 @@ describe("glyph modes", () => {
 		assert.equal(resolveIconMode("ascii"), "ascii");
 		assert.equal(resolveIconMode("auto", { TERM_PROGRAM: "WezTerm" }), "nerd");
 		assert.equal(resolveIconMode("auto", { TERM: "xterm-256color" }), "ascii");
+		for (const mode of ["emoji", "nerd", "ascii"] as const) {
+			assert.notEqual(resolveGlyphs(mode).branch, "");
+			assert.notEqual(resolveGlyphs(mode).worktree, "");
+			assert.notEqual(resolveGlyphs(mode).context, "");
+		}
 		for (const mode of ["emoji", "plain", "nerd", "ascii", "auto"] as const) {
-			assert.notEqual(resolveGlyphs(mode).git, "");
 			assert.notEqual(resolveGlyphs(mode).speed, "");
 		}
+		assert.equal(resolveGlyphs("emoji").folder, "📁");
+		assert.equal(resolveGlyphs("emoji").branch, "⑂");
+		assert.equal(resolveGlyphs("emoji").worktree, "🌳");
+		assert.equal(resolveGlyphs("emoji").context, "🪟");
 	});
 });
 
@@ -151,7 +159,7 @@ describe("ordinary widget integration", () => {
 				width,
 				truncateToWidth,
 				visibleWidth,
-				true,
+				"line0",
 			);
 			for (const line of rendered) {
 				assert.equal(line.includes("https://example.com"), false);

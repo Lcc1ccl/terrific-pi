@@ -34,6 +34,7 @@ const DEFAULT_ROUTE: AuxiliaryRouteConfig = {
 
 export const DEFAULT_AUXILIARY_CONFIG: AuxiliaryConfig = {
 	enabled: true,
+	usageReports: false,
 	default: DEFAULT_ROUTE,
 	tasks: {
 		compression: { thinking: "low", timeoutMs: 120_000, maxOutputTokens: 12_000, maxRetries: 0 },
@@ -61,6 +62,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function cloneConfig(config: AuxiliaryConfig): AuxiliaryConfig {
 	return {
 		enabled: config.enabled,
+		usageReports: config.usageReports,
 		default: { ...config.default, fallbackModels: [...config.default.fallbackModels] },
 		tasks: Object.fromEntries(Object.entries(config.tasks).map(([key, route]) => [key, {
 			...route,
@@ -143,6 +145,7 @@ export function mergeAuxiliaryConfig(raw: unknown): MergeAuxiliaryConfigResult {
 
 	const config = cloneConfig(DEFAULT_AUXILIARY_CONFIG);
 	config.enabled = typeof root.enabled === "boolean" ? root.enabled : config.enabled;
+	config.usageReports = typeof root.usageReports === "boolean" ? root.usageReports : config.usageReports;
 	config.default = mergeRoute(root.default, config.default);
 
 	if (isRecord(root.tasks)) {

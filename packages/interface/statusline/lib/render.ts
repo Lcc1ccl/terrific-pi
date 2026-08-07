@@ -5,6 +5,7 @@ import {
 } from "./config.ts";
 import type {
 	Accent,
+	SegmentPart,
 	SegmentTone,
 	StatuslineConfig,
 	StatuslineSeparator,
@@ -15,6 +16,7 @@ import { WIDGET_LINE_IDS } from "./types.ts";
 
 export type HostThemeColor =
 	| "accent"
+	| "mdHeading"
 	| "success"
 	| "error"
 	| "warning"
@@ -46,6 +48,7 @@ export function formatWidgetSeparator(
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 const OSC_PATTERN = /\x1b\][^\x07]*(?:\x07|\x1b\\|$)/g;
 const CONTROL_PATTERN = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g;
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export function stripTerminalControls(text: string): string {
 	return text
@@ -95,7 +98,11 @@ function hostThemeColor(accent: Accent, tone: SegmentTone = "value"): HostThemeC
 		case "success":
 			return "success";
 		case "active":
+		case "model":
 			return "accent";
+		case "branch":
+		case "cost":
+			return "mdHeading";
 		case "label":
 		case "icon":
 		case "muted":
@@ -150,8 +157,55 @@ function cloneSegments(segments: WidgetSegment[]): WidgetSegment[] {
 	}));
 }
 
+function pathParts(path: string): SegmentPart[] {
+	const split = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+	if (split >= 0 && split < path.length - 1) {
+		return [
+			{ text: path.slice(0, split + 1), tone: "active" },
+			{ text: path.slice(split + 1), tone: "active" },
+		];
+	}
+	return [{ text: path, tone: "active" }];
+}
+
+function leftEllipsize(text: string, width: number, measure: (text: string) => number): string {
+	const clean = stripTerminalControls(text);
+	if (measure(clean) <= width) return clean;
+	const ellipsis = "…";
+	if (measure(ellipsis) > width) return "";
+	let suffix = "";
+	const graphemes = Array.from(
+		GRAPHEME_SEGMENTER.segment(clean),
+		({ segment }) => segment,
+	);
+	for (const grapheme of graphemes.reverse()) {
+		const candidate = `${ellipsis}${grapheme}${suffix}`;
+		if (measure(candidate) > width) break;
+		suffix = `${grapheme}${suffix}`;
+	}
+	return `${ellipsis}${suffix}`;
+}
+
+function shrinkPathSegment(
+	segment: WidgetSegment,
+	width: number,
+	measure: (text: string) => number,
+): boolean {
+	if (segment.id !== "path" || measure(segment.text) <= width) return false;
+	const first = segment.parts?.[0];
+	const icon = first?.tone === "active" && first.text.endsWith(" ") ? first : undefined;
+	const prefix = icon?.text ?? "";
+	const body = icon ? segment.text.slice(prefix.length) : segment.text;
+	const clipped = leftEllipsize(body, Math.max(0, width - measure(prefix)), measure);
+	const text = `${prefix}${clipped}`;
+	if (!clipped || text === segment.text) return false;
+	segment.text = text;
+	segment.parts = [...(icon ? [{ ...icon }] : []), ...pathParts(clipped)];
+	return true;
+}
+
 /**
- * Drop lowest-priority complete segments, shrink bars, then leave final truncate to caller.
+ * Shrink paths first, then drop lowest-priority complete segments and shrink bars.
  * Never reorders remaining segments.
  */
 export function fitSegmentsToWidth(
@@ -168,7 +222,18 @@ export function fitSegmentsToWidth(
 	const lineWidth = () => measure(colorizeSegments(current, config, theme, indent));
 	if (lineWidth() <= maxWidth) return current;
 
-	// 1) Drop high-priority (low importance) segments one by one.
+	// 1) Preserve the useful tail of elastic paths before dropping whole widgets.
+	for (const segment of current) {
+		if (segment.id !== "path" || lineWidth() <= maxWidth) continue;
+		const overflow = lineWidth() - maxWidth;
+		const first = segment.parts?.[0];
+		const prefixWidth = first?.tone === "active" && first.text.endsWith(" ") ? measure(first.text) : 0;
+		const minimum = prefixWidth + measure("…");
+		shrinkPathSegment(segment, Math.max(minimum, measure(segment.text) - overflow), measure);
+	}
+	if (lineWidth() <= maxWidth) return current;
+
+	// 2) Drop high-priority (low importance) segments one by one.
 	while (current.length > 1 && lineWidth() > maxWidth) {
 		let dropIndex = -1;
 		let dropPriority = -1;
@@ -185,7 +250,7 @@ export function fitSegmentsToWidth(
 
 	if (lineWidth() <= maxWidth) return current;
 
-	// 2) Shrink bar segments without changing percentages.
+	// 3) Shrink bar segments without changing percentages.
 	let shrunk = true;
 	while (shrunk && lineWidth() > maxWidth) {
 		shrunk = false;
@@ -231,9 +296,10 @@ export function renderEditorStatus(
 	width: number,
 	truncate: (text: string, maxWidth: number, ellipsis: string) => string,
 	measure: (text: string) => number = plainVisibleWidth,
+	line: "line0" | "line1" = "line0",
 ): string {
 	if (width <= 0) return "";
-	const source = segmentsForLine(segments, config, "line0");
+	const source = segmentsForLine(segments, config, line);
 	if (source.length === 0) return "";
 	return renderSingleLine(source, config, theme, width, truncate, measure, "");
 }
@@ -245,9 +311,10 @@ export function renderStatusLine(
 	width: number,
 	truncate: (text: string, maxWidth: number, ellipsis: string) => string,
 	measure: (text: string) => number = plainVisibleWidth,
-	includeLine0 = false,
+	startLine: WidgetLineId | boolean = "line1",
 ): string[] {
-	const start = includeLine0 ? 0 : 1;
+	const firstLine = typeof startLine === "boolean" ? (startLine ? "line0" : "line1") : startLine;
+	const start = Math.max(0, WIDGET_LINE_IDS.indexOf(firstLine));
 	const lines: string[] = [];
 	for (const line of WIDGET_LINE_IDS.slice(start)) {
 		const source = segmentsForLine(segments, config, line);

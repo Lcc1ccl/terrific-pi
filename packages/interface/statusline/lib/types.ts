@@ -62,6 +62,9 @@ export type Accent =
 export type SegmentTone =
 	| "icon"
 	| "label"
+	| "model"
+	| "branch"
+	| "cost"
 	| "value"
 	| "muted"
 	| "dim"
@@ -164,22 +167,7 @@ export interface ToolActivity {
 	error: number;
 }
 
-/** Auxiliary usage folded into main tokens/cost widgets as dim Ⅰ suffixes. */
-export interface AuxiliaryUsageView {
-	input: number;
-	output: number;
-	/** Combined totals with no input/output split (e.g. research token count). */
-	unsplit: number;
-	/** Sum of totalTokens across aux calls. */
-	tokens: number;
-	/** Known aux cost sum (0 when none reported). */
-	cost: number;
-	/** At least one successful call exposed no public token usage contract. */
-	hasUnknownUsage?: boolean;
-	/** At least one successful call omitted cost while others may still report it. */
-	hasUnknownCost?: boolean;
-}
-
+/** Main-session state only; auxiliary usage is reported by the Auxiliary package. */
 export interface StatusSnapshot {
 	cwd: string;
 	sessionName?: string;
@@ -192,8 +180,6 @@ export interface StatusSnapshot {
 	fast?: string;
 	tokens: TokenTotals;
 	cost: number;
-	/** Task-scoped auxiliary usage rendered as dim Ⅰ suffixes on tokens/cost. */
-	auxUsage?: AuxiliaryUsageView;
 	context?: ContextUsageView;
 	branch?: string | null;
 	branchDiff?: BranchChangeStats;

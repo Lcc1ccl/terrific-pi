@@ -64,7 +64,7 @@ Only the global file is read for auxiliary routing:
 
 Project-local `auxiliary` config is intentionally ignored because a model route decides which provider receives project data. The config must not contain API keys, headers, or base URLs; authentication and endpoints stay in Pi's model registry.
 
-Run `/aux config` in TUI mode to edit the global runtime, default route, and task routes. The selected menu item shows a wrapped `Tip:` explaining its runtime impact. Model pickers use fuzzy matching across model IDs, full refs, and display names, so queries such as `5.6` or `sol` find `gpt-5.6-sol`. Each confirmed change is written atomically while preserving other `terrific.json` sections; malformed JSON is never overwritten.
+Run `/aux config` in TUI mode to edit the global runtime, usage-report toggle, default route, and task routes. `usageReports` defaults to `false`; when enabled it shows one notification per auxiliary attempt, one aggregate after each settled main turn, and a separate aggregate for command-scoped `/btw` or `/aux summarize` calls. The selected menu item shows a wrapped `Tip:` explaining its runtime impact. Model pickers use fuzzy matching across model IDs, full refs, and display names, so queries such as `5.6` or `sol` find `gpt-5.6-sol`. Each confirmed change is written atomically while preserving other `terrific.json` sections; malformed JSON is never overwritten.
 
 The Default route menu includes **Apply primary model to all tasks**. After confirmation, it copies the effective default model to the six public task routes and enables auxiliary routing for each. Existing thinking, timeout, output, retry, fallback, and unknown task fields remain unchanged; internal compatibility routes are excluded.
 
@@ -87,8 +87,8 @@ The six public Auxiliary routes remain unchanged. The generic runtime still vali
 
 ```text
 /aux                         open the TUI manager (or print status outside TUI)
-/aux config                  edit routes and Git finalize policy
-/aux status                  effective routes, branch usage, and recent errors
+/aux config                  edit runtime, usage reports, routes, and Git finalize policy
+/aux status                  effective routes, usage-report setting, branch usage, and recent errors
 /aux summarize <text>
 ```
 
@@ -113,9 +113,11 @@ It never stages files, creates an upstream, force pushes, pushes tags, or rebase
 
 Each attempt appends `terrific-pi:auxiliary-usage-v1` to the current session branch. Entries contain model/task/status/usage metadata only, never prompts, responses, diffs, URLs, tool arguments, or error stacks.
 
+When `auxiliary.usageReports` is enabled, each attempt produces an `Aux call` notification and `agent_settled` produces one `Aux turn` aggregate for the current main turn. Command-scoped `/btw` and `/aux summarize` attempts carry a metadata-only scope id and produce their own `Aux command` aggregate, so completion timing cannot move them between main turns. The toggle is off by default. These reports are independent from the main model's statusline tokens and cost.
+
 While a call is active, status key `auxiliary` still tracks the task, but statusline progress ignores it so Taskboard can own live tool/model display (`web_research · provider/model` via tool updates).
 
-Branch-local usage is folded into the statusline main `tokens` / `cost` widgets as dim `Ⅰ` suffixes (no separate aux widget or call counter).
+Statusline never folds auxiliary usage into its main-session `tokens` or `cost` widgets.
 
 ## Mode Semantics
 

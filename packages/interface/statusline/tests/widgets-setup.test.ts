@@ -30,7 +30,7 @@ describe("formatWidgetsPreview", () => {
 			spacing: 0,
 		});
 		assert.doesNotMatch(preview, /🔼|🔽|🎯/);
-		assert.match(preview, /in 1\.5KⅠ 3\.7K · out 800Ⅰ 900/);
+		assert.match(preview, /in 1\.5K · out 800/);
 		assert.match(preview, /CH 66\.7%/);
 		assert.match(preview, /│/);
 	});

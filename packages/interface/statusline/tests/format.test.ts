@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
-	appendAuxTokenExtras,
 	formatBranch,
 	formatBranchDiff,
 	formatCache,
@@ -40,15 +39,7 @@ describe("formatCost", () => {
 		assert.equal(formatCost(0).text, "$0.00");
 		assert.equal(formatCost(0.421).text, "$0.42");
 		assert.equal(formatCost(12.5, true).text, "$12.50");
-		assert.deepEqual(formatCost(0.42).parts.map((part) => part.tone), ["label", "value"]);
-	});
-
-	it("appends dim auxiliary cost with Ⅰ", () => {
-		assert.equal(formatCost(0.42, false, 0.03).text, "$0.42Ⅰ $0.03");
-		const tones = formatCost(0.42, false, 0.03).parts.map((part) => part.tone);
-		assert.ok(tones.includes("dim"));
-		assert.equal(formatCost(0.42, false, 0.03, true).text, "$0.42Ⅰ $0.03?");
-		assert.equal(formatCost(0.42, false, 0, true).text, "$0.42Ⅰ ?");
+		assert.deepEqual(formatCost(0.42).parts.map((part) => part.tone), ["cost", "cost"]);
 	});
 });
 
@@ -86,7 +77,7 @@ describe("extended icon modes", () => {
 	it("uses nerd glyphs across every existing icon-bearing formatter", () => {
 		assert.equal(formatCache(tokens, false, "nerd")?.text, " 66.7%");
 		assert.equal(formatTokenDirection("in", 1_500, "nerd").text, " 1.5K");
-		assert.equal(formatBranch("main", "nerd").text, "");
+		assert.equal(formatBranch("main", "nerd").text, " main");
 		assert.equal(formatFastBadge("legacy", "nerd")?.text, "");
 		assert.equal(formatQuota(quota, "nerd", 4)?.text, "󰓎 5h [██░░] 42%");
 		assert.equal(formatToolActivity(activity, "nerd")?.text, " total x1 ·  Bash x2");
@@ -96,7 +87,7 @@ describe("extended icon modes", () => {
 	it("uses ASCII glyphs and auto never falls back to emoji", () => {
 		assert.equal(formatCache(tokens, false, "ascii")?.text, "c 66.7%");
 		assert.equal(formatTokenDirection("out", 800, "ascii").text, "v 800");
-		assert.equal(formatBranch("main", "ascii").text, "* main");
+		assert.equal(formatBranch("main", "ascii").text, "@ main");
 		assert.equal(formatFastBadge("legacy", "ascii")?.text, "F");
 		assert.equal(formatQuota(quota, "ascii", 4)?.text, "% 5h [██░░] 42%");
 		assert.equal(formatToolActivity(activity, "ascii")?.text, "x total x1 · + Bash x2");
@@ -106,11 +97,11 @@ describe("extended icon modes", () => {
 });
 
 describe("formatContextText", () => {
-	it("formats remaining and used modes", () => {
-		assert.equal(formatContextText(37.2, "remaining")?.text, "Context 63% left");
-		assert.equal(formatContextText(37.2, "used")?.text, "Context 37% used");
-		assert.equal(formatContextText(37.2, "remaining", true)?.text, "ctx 63% left");
-		assert.equal(formatContextText(37.2, "used", true)?.text, "ctx 37%");
+	it("uses the window icon in emoji mode and text labels in plain mode", () => {
+		assert.equal(formatContextText(37.2, "remaining")?.text, "🪟 63% left");
+		assert.equal(formatContextText(37.2, "used")?.text, "🪟 37% used");
+		assert.equal(formatContextText(37.2, "remaining", true, "plain")?.text, "ctx 63% left");
+		assert.equal(formatContextText(37.2, "used", true, "plain")?.text, "ctx 37%");
 		assert.equal(formatContextText(70.1, "used")?.parts.at(-1)?.tone, "warn");
 		assert.equal(formatContextText(null, "remaining"), undefined);
 	});
@@ -126,13 +117,13 @@ describe("usageValueTone", () => {
 });
 
 describe("formatContextBar", () => {
-	it("prefixes Context and keeps the bar", () => {
-		assert.equal(formatContextBar(40, 10, "remaining")?.text, "Context [██████░░░░] 60%");
-		assert.equal(formatContextBar(40, 10, "used")?.text, "Context [████░░░░░░] 40%");
-		assert.equal(formatContextBar(40, 10, "used", true)?.text, "ctx [████░░░░░░] 40%");
+	it("prefixes the window icon and keeps the bar", () => {
+		assert.equal(formatContextBar(40, 10, "remaining")?.text, "🪟 [██████░░░░] 60%");
+		assert.equal(formatContextBar(40, 10, "used")?.text, "🪟 [████░░░░░░] 40%");
+		assert.equal(formatContextBar(40, 10, "used", true, "plain")?.text, "ctx [████░░░░░░] 40%");
 		assert.equal(formatContextBar(null, 10, "remaining"), undefined);
 		const tones = formatContextBar(40, 10, "used")?.parts.map((part) => part.tone);
-		assert.ok(tones?.includes("label"));
+		assert.ok(tones?.includes("icon"));
 		assert.ok(tones?.includes("bar"));
 		assert.ok(tones?.includes("value"));
 	});
@@ -152,7 +143,7 @@ describe("formatModelContent", () => {
 		assert.deepEqual(formatModelContent("gpt-5", "off", true), {
 			text: "gpt-5 off",
 			parts: [
-				{ text: "gpt-5", tone: "value" },
+				{ text: "gpt-5", tone: "model" },
 				{ text: " off", tone: "thinkingOff" },
 			],
 		});
@@ -174,12 +165,13 @@ describe("formatBranchDiff", () => {
 });
 
 describe("formatBranch", () => {
-	it("maps default branches by iconMode", () => {
-		assert.equal(formatBranch("main", "emoji").text, "🏠");
-		assert.equal(formatBranch("master", "emoji").text, "🏠");
+	it("keeps branch names and gives each icon mode a branch marker", () => {
+		assert.equal(formatBranch("main", "emoji").text, "⑂ main");
+		assert.equal(formatBranch("master", "emoji").text, "⑂ master");
 		assert.equal(formatBranch("main", "plain").text, "main");
-		assert.equal(formatBranch("feature", "emoji").text, "feature");
+		assert.equal(formatBranch("feature", "emoji").text, "⑂ feature");
 		assert.equal(formatBranch("feature", "plain").text, "feature");
+		assert.ok(formatBranch("main", "emoji").parts.every((part) => part.tone === "branch"));
 	});
 });
 
@@ -189,20 +181,6 @@ describe("formatTokenDirection", () => {
 		assert.equal(formatTokenDirection("out", 3_200, "emoji").text, "🔽 3.2K");
 		assert.equal(formatTokenDirection("in", 12_500, "plain").text, "in 12.5K");
 		assert.equal(formatTokenDirection("out", 3_200, "plain").text, "out 3.2K");
-	});
-
-	it("appends dim auxiliary tokens with Ⅰ", () => {
-		assert.equal(formatTokenDirection("in", 167_000, "plain", 3_700).text, "in 167KⅠ 3.7K");
-		const parts = formatTokenDirection("in", 167_000, "plain", 3_700).parts;
-		assert.ok(parts.some((part) => part.tone === "dim" && part.text.includes("3.7K")));
-	});
-});
-
-describe("appendAuxTokenExtras", () => {
-	it("surfaces unknown even when some aux in/out is already known", () => {
-		const parts = [{ text: "in 1.5KⅠ 3.7K", tone: "value" as const }];
-		appendAuxTokenExtras(parts, { input: 3700, output: 0, unsplit: 0, unknown: true });
-		assert.equal(parts.map((part) => part.text).join(""), "in 1.5KⅠ 3.7KⅠ ?");
 	});
 });
 

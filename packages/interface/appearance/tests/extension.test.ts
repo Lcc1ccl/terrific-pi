@@ -21,16 +21,16 @@ function harness(configText?: string, options: { mode?: string; hasUI?: boolean;
   let editorFactory = options.foreign;
   const calls = { header: 0, editor: 0, notify: [] as string[] };
   const bridgeEvents: Array<{ name: string; active?: boolean }> = [];
-  const bridgeRequests: Array<{ active?: boolean; attach?: (source: { render(width: number): string }) => void; ownsEditor?: () => boolean }> = [];
+  const bridgeRequests: Array<{ active?: boolean; attach?: (source: { render(line: "line0" | "line1", width: number): string }) => void; ownsEditor?: () => boolean }> = [];
   let command: ((args: string, ctx: ExtensionContext) => unknown) | undefined;
   const pi = {
     events: {
       emit(name: string, value: unknown) {
-        const request = value as { active?: boolean; attach?: (source: { render(width: number): string }) => void };
+        const request = value as { active?: boolean; attach?: (source: { render(line: "line0" | "line1", width: number): string }) => void };
         bridgeEvents.push({ name, active: request.active });
         bridgeRequests.push(request);
         if (request.active && options.statusText) {
-          request.attach?.({ render: () => options.statusText! });
+          request.attach?.({ render: (line) => `${line}:${options.statusText!}` });
         }
       },
     },
@@ -124,14 +124,16 @@ describe("appearance extension ownership", () => {
       },
       { matches: () => false },
     );
-    assert.deepEqual(h.bridgeEvents, [{ name: "terrific-pi:statusline:editor-v1", active: true }]);
+    assert.deepEqual(h.bridgeEvents, [{ name: "terrific-pi:statusline:editor-v2", active: true }]);
     assert.equal(h.bridgeRequests[0]?.ownsEditor?.(), true);
     h.setEditorFactory(() => ({ render: () => [] }));
     assert.equal(h.bridgeRequests[0]?.ownsEditor?.(), false);
-    assert.match(editor.render(50).at(-1) ?? "", / gpt-test high · EDIT · fast ╯$/);
+    const rendered = editor.render(60);
+    assert.match(rendered[0] ?? "", /^╭ line0:gpt-test high · EDIT · fast /);
+    assert.match(rendered.at(-1) ?? "", / line1:gpt-test high · EDIT · fast ╯$/);
 
     await h.handlers.get("session_shutdown")?.({}, h.ctx);
-    assert.deepEqual(h.bridgeEvents.at(-1), { name: "terrific-pi:statusline:editor-v1", active: false });
+    assert.deepEqual(h.bridgeEvents.at(-1), { name: "terrific-pi:statusline:editor-v2", active: false });
   });
 
   it("cancels a mounted bridge request even when statusline has not attached a source", async () => {
@@ -152,10 +154,10 @@ describe("appearance extension ownership", () => {
       },
       { matches: () => false },
     );
-    assert.deepEqual(h.bridgeEvents, [{ name: "terrific-pi:statusline:editor-v1", active: true }]);
+    assert.deepEqual(h.bridgeEvents, [{ name: "terrific-pi:statusline:editor-v2", active: true }]);
 
     await h.handlers.get("session_shutdown")?.({}, h.ctx);
-    assert.deepEqual(h.bridgeEvents.at(-1), { name: "terrific-pi:statusline:editor-v1", active: false });
+    assert.deepEqual(h.bridgeEvents.at(-1), { name: "terrific-pi:statusline:editor-v2", active: false });
   });
 
   it("does not attach statusline metadata when the editor is disabled or conflicted", async () => {

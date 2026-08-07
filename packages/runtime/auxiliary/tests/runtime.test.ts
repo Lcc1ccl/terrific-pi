@@ -116,6 +116,12 @@ describe("AuxiliaryRuntime", () => {
 		assert.deepEqual(active, ["aux text_summary · small", ""]);
 	});
 
+	test("propagates a command usage scope to recorded attempts", async () => {
+		const { runtime, attempts } = harness([response("ok")]);
+		await runtime.call({ ...request, scopeId: "command-1" }, route);
+		assert.equal(attempts[0]?.scopeId, "command-1");
+	});
+
 	test("falls back after a provider failure", async () => {
 		const { runtime, attempts } = harness([new Error("network"), response("fallback", { provider: "grok", model: "fallback" })]);
 		const result = await runtime.call(request, { ...route, fallbackModels: ["grok/fallback"] });

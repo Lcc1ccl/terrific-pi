@@ -82,15 +82,11 @@ describe("explicit footer lines", () => {
 			line2: ["path", "session", "branch", "branchDiff"],
 			line3: ["progress", "state", "duration", "toolActivity"],
 		}), { iconMode: "emoji", contextMode: "used", contextBarWidth: 8 });
-		const snapshot = {
-			...hudSnapshot,
-			auxUsage: { input: 3_700, output: 900, unsplit: 0, tokens: 4_600, cost: 0.03 },
-		};
 		assert.deepEqual(
-			renderStatusLine(buildWidgetSegments(snapshot, value), value, TEST_THEME, 120, (text) => text),
+			renderStatusLine(buildWidgetSegments(hudSnapshot, value), value, TEST_THEME, 120, (text) => text),
 			[
-				"  Context [░░░░░░░░] 4% · $0.42Ⅰ $0.03 · 🎯 23.5% · 🔼 12.5KⅠ 3.7K · 🔽 3.2KⅠ 900",
-				"  /home/user/proj · demo · 🏠 · +12 -3",
+				"  🪟 [░░░░░░░░] 4% · $0.42 · 🎯 23.5% · 🔼 12.5K · 🔽 3.2K",
+				"  📁 /home/user/proj · demo · ⑂ main · +12 -3",
 				"  task · Ready · 🕒 12s / 1m45s · ✓ core_tools x9",
 			],
 		);
@@ -99,8 +95,12 @@ describe("explicit footer lines", () => {
 	it("can render LINE0 first for footer fallback", () => {
 		const value = config(lines({ line0: ["model"], line2: ["state"] }));
 		assert.deepEqual(
-			renderStatusLine(buildWidgetSegments(hudSnapshot, value), value, TEST_THEME, 80, (text) => text, undefined, true),
+			renderStatusLine(buildWidgetSegments(hudSnapshot, value), value, TEST_THEME, 80, (text) => text, undefined, "line0"),
 			["  gpt-5 high", "  Ready"],
+		);
+		assert.deepEqual(
+			renderStatusLine(buildWidgetSegments(hudSnapshot, value), value, TEST_THEME, 80, (text) => text, undefined, false),
+			["  Ready"],
 		);
 	});
 
@@ -114,7 +114,7 @@ describe("explicit footer lines", () => {
 		}));
 		const segments = buildWidgetSegments(hudSnapshot, value);
 		for (const width of [40, 60, 80, 120]) {
-			for (const line of renderStatusLine(segments, value, TEST_THEME, width, truncateToWidth, visibleWidth, true)) {
+			for (const line of renderStatusLine(segments, value, TEST_THEME, width, truncateToWidth, visibleWidth, "line0")) {
 				assert.ok(visibleWidth(line) <= width, `width ${width}: ${visibleWidth(line)} > ${width}`);
 			}
 		}
@@ -201,7 +201,29 @@ describe("responsive fitting", () => {
 	});
 });
 
-describe("terminal safety and host theme", () => {
+	it("shrinks paths before dropping complete widgets", () => {
+		const snapshot = {
+			...hudSnapshot,
+			cwd: "/home/user/a/very/long/project/directory/statusline-optimization",
+		};
+		const value = config(lines({ line1: ["path", "model"] }));
+		const fitted = fitSegmentsToWidth(
+			buildWidgetSegments(snapshot, value), value, TEST_THEME, 26, plainVisibleWidth,
+		);
+		assert.deepEqual(fitted.map((segment) => segment.id), ["path", "model"]);
+		assert.match(fitted[0]?.text ?? "", /^📁 …/);
+		assert.ok(plainVisibleWidth(fitted[0]?.text ?? "") < plainVisibleWidth("📁 /home/user/a/very/long/project/directory/statusline-optimization"));
+	});
+
+	it("preserves grapheme clusters when left-ellipsizing paths", () => {
+		const value = config(lines({ line1: ["path"] }), { iconMode: "plain" });
+		const [path] = buildWidgetSegments({ ...hudSnapshot, cwd: "x/e\u0301" }, value);
+		const [fitted] = fitSegmentsToWidth([path!], value, TEST_THEME, 1, visibleWidth, "");
+		assert.equal(fitted?.text, "…");
+		assert.equal(visibleWidth(fitted?.text ?? ""), 1);
+	});
+
+	describe("terminal safety and host theme", () => {
 	it("strips control sequences from every rendered segment", () => {
 		const unsafe: WidgetSegment[] = [{
 			id: "session",
@@ -216,14 +238,18 @@ describe("terminal safety and host theme", () => {
 		assert.match(text, /name! next/);
 	});
 
-	it("uses neutral hierarchy and native thinking colors", () => {
+	it("uses theme-owned category colors and native thinking colors", () => {
 		const calls: Array<[string, string]> = [];
 		const theme = { fg(color: string, text: string) { calls.push([color, text]); return text; } };
-		const value = config(lines({ line1: ["model", "path", "state"] }));
+		const value = config(lines({ line1: ["model", "path", "branch", "cost", "state"] }));
 		renderStatusLine(buildWidgetSegments(hudSnapshot, value), value, theme, 200, (text) => text);
-		assert.ok(calls.some(([color, text]) => color === "text" && text === "gpt-5"));
+		assert.ok(calls.some(([color, text]) => color === "accent" && text === "gpt-5"));
 		assert.ok(calls.some(([color, text]) => color === "thinkingHigh" && text === " high"));
-		assert.ok(calls.some(([color, text]) => color === "muted" && text === "/home/user/proj"));
+		assert.ok(calls.some(([color, text]) => color === "accent" && text.includes("📁")));
+		assert.ok(calls.some(([color, text]) => color === "accent" && text === "/home/user/"));
+		assert.ok(calls.some(([color, text]) => color === "accent" && text === "proj"));
+		assert.ok(calls.some(([color, text]) => color === "mdHeading" && text.includes("main")));
+		assert.ok(calls.some(([color, text]) => color === "mdHeading" && text.includes("$")));
 		assert.ok(calls.some(([color, text]) => color === "dim" && text === "Ready"));
 	});
 });

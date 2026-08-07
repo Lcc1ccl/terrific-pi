@@ -12,14 +12,14 @@ import {
 } from "../lib/config.ts";
 import { createAppearanceSettings } from "../lib/settings.ts";
 
-const EDITOR_STATUS_EVENT = "terrific-pi:statusline:editor-v1";
+const EDITOR_STATUS_EVENT = "terrific-pi:statusline:editor-v2";
 
 type EditorStatusSource = {
-  render(width: number): string;
+  render(line: "line0" | "line1", width: number): string;
 };
 
 type EditorStatusRequest = {
-  version: 1;
+  version: 2;
   active: boolean;
   attach?: (source: EditorStatusSource) => void;
   ownsEditor?: () => boolean;
@@ -41,7 +41,7 @@ export default function appearance(pi: ExtensionAPI): void {
         bridgeRequested = true;
         const ownerUi = editorUi;
         pi.events.emit(EDITOR_STATUS_EVENT, {
-          version: 1,
+          version: 2,
           active: true,
           ownsEditor: () => ownerUi.getEditorComponent() === editorFactory,
           attach(source) {
@@ -50,7 +50,13 @@ export default function appearance(pi: ExtensionAPI): void {
           },
         } satisfies EditorStatusRequest);
       }
-      return new AppearanceEditor(tui, theme, keybindings, (width) => statusSource?.render(width) ?? "");
+      return new AppearanceEditor(
+        tui,
+        theme,
+        keybindings,
+        (width) => statusSource?.render("line0", width) ?? "",
+        (width) => statusSource?.render("line1", width) ?? "",
+      );
     };
 
   pi.on("session_start", async (_event, ctx) => {
@@ -73,7 +79,7 @@ export default function appearance(pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", async () => {
-    if (bridgeRequested) pi.events.emit(EDITOR_STATUS_EVENT, { version: 1, active: false } satisfies EditorStatusRequest);
+    if (bridgeRequested) pi.events.emit(EDITOR_STATUS_EVENT, { version: 2, active: false } satisfies EditorStatusRequest);
     bridgeRequested = false;
     statusSource = undefined;
     editorTui = undefined;

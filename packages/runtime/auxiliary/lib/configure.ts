@@ -338,6 +338,11 @@ function mainMenuItems(deps: AuxiliaryConfiguratorDeps, state: ConfiguratorState
 			description: "Disabling stops auxiliary hooks and tools without deleting saved routes.",
 		},
 		{
+			id: "usageReports",
+			label: `Usage reports: ${state.config.usageReports ? "on" : "off"}`,
+			description: "Shows one notification for each auxiliary call and one aggregate for each settled main turn or scoped command.",
+		},
+		{
 			id: "default",
 			label: `Default route: ${compact(state.config.default.model)} · ${state.config.default.thinking}`,
 			description: "Fallback values for route fields without a task-specific preset or override; task-specific values still win.",
@@ -376,6 +381,20 @@ async function editRuntime(deps: AuxiliaryConfiguratorDeps, config: AuxiliaryCon
 	applyMutation(deps, (auxiliary) => {
 		auxiliary.enabled = enabled;
 	}, `auxiliary runtime: ${enabled ? "enabled" : "disabled"}`);
+}
+
+async function editUsageReports(deps: AuxiliaryConfiguratorDeps, config: AuxiliaryConfig): Promise<void> {
+	const choice = await deps.ui.select("Auxiliary usage reports", [
+		config.usageReports ? "On [current]" : "On",
+		config.usageReports ? "Off" : "Off [current]",
+		"Back",
+	]);
+	if (!choice || choice === "Back") return;
+	const enabled = choice.startsWith("On");
+	if (enabled === config.usageReports) return;
+	applyMutation(deps, (auxiliary) => {
+		auxiliary.usageReports = enabled;
+	}, `auxiliary usage reports: ${enabled ? "on" : "off"}`);
 }
 
 async function editUseAuxiliary(
@@ -728,6 +747,8 @@ export async function runAuxiliaryConfigurator(deps: AuxiliaryConfiguratorDeps):
 		if (!selectedItem || selectedItem.id === "done") return;
 		if (selectedItem.id === "runtime") {
 			await editRuntime(deps, state.config);
+		} else if (selectedItem.id === "usageReports") {
+			await editUsageReports(deps, state.config);
 		} else if (selectedItem.id === "default") {
 			await routeMenu(deps, { kind: "default" });
 		} else if (selectedItem.id.startsWith("task:")) {

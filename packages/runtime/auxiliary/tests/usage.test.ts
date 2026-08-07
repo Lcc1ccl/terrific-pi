@@ -41,6 +41,11 @@ describe("auxiliary usage", () => {
 		assert.equal(isAuxiliaryUsageEntry({ ...entry(), version: 2 }), false);
 	});
 
+	test("accepts a bounded usage scope id and rejects malformed scopes", () => {
+		assert.equal(isAuxiliaryUsageEntry(entry({ scopeId: "command-1" })), true);
+		assert.equal(isAuxiliaryUsageEntry({ ...entry(), scopeId: "" }), false);
+	});
+
 	test("aggregates only the supplied branch and preserves unknown cost", () => {
 		const totals = aggregateAuxiliaryUsage([
 			{ type: "custom", customType: AUXILIARY_USAGE_ENTRY_TYPE, data: entry() },

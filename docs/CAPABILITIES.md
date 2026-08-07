@@ -31,7 +31,7 @@ The root Pi manifest loads exactly these ten extension entries.
 | Priority request mutation | fast |
 | Auxiliary usage ledger | auxiliary |
 
-Dedicated status keys are not duplicated into generic progress. Runtime code has no cross-component source imports; integrations use Pi status, events, and session entries. Statusline `LINE0` accepts any widget and renders through Appearance's editor bottom-right bridge while Appearance owns that surface; `LINE1`-`LINE4` remain footer rows. Without an active Appearance editor owner, `LINE0` falls back to the first footer row.
+Dedicated status keys are not duplicated into generic progress. Runtime code has no cross-component source imports; integrations use Pi status, events, and session entries. While Appearance owns the editor, Statusline `LINE0` renders at its top-left and `LINE1` at its bottom-right through the versioned bridge; `LINE2`-`LINE4` remain footer rows. Without an active Appearance editor owner, all five lines fall back to the footer in order. Auxiliary usage remains Auxiliary-owned and is never merged into Statusline main-session totals.
 
 ## Configuration
 

@@ -133,7 +133,7 @@ async function settledRun(app: ReturnType<typeof harness>, ctx: any): Promise<vo
 }
 
 describe("statusline migration lifecycle", () => {
-	it("moves editor metadata only while appearance owns the editor", async () => {
+	it("moves LINE0 and LINE1 into the editor only while Appearance owns it", async () => {
 		const { cwd } = config({
 			widgets: ["path", "model", "mode", "fast", "state"],
 			iconMode: "plain",
@@ -146,28 +146,29 @@ describe("statusline migration lifecycle", () => {
 		assert.ok(footer);
 		assert.match(footer.render(120).join("\n"), /model high.*EDIT.*fast/);
 
-		let source: { render(width: number): string } | undefined;
+		let source: { render(line: "line0" | "line1", width: number): string } | undefined;
 		let ownsEditor = true;
-		app.emitBus("terrific-pi:statusline:editor-v1", {
-			version: 1,
+		app.emitBus("terrific-pi:statusline:editor-v2", {
+			version: 2,
 			active: true,
 			ownsEditor: () => ownsEditor,
-			attach(value: { render(width: number): string }) { source = value; },
+			attach(value: { render(line: "line0" | "line1", width: number): string }) { source = value; },
 		});
 		assert.ok(source);
-		assert.match(source.render(120), /model high.*EDIT.*fast/);
-		assert.doesNotMatch(footer.render(120).join("\n"), /model high|EDIT|fast/);
+		assert.match(source.render("line0", 120), /model high.*EDIT.*fast/);
+		assert.match(source.render("line1", 120), /statusline-lifecycle-.*Ready/);
+		assert.equal(footer.render(120).join("\n"), "");
 
 		ownsEditor = false;
 		assert.match(footer.render(120).join("\n"), /model high.*EDIT.*fast/);
 		ownsEditor = true;
-		assert.doesNotMatch(footer.render(120).join("\n"), /model high|EDIT|fast/);
+		assert.equal(footer.render(120).join("\n"), "");
 
-		app.emitBus("terrific-pi:statusline:editor-v1", { version: 1, active: false });
+		app.emitBus("terrific-pi:statusline:editor-v2", { version: 2, active: false });
 		assert.match(footer.render(120).join("\n"), /model high.*EDIT.*fast/);
 	});
 
-	it("projects arbitrary LINE0 widgets through Appearance", async () => {
+	it("projects arbitrary LINE0 and LINE1 widgets through Appearance", async () => {
 		const { cwd } = config({
 			lines: {
 				line0: ["path", "state"],
@@ -185,16 +186,16 @@ describe("statusline migration lifecycle", () => {
 		const footer = app.mountFooter();
 		assert.match(footer?.render(120).join("\n") ?? "", /statusline-lifecycle-.*Ready.*model/s);
 
-		let source: { render(width: number): string } | undefined;
-		app.emitBus("terrific-pi:statusline:editor-v1", {
-			version: 1,
+		let source: { render(line: "line0" | "line1", width: number): string } | undefined;
+		app.emitBus("terrific-pi:statusline:editor-v2", {
+			version: 2,
 			active: true,
 			ownsEditor: () => true,
-			attach(value: { render(width: number): string }) { source = value; },
+			attach(value: { render(line: "line0" | "line1", width: number): string }) { source = value; },
 		});
-		assert.match(source?.render(120) ?? "", /statusline-lifecycle-.*Ready/);
-		assert.match(footer?.render(120).join("\n") ?? "", /model high/);
-		assert.doesNotMatch(footer?.render(120).join("\n") ?? "", /statusline-lifecycle-|Ready/);
+		assert.match(source?.render("line0", 120) ?? "", /statusline-lifecycle-.*Ready/);
+		assert.match(source?.render("line1", 120) ?? "", /model high/);
+		assert.equal(footer?.render(120).join("\n") ?? "", "");
 	});
 
 	it("replays an editor attachment requested before the footer source mounts", async () => {
@@ -207,18 +208,18 @@ describe("statusline migration lifecycle", () => {
 		ctx.model.reasoning = true;
 		await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
 
-		let source: { render(width: number): string } | undefined;
-		app.emitBus("terrific-pi:statusline:editor-v1", {
-			version: 1,
+		let source: { render(line: "line0" | "line1", width: number): string } | undefined;
+		app.emitBus("terrific-pi:statusline:editor-v2", {
+			version: 2,
 			active: true,
 			ownsEditor: () => true,
-			attach(value: { render(width: number): string }) { source = value; },
+			attach(value: { render(line: "line0" | "line1", width: number): string }) { source = value; },
 		});
 		assert.equal(Boolean(source), false);
 
 		const footer = app.mountFooter(new Map([["mode", "EDIT"], ["fast", "fast"]]));
 		assert.ok(source);
-		assert.match(source.render(120), /model high.*EDIT.*fast/);
+		assert.match(source.render("line0", 120), /model high.*EDIT.*fast/);
 		assert.doesNotMatch(footer?.render(120).join("\n") ?? "", /model high|EDIT|fast/);
 	});
 
@@ -232,13 +233,13 @@ describe("statusline migration lifecycle", () => {
 		await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
 
 		let attached = false;
-		app.emitBus("terrific-pi:statusline:editor-v1", {
-			version: 1,
+		app.emitBus("terrific-pi:statusline:editor-v2", {
+			version: 2,
 			active: true,
 			ownsEditor: () => true,
 			attach() { attached = true; },
 		});
-		app.emitBus("terrific-pi:statusline:editor-v1", { version: 1, active: false });
+		app.emitBus("terrific-pi:statusline:editor-v2", { version: 2, active: false });
 
 		const footer = app.mountFooter(new Map([["mode", "EDIT"], ["fast", "fast"]]));
 		assert.equal(attached, false);

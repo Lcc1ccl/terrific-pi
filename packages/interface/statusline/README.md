@@ -1,30 +1,29 @@
 # statusline
 
-Configurable statusline footer extension for [pi](https://pi.dev).
+Configurable editor-border and footer status extension for [pi](https://pi.dev).
 
-Built for pi's `setFooter` extension API: active-branch metrics, git context, and agent run state.
+Built for pi's `setFooter` extension API plus Appearance's versioned editor bridge: active-branch metrics, git context, and agent run state.
 
 ## Features
 
-- Five explicit widget lines with independent order: `LINE0` for editor metadata and `LINE1`-`LINE4` for footer rows
+- Five explicit widget lines with independent order: `LINE0` at the editor top-left, `LINE1` at the editor bottom-right, and `LINE2`-`LINE4` as footer rows
 - Any widget can be assigned to any line; no project/usage/environment/activity classification
 - **Minimal profile**: pi built-in footer core + mode/fast/state, with abbreviated labels (`ctx`/`CH`, keep `in`/`out`/`$`)
 - `toolActivityMode: "detailed" | "compact"` for per-tool or core_tools/aux_tools aggregates
-- `iconMode: "emoji" | "plain"` (plugin-owned glyphs only; bars/colors unchanged)
-- Path (home-relative `~`)
+- `iconMode: "emoji" | "plain" | "nerd" | "ascii" | "auto"` (plugin-owned glyphs only; bars/colors unchanged)
+- Path (home-relative `~`) with a non-plain folder marker and elastic tail-preserving truncation
 - Session name (when set via `/name`)
 - Model + thinking level using pi's native thinking colors
 - Execution mode and fast priority badges when active
-- Automatic editor placement: when Appearance owns the editor, every available widget assigned to `LINE0` renders in its bottom-right border; otherwise `LINE0` falls back to the first footer row
+- Automatic editor placement: while Appearance owns the editor, `LINE0` and `LINE1` render on separate editor borders and `LINE2`-`LINE4` remain footer rows; without that owner all five lines fall back to the footer
 - Active-branch token usage (`🔼input` / `🔽output`, or plain `in` / `out`)
 - Active-branch cumulative cache hit rate (`🎯…%` or `cache …%`)
-- Active-branch main cost (`$x.xx`, hidden when zero)
-- Optional branch-local auxiliary usage (`aux tokens · cost · calls`), kept separate from main cost
+- Active-branch main cost (`$x.xx`, hidden when zero); Auxiliary reports its own usage separately and never merges it into footer totals
 - Context bar (remaining/used mode)
 - Native OAuth **quota** for official Claude / Codex only
 - Environment counts (context files / skills / tools) after first agent start
 - Current agent-run tool activity aggregates (per-tool active/success + total errors)
-- Git branch (`main`/`master` is `🏠` in emoji mode) + committed branch diff (`+N -M`)
+- Git branch (`⑂ branch` in emoji mode) + committed branch diff (`+N -M`)
 - Optional `worktree` unit for porcelain-v2 branch/ahead/behind/stash/conflict/staged/modified/untracked state
 - Optional `runtime` unit for deterministic project runtime/version detection
 - Optional settled-run metric widgets: `runTps`, `runTtft`, `runDuration`, `runTokens`, `runStalls`, and `runCostRate`; each is independently placed and toggled
@@ -36,16 +35,16 @@ Built for pi's `setFooter` extension API: active-branch metrics, git context, an
 
 ## Default lines
 
-The package default assigns model metadata to `LINE0` and the ordinary footer to `LINE1`. Optional widgets remain disabled.
+The package default assigns model metadata to `LINE0` and the ordinary status row to `LINE1`. Optional widgets remain disabled.
 
 With Appearance enabled:
 
 ```text
-editor bottom-right: model high · EDIT · 
-footer LINE1:       ~/proj · session · 🔼 1.5K · 🔽 800 · 🎯 66.7% · $0.42 · Context [██████░░░░] 60% · 🏠 · +12 -3 · 🕒 12s / 1m45s · Ready
+editor top-left:     model high · EDIT · 
+editor bottom-right: 📁 ~/proj · session · 🔼 1.5K · 🔽 800 · 🎯 66.7% · $0.42 · 🪟 [██████░░░░] 60% · ⑂ main · +12 -3 · 🕒 12s / 1m45s · Ready
 ```
 
-`mode` and `fast` are configured by default but render only while active. Without an active Appearance editor owner, nonempty `LINE0` is rendered as the first footer row so configured information is not lost. `/statusline` remains the configuration owner in both cases.
+`mode` and `fast` are configured by default but render only while active. Without an active Appearance editor owner, nonempty `LINE0` through `LINE4` render as footer rows in order so configured information is not lost. `/statusline` remains the configuration owner in both cases.
 
 ## Install
 
@@ -65,8 +64,10 @@ Optional config file:
 
 `lines` is the only persisted widget source of truth:
 
-- `line0` renders in the editor bottom-right border when Appearance owns it.
-- `line1` through `line4` render as independent footer rows below the editor.
+- `line0` renders at the editor top-left when Appearance owns it.
+- `line1` renders at the editor bottom-right with an independent width budget.
+- `line2` through `line4` render as independent footer rows below the editor.
+- Without an active Appearance owner, all five lines render as footer rows.
 - Presence enables a widget; absence disables it.
 - Array order is the render order within that line.
 - Any widget can be placed on any line.
@@ -141,8 +142,8 @@ Based on pi's built-in footer core plus `mode`, `fast`, and run `state`. `/statu
 Example with Appearance enabled:
 
 ```text
-editor bottom-right: model high · EDIT · fast
-footer LINE1:       ~/proj · session · main · in 1.5KⅠ 3.7K · out 800Ⅰ 900 · CH 66.7% · $0.42Ⅰ $0.03 · ctx 40% · task 1/2 · Ready
+editor top-left:     model high · EDIT · fast
+editor bottom-right: ~/proj · session · main · in 1.5K · out 800 · CH 66.7% · $0.42 · ctx 40% · task 1/2 · Ready
 ```
 
 - **on**: overwrites lines/iconMode/contextMode/separator/spacing/toolActivityMode, sets `minimal: true`, and preserves `runNotification`
@@ -175,11 +176,12 @@ footer LINE1:       ~/proj · session · main · in 1.5KⅠ 3.7K · out 800Ⅰ 9
 }
 ```
 
-Example footer rows:
+Example editor metadata and footer rows:
 
 ```text
-~/vendor/terrific-pi │ session │ main │ +12 -3
-Context [█░░░░░░░░░] 4% │ in 12.5KⅠ 3.7K · out 3.2KⅠ 0.9K │ cache 76.9% │ $0.42Ⅰ $0.03 │ usage 5h [░░░░░░] 7% · 7d [██░░░░] 33%
+editor top-left:     model high · EDIT · fast
+editor bottom-right: ~/vendor/terrific-pi │ session │ main │ +12 -3
+context [█░░░░░░░░░] 4% │ in 12.5K · out 3.2K │ cache 76.9% │ $0.42 │ usage 5h [░░░░░░] 7% · 7d [██░░░░] 33%
 2 context files · 67 skills · 7 tools │ node 22.10.0 │ git main
 ok Read x6 · ok Bash x3 │ task 1/2 │ time 12s / 1m45s │ Ready
 ```
@@ -188,7 +190,8 @@ ok Read x6 · ok Bash x3 │ task 1/2 │ time 12s / 1m45s │ Ready
 
 The footer follows the active pi theme rather than maintaining separate RGB palettes:
 
-- normal values use `text`; labels and supporting metadata use `muted`; separators and tertiary metadata use `dim`
+- model ids and paths use `accent`; branch names and cost use `mdHeading`
+- normal values use `text`; labels and supporting metadata use `muted`; separators, idle state, and tertiary metadata use `dim`
 - tool status glyphs use `accent` / `success` / `error`; names stay muted and counts stay neutral
 - fast emoji uses `warning` (gold/yellow); context and quota bars stay neutral, with only high percentages colored
 - thinking levels use `thinkingOff` through `thinkingMax`, the same tokens as pi's editor border
@@ -199,17 +202,17 @@ The footer follows the active pi theme rather than maintaining separate RGB pale
 
 | id | description |
 |----|-------------|
-| `path` | cwd with `~` abbreviation |
+| `path` | cwd with `~` abbreviation, non-plain folder marker, and left ellipsis under width pressure |
 | `session` | session display name |
 | `model` | model id + thinking level |
 | `mode` | active `/mode` badge with quiet risk-ladder colors (ASK dim · PLAN muted · EDIT text · AUTO soft thinkingLow) |
 | `fast` | `` (or `fast` in plain mode) while `/fast` is on |
-| `tokens` | active-branch input/output totals; auxiliary usage is a dim `Ⅰ` suffix (e.g. `12.5KⅠ 3.7K`) |
+| `tokens` | active-branch main-session input/output totals |
 | `cache` | active-branch cumulative cache hit rate |
-| `cost` | active-branch main-session cost USD; auxiliary cost is a dim `Ⅰ` suffix |
-| `context` | text context percent |
-| `contextBar` | `Context` label + compact bar + percent |
-| `branch` | git branch (`main`/`master` → `🏠` in emoji mode) |
+| `cost` | active-branch main-session cost USD |
+| `context` | text context percent with a window marker |
+| `contextBar` | window marker + compact bar + percent |
+| `branch` | git branch with `⑂` in emoji mode |
 | `branchDiff` | committed line diff from merge-base to `HEAD` vs default branch |
 | `quota` | native OAuth Claude/Codex usage windows, including loading/first-load error state |
 | `environment` | context files / skills / tools counts (low-contrast / dim) |
@@ -230,7 +233,7 @@ The footer follows the active pi theme rather than maintaining separate RGB pale
 
 `toolActivity` resets at each agent run and counts business tools only. Taskboard's `process_update` publishes session metadata and is ignored at both tool start and tool end, preventing duplicate progress in the footer and editor-above HUD. Set `toolActivityMode` via `/statusline` or `statusline.json`.
 
-Auxiliary model usage is **not** a separate widget. Branch-local `terrific-pi:auxiliary-usage-v1` input/output/cost fold into the main `tokens` and `cost` widgets as low-contrast `Ⅰ` suffixes. Unsplit totals (no in/out breakdown) append once after the pair; missing usage/cost shows `Ⅰ ?` / trailing `?`. Known partial cost is still shown. The widgets editor preview legend notes this. Legacy `auxUsage` widget ids in old configs are ignored.
+Auxiliary model usage is owned by the Auxiliary package. It remains in branch-local `terrific-pi:auxiliary-usage-v1` entries and, when `auxiliary.usageReports` is enabled, appears as per-call notifications plus one settled-turn aggregate. Statusline `tokens` and `cost` always represent the main session only. Legacy `auxUsage` widget ids in old configs are ignored.
 
 ### Quota eligibility (strict)
 
@@ -285,9 +288,8 @@ Each successful change is atomically written to the config file and the footer r
 
 | data | source and scope |
 |------|------------------|
-| path, model, context | live pi context; unavailable context renders as `Context ?` |
+| path, model, context | live pi context; unavailable context renders as `🪟 ?` in emoji mode |
 | tokens, cache, cost | main assistant usage entries on the active session branch; refreshed after assistant completion and branch/tree changes |
-| tokens/cost aux suffix | validated `terrific-pi:auxiliary-usage-v1` entries on the active branch; folded into main tokens/cost as dim `Ⅰ` values |
 | branch | pi footer data; branch diff is local Git committed-line data only and excludes the working tree |
 | mode, fast, progress | pi extension status map; dedicated mode/fast/ponytail statuses are excluded from progress, and terminal controls are removed |
 | duration, tools, environment | process-local event data; tool counts reset per agent run and are not restored from session history |
@@ -318,7 +320,7 @@ statusline/
 
 ## Ownership and attribution
 
-`statusline` remains the only production `setFooter()` owner. Every widget, including `worktree`, `runtime`, and the six `run*` metrics, is an ordinary independently placed/toggled unit in `LINE0`-`LINE4`. Appearance only supplies the editor surface used by `LINE0`; statusline does not claim header/editor/transcript ownership. Derived Open TUI portions are attributed in `LICENSES/pi-open-tui-MIT.txt`.
+`statusline` remains the only production `setFooter()` owner. Every widget, including `worktree`, `runtime`, and the six `run*` metrics, is an ordinary independently placed/toggled unit in `LINE0`-`LINE4`. Appearance supplies the editor surfaces used by `LINE0` and `LINE1`; statusline does not claim header/editor/transcript ownership. Derived Open TUI portions are attributed in `LICENSES/pi-open-tui-MIT.txt`.
 
 ## Develop
 

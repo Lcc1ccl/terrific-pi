@@ -263,6 +263,7 @@ export class AuxiliaryRuntime {
 						fallbackIndex,
 						startedAt,
 						durationMs,
+						...(request.scopeId ? { scopeId: request.scopeId } : {}),
 						usage: response.usage,
 					}, request.shouldRecordAttempt);
 					return { status: "ok", text, provider, model, thinking, fallbackIndex, durationMs, usage: response.usage, stopReason: response.stopReason };
@@ -286,6 +287,7 @@ export class AuxiliaryRuntime {
 						fallbackIndex,
 						startedAt,
 						durationMs: Date.now() - startedAt,
+						...(request.scopeId ? { scopeId: request.scopeId } : {}),
 						...(response?.usage ? { usage: response.usage } : {}),
 						errorCode: failure.code,
 					}, request.shouldRecordAttempt);

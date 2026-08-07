@@ -30,6 +30,7 @@ import {
 	AUXILIARY_USAGE_CHANGED_EVENT,
 	AUXILIARY_USAGE_ENTRY_TYPE,
 	AUXILIARY_USAGE_INGEST_EVENT,
+	AUXILIARY_USAGE_SCOPE_SETTLED_EVENT,
 	isAuxiliaryUsageEntry,
 } from "../lib/usage.ts";
 
@@ -148,12 +149,80 @@ function titleWasAttempted(ctx: ExtensionContext): boolean {
 		&& entry.data.task === "title_generation");
 }
 
+function auxiliaryUsageMetrics(entries: readonly AuxiliaryUsageEntryV1[]): string[] {
+	let input = 0;
+	let output = 0;
+	let cache = 0;
+	let unsplit = 0;
+	let cost = 0;
+	let hasUsage = false;
+	let hasUnknownUsage = false;
+	let hasKnownCost = false;
+	let hasUnknownCost = false;
+	for (const entry of entries) {
+		const usage = entry.usage;
+		if (!usage) {
+			hasUnknownUsage = true;
+			hasUnknownCost = true;
+			continue;
+		}
+		hasUsage = true;
+		input += usage.input;
+		output += usage.output;
+		cache += usage.cacheRead + usage.cacheWrite;
+		unsplit += Math.max(0, usage.totalTokens - usage.input - usage.output - usage.cacheRead - usage.cacheWrite);
+		const total = usage.cost?.total;
+		if (typeof total === "number" && Number.isFinite(total)) {
+			cost += total;
+			hasKnownCost = true;
+		} else {
+			hasUnknownCost = true;
+		}
+	}
+	const metrics: string[] = [];
+	if (hasUsage) {
+		metrics.push(`in ${input.toLocaleString("en-US")}`, `out ${output.toLocaleString("en-US")}`, `cache ${cache.toLocaleString("en-US")}`);
+		if (unsplit > 0) metrics.push(`tokens ${unsplit.toLocaleString("en-US")}`);
+	}
+	if (hasUnknownUsage) metrics.push("usage unknown");
+	if (hasKnownCost) metrics.push(`$${cost.toFixed(2)}${hasUnknownCost ? " + unknown" : ""}`);
+	else if (hasUnknownCost) metrics.push("cost unknown");
+	return metrics;
+}
+
+function formatAuxiliaryCallReport(entry: AuxiliaryUsageEntryV1): string {
+	return [
+		`Aux call ${entry.task}`,
+		`${entry.provider}/${entry.model}`,
+		entry.status,
+		...auxiliaryUsageMetrics([entry]),
+		`${entry.durationMs}ms`,
+	].join(" · ");
+}
+
+function formatAuxiliaryAggregateReport(
+	entries: readonly AuxiliaryUsageEntryV1[],
+	label = "Aux turn",
+): string {
+	const counts = new Map<AuxiliaryUsageEntryV1["status"], number>();
+	for (const entry of entries) counts.set(entry.status, (counts.get(entry.status) ?? 0) + 1);
+	const statuses = (["ok", "error", "timeout", "aborted"] as const)
+		.flatMap((status) => counts.has(status) ? [`${counts.get(status)} ${status}`] : []);
+	return [
+		`${label} ${entries.length} ${entries.length === 1 ? "call" : "calls"}`,
+		...statuses,
+		...auxiliaryUsageMetrics(entries),
+	].join(" · ");
+}
+
 export default function auxiliary(pi: ExtensionAPI) {
 	let latestContext: ExtensionContext | undefined;
 	let runtime: AuxiliaryRuntime | undefined;
 	let titleAttempted = false;
 	let titleGeneration = 0;
 	let titleController: AbortController | undefined;
+	let titleTask: Promise<void> | undefined;
+	let settledTitleUsage: AuxiliaryUsageEntryV1[] | undefined;
 	const finalizationLock = createFinalizationToolLock(
 		() => pi.getActiveTools(),
 		(tools) => pi.setActiveTools([...tools]),
@@ -161,24 +230,72 @@ export default function auxiliary(pi: ExtensionAPI) {
 	const warned = new Set<string>();
 	const lastErrors = new Map<string, string>();
 	const eventUnsubscribes: Array<() => void> = [];
+	let usageReports = false;
+	let turnUsage: AuxiliaryUsageEntryV1[] = [];
+	const scopedUsage = new Map<string, AuxiliaryUsageEntryV1[]>();
+	const seenUsageIds = new Set<string>();
 
 	const restoreFinalizedTools = (): void => finalizationLock.restore();
 	const lockAfterFinalize = (): void => { finalizationLock.lock(); };
-	const cancelTitleGeneration = (): void => {
-		titleGeneration += 1;
+	const reportUsage = (
+		ctx: ExtensionContext,
+		entries: readonly AuxiliaryUsageEntryV1[],
+		label = "Aux turn",
+	): void => {
+		if (usageReports && entries.length > 0 && ctx.hasUI) {
+			ctx.ui.notify(formatAuxiliaryAggregateReport(entries, label), "info");
+		}
+	};
+	const reportScopedUsage = (ctx: ExtensionContext, scopeId: string): void => {
+		const entries = scopedUsage.get(scopeId);
+		scopedUsage.delete(scopeId);
+		if (entries) reportUsage(ctx, entries, "Aux command");
+	};
+	const cancelTitleGeneration = async (): Promise<void> => {
+		const task = titleTask;
 		titleController?.abort();
+		if (task) await task.catch(() => {});
+		if (titleTask === task) titleTask = undefined;
 		titleController = undefined;
+		titleGeneration += 1;
+	};
+
+	const syncSeenUsageIds = (ctx: ExtensionContext): void => {
+		seenUsageIds.clear();
+		const manager = ctx.sessionManager as typeof ctx.sessionManager & { getEntries?(): ReturnType<typeof ctx.sessionManager.getBranch> };
+		for (const entry of manager.getEntries?.() ?? manager.getBranch()) {
+			if (entry.type === "custom" && entry.customType === AUXILIARY_USAGE_ENTRY_TYPE && isAuxiliaryUsageEntry(entry.data)) {
+				seenUsageIds.add(entry.data.id);
+			}
+		}
 	};
 
 	const appendUsage = (entry: AuxiliaryUsageEntryV1) => {
-		if (!isAuxiliaryUsageEntry(entry)) return;
-		pi.appendEntry(AUXILIARY_USAGE_ENTRY_TYPE, entry);
+		if (!isAuxiliaryUsageEntry(entry) || seenUsageIds.has(entry.id)) return;
+		try {
+			pi.appendEntry(AUXILIARY_USAGE_ENTRY_TYPE, entry);
+		} catch {
+			return;
+		}
+		seenUsageIds.add(entry.id);
 		pi.events.emit(AUXILIARY_USAGE_CHANGED_EVENT, { id: entry.id });
+		if (!usageReports) return;
+		const target = entry.scopeId
+			? (scopedUsage.get(entry.scopeId) ?? [])
+			: entry.task === "title_generation" && settledTitleUsage
+				? settledTitleUsage
+				: turnUsage;
+		if (entry.scopeId && !scopedUsage.has(entry.scopeId)) scopedUsage.set(entry.scopeId, target);
+		target.push(entry);
+		if (latestContext?.hasUI) {
+			latestContext.ui.notify(formatAuxiliaryCallReport(entry), entry.status === "ok" ? "info" : "warning");
+		}
 	};
 
 	const load = (ctx: ExtensionContext) => {
 		latestContext = ctx;
 		const loaded = loadAuxiliaryConfig(getAgentDir());
+		usageReports = loaded.config.usageReports;
 		for (const warning of loaded.warnings) {
 			if (warned.has(warning)) continue;
 			warned.add(warning);
@@ -204,6 +321,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 		focus: string | undefined,
 		format: "brief" | "structured" | "bullets",
 		signal?: AbortSignal,
+		scopeId?: string,
 	) => {
 		const config = load(ctx);
 		if (!config.enabled) throw new AuxiliaryError("disabled", "Auxiliary runtime is disabled");
@@ -223,6 +341,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 				systemPrompt: SUMMARY_SYSTEM_PROMPT,
 				messages,
 				requiredInput: "text",
+				scopeId,
 				signal: callSignal,
 			}, route)).text,
 		});
@@ -510,6 +629,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 					ctx,
 					getAgentDir(),
 				);
+				load(ctx);
 				return;
 			}
 
@@ -518,6 +638,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 				const branch = ctx.sessionManager.getBranch();
 				const lines = [
 					`auxiliary: ${config.enabled ? "enabled" : "disabled"}`,
+					`usage reports: ${config.usageReports ? "on" : "off"}`,
 					`config: ${resolveAuxiliaryConfigPath(getAgentDir())}`,
 					`main: ${ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "none"}`,
 				];
@@ -555,12 +676,15 @@ export default function auxiliary(pi: ExtensionAPI) {
 					source = (await ctx.ui.editor("Text to summarize", ""))?.trim() ?? "";
 				}
 				if (!source) return;
+				const scopeId = randomUUID();
 				try {
-					const result = await runSummary(ctx, source, undefined, "structured");
+					const result = await runSummary(ctx, source, undefined, "structured", undefined, scopeId);
 					ctx.ui.setEditorText(result.text);
 					ctx.ui.notify("Summary placed in editor", "info");
 				} catch (error) {
 					ctx.ui.notify(error instanceof AuxiliaryError ? `${error.code}: ${error.message}` : "Auxiliary summary failed", "error");
+				} finally {
+					reportScopedUsage(ctx, scopeId);
 				}
 				return;
 			}
@@ -569,20 +693,36 @@ export default function auxiliary(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		cancelTitleGeneration();
+		await cancelTitleGeneration();
 		restoreFinalizedTools();
 		latestContext = ctx;
+		turnUsage = [];
+		scopedUsage.clear();
+		load(ctx);
+		syncSeenUsageIds(ctx);
 		titleAttempted = titleWasAttempted(ctx);
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
-		cancelTitleGeneration();
+		const targetTitleAttempted = titleWasAttempted(ctx);
+		await cancelTitleGeneration();
 		latestContext = ctx;
-		titleAttempted = titleWasAttempted(ctx);
+		turnUsage = [];
+		scopedUsage.clear();
+		load(ctx);
+		syncSeenUsageIds(ctx);
+		titleAttempted = targetTitleAttempted;
 	});
 
-	pi.on("before_agent_start", async () => {
+	pi.on("input", async (event, ctx) => {
+		if (event.streamingBehavior !== undefined || !ctx.isIdle()) return;
+		turnUsage = [];
+		load(ctx);
+	});
+
+	pi.on("before_agent_start", async (_event, ctx) => {
 		restoreFinalizedTools();
+		load(ctx);
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
@@ -611,17 +751,29 @@ export default function auxiliary(pi: ExtensionAPI) {
 
 	pi.on("agent_settled", (_event, ctx) => {
 		restoreFinalizedTools();
-		if (titleAttempted || pi.getSessionName()) return;
+		const settledUsage = turnUsage;
+		turnUsage = [];
+		if (titleAttempted || pi.getSessionName()) {
+			reportUsage(ctx, settledUsage);
+			return;
+		}
 		const seed = extractTitleSeed(ctx.sessionManager.getBranch());
-		if (!seed) return;
+		if (!seed) {
+			reportUsage(ctx, settledUsage);
+			return;
+		}
 		const config = load(ctx);
-		if (!config.enabled) return;
+		if (!config.enabled) {
+			reportUsage(ctx, settledUsage);
+			return;
+		}
 		titleAttempted = true;
+		settledTitleUsage = settledUsage;
 		const generation = titleGeneration;
 		const controller = new AbortController();
-		titleController?.abort();
 		titleController = controller;
-		void (async () => {
+		let task!: Promise<void>;
+		task = (async () => {
 			try {
 				const route = resolveTaskRoute(config, "title_generation");
 				const result = await runtimeFor(ctx).call({
@@ -636,7 +788,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 					}],
 					requiredInput: "text",
 					signal: controller.signal,
-					shouldRecordAttempt: () => generation === titleGeneration && !controller.signal.aborted && latestContext === ctx,
+					shouldRecordAttempt: () => generation === titleGeneration && latestContext === ctx,
 					validateOutput: (text, response) => {
 						if (response.stopReason === "length") throw new AuxiliaryError("invalid_output", "Title output was truncated");
 						const title = sanitizeTitle(text);
@@ -652,18 +804,33 @@ export default function auxiliary(pi: ExtensionAPI) {
 					lastErrors.set("title_generation", error.code);
 				}
 			} finally {
+				if (settledTitleUsage === settledUsage) settledTitleUsage = undefined;
+				if (generation === titleGeneration && latestContext === ctx) reportUsage(ctx, settledUsage);
 				if (titleController === controller) titleController = undefined;
+				if (titleTask === task) titleTask = undefined;
 			}
 		})();
+		titleTask = task;
+		void task;
 	});
 
 	eventUnsubscribes.push(pi.events.on(AUXILIARY_USAGE_INGEST_EVENT, (value) => {
 		if (isAuxiliaryUsageEntry(value)) appendUsage(value);
 	}));
+	eventUnsubscribes.push(pi.events.on(AUXILIARY_USAGE_SCOPE_SETTLED_EVENT, (value) => {
+		if (!value || typeof value !== "object" || Array.isArray(value)) return;
+		const event = value as { version?: unknown; scopeId?: unknown };
+		if (event.version !== 1 || typeof event.scopeId !== "string" || event.scopeId.length === 0 || event.scopeId.length > 128) return;
+		if (latestContext) reportScopedUsage(latestContext, event.scopeId);
+	}));
 
 	pi.on("session_shutdown", async () => {
-		cancelTitleGeneration();
+		await cancelTitleGeneration();
 		restoreFinalizedTools();
+		turnUsage = [];
+		scopedUsage.clear();
+		usageReports = false;
+		seenUsageIds.clear();
 		runtime?.shutdown();
 		runtime = undefined;
 		latestContext?.ui.setStatus("auxiliary", undefined);

@@ -60,9 +60,10 @@ describe("resolveBtwCandidates", () => {
 		const entry = createBtwUsageEntry(candidate, "ok", 100, 150, {
 			input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12,
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.01 },
-		});
+		}, undefined, "btw-command");
 		assert.equal(entry.task, "btw");
 		assert.equal(entry.executor, "session");
+		assert.equal(entry.scopeId, "btw-command");
 		assert.equal(entry.durationMs, 50);
 		assert.equal(Object.hasOwn(entry, "prompt"), false);
 		assert.equal(Object.hasOwn(entry, "response"), false);

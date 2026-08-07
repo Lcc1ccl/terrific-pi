@@ -11,16 +11,16 @@ import {
 	formatCache,
 	formatContextBar,
 	formatContextText,
+	formatContextUnavailable,
 	formatCost,
-	formatCwd,
 	formatDurationContent,
+	formatPathContent,
 	formatSessionName,
 	formatEnvironment,
 	formatFastBadge,
 	formatModeContent,
 	formatModelContent,
 	formatQuota,
-	appendAuxTokenExtras,
 	formatTokenDirection,
 	formatTokenPairMinimal,
 	formatToolActivity,
@@ -112,7 +112,6 @@ export const PREVIEW_SNAPSHOT: StatusSnapshot = {
 	fast: "",
 	tokens: { input: 1500, output: 800, cacheRead: 4000, cacheWrite: 500 },
 	cost: 0.42,
-	auxUsage: { input: 3700, output: 900, unsplit: 0, tokens: 4_600, cost: 0.03 },
 	context: { tokens: 40_000, contextWindow: 100_000, percent: 40 },
 	branch: "main",
 	branchDiff: { additions: 12, deletions: 3 },
@@ -202,15 +201,11 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 	for (const id of enabledWidgets(config)) {
 		const priority = WIDGET_PRIORITY[id] ?? 50;
 		switch (id) {
-			case "path":
-				segments.push({
-					id,
-					accent: "path",
-					text: formatCwd(snapshot.cwd),
-					parts: [{ text: formatCwd(snapshot.cwd), tone: "muted" }],
-					priority,
-				});
+			case "path": {
+				const body = formatPathContent(snapshot.cwd, iconMode);
+				pushContent(segments, id, "path", body, priority);
 				break;
+			}
 			case "session":
 				if (snapshot.sessionName) {
 					const sessionName = formatSessionName(snapshot.sessionName);
@@ -243,37 +238,19 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				break;
 			}
 			case "tokens": {
-				const auxIn = snapshot.auxUsage?.input ?? 0;
-				const auxOut = snapshot.auxUsage?.output ?? 0;
-				const auxExtras = {
-					unsplit: snapshot.auxUsage?.unsplit ?? 0,
-					unknown: Boolean(snapshot.auxUsage?.hasUnknownUsage),
-				};
 				if (minimal) {
 					pushContent(
 						segments,
 						id,
 						"usage",
-						formatTokenPairMinimal(
-							snapshot.tokens.input,
-							snapshot.tokens.output,
-							iconMode,
-							auxIn,
-							auxOut,
-							auxExtras,
-						),
+						formatTokenPairMinimal(snapshot.tokens.input, snapshot.tokens.output, iconMode),
 						priority,
 					);
 				} else {
-					const input = formatTokenDirection("in", snapshot.tokens.input, iconMode, auxIn);
-					const output = formatTokenDirection("out", snapshot.tokens.output, iconMode, auxOut);
+					const input = formatTokenDirection("in", snapshot.tokens.input, iconMode);
+					const output = formatTokenDirection("out", snapshot.tokens.output, iconMode);
 					const separator = formatWidgetSeparator(config.spacing);
 					const parts = [...input.parts, { text: separator, tone: "dim" as const }, ...output.parts];
-					appendAuxTokenExtras(parts, {
-						input: auxIn,
-						output: auxOut,
-						...auxExtras,
-					});
 					pushContent(
 						segments,
 						id,
@@ -290,37 +267,22 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				break;
 			}
 			case "cost": {
-				const auxCost = snapshot.auxUsage?.cost ?? 0;
-				const auxUnknownCost = Boolean(snapshot.auxUsage?.hasUnknownCost);
-				if (snapshot.cost > 0 || auxCost > 0 || auxUnknownCost) {
-					pushContent(
-						segments,
-						id,
-						"usage",
-						formatCost(snapshot.cost, minimal, auxCost, auxUnknownCost),
-						priority,
-					);
+				if (snapshot.cost > 0) {
+					pushContent(segments, id, "usage", formatCost(snapshot.cost, minimal), priority);
 				}
 				break;
 			}
 			case "context": {
-				const body = formatContextText(snapshot.context?.percent, config.contextMode, minimal)
-					?? (minimal
-						? { text: "ctx ?", parts: [{ text: "ctx ", tone: "label" }, { text: "?", tone: "dim" }] }
-						: { text: "Context ?", parts: [{ text: "Context ", tone: "label" }, { text: "?", tone: "dim" }] });
+				const body = formatContextText(snapshot.context?.percent, config.contextMode, minimal, iconMode)
+					?? formatContextUnavailable(minimal, iconMode);
 				pushContent(segments, id, "usage", body, priority);
 				break;
 			}
 			case "contextBar": {
 				const percent = snapshot.context?.percent;
-				const body = formatContextBar(percent, config.contextBarWidth, config.contextMode, minimal);
+				const body = formatContextBar(percent, config.contextBarWidth, config.contextMode, minimal, iconMode);
 				if (!body || percent === null || percent === undefined || Number.isNaN(percent)) {
-					pushContent(segments, id, "neutral", minimal
-						? { text: "ctx ?", parts: [{ text: "ctx ", tone: "label" }, { text: "?", tone: "dim" }] }
-						: {
-							text: "Context ?",
-							parts: [{ text: "Context ", tone: "label" }, { text: "?", tone: "dim" }],
-						}, priority);
+					pushContent(segments, id, "neutral", formatContextUnavailable(minimal, iconMode), priority);
 					break;
 				}
 				pushContent(segments, id, "neutral", body, priority, {
@@ -330,7 +292,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 							Math.min(MAX_CONTEXT_BAR_WIDTH, Math.floor(config.contextBarWidth || DEFAULT_CONFIG.contextBarWidth)),
 						),
 						minWidth: MIN_CONTEXT_BAR_WIDTH,
-						rebuild: (width) => formatContextBar(percent, width, config.contextMode, minimal) ?? body,
+						rebuild: (width) => formatContextBar(percent, width, config.contextMode, minimal, iconMode) ?? body,
 					},
 				});
 				break;

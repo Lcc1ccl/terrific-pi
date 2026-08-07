@@ -38,6 +38,7 @@ export interface AuxiliaryTaskRouteConfig extends Partial<AuxiliaryRouteConfig> 
 
 export interface AuxiliaryConfig {
 	enabled: boolean;
+	usageReports: boolean;
 	default: AuxiliaryRouteConfig;
 	tasks: Record<string, AuxiliaryTaskRouteConfig>;
 	git: {
@@ -55,6 +56,7 @@ export interface AuxiliaryCallRequest {
 	messages: Message[];
 	requiredInput: "text" | "image";
 	maxOutputTokens?: number;
+	scopeId?: string;
 	signal?: AbortSignal;
 	validateOutput?: (text: string, response: import("@earendil-works/pi-ai").AssistantMessage) => string;
 	shouldRecordAttempt?: () => boolean;
@@ -88,6 +90,7 @@ export interface AuxiliaryUsageEntryV1 {
 	fallbackIndex: number;
 	startedAt: number;
 	durationMs: number;
+	scopeId?: string;
 	usage?: AuxiliaryUsage;
 	errorCode?: AuxiliaryErrorCode;
 }

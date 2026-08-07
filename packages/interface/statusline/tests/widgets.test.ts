@@ -66,14 +66,16 @@ describe("buildWidgetSegments", () => {
 				"🔼 1.5K · 🔽 800",
 				"🎯 66.7%",
 				"$0.42",
-				"Context [██████░░░░] 60%",
-				"🏠",
+				"🪟 [██████░░░░] 60%",
+				"⑂ main",
 				"+12 -3",
 				"task 1/2",
 				"🕒 12s / 1m45s",
 				"Ready",
 			],
 		);
+		const path = segments.find((segment) => segment.id === "path");
+		assert.equal(path?.text, "📁 /home/user/proj");
 	});
 
 	it("builds default-oriented segments with new p0 widgets", () => {
@@ -119,80 +121,24 @@ describe("buildWidgetSegments", () => {
 		);
 	});
 
-	it("folds auxiliary usage into tokens and cost as dim Ⅰ suffixes", () => {
+	it("keeps auxiliary usage out of footer tokens and cost", () => {
+		const legacySnapshot = {
+			...baseSnapshot,
+			auxUsage: {
+				input: 3_700,
+				output: 900,
+				unsplit: 0,
+				tokens: 4_600,
+				cost: 0.03,
+				hasUnknownUsage: true,
+				hasUnknownCost: true,
+			},
+		};
 		const segments = buildWidgetSegments(
-			{
-				...baseSnapshot,
-				auxUsage: { input: 3_700, output: 900, unsplit: 0, tokens: 4_600, cost: 0.03 },
-			},
+			legacySnapshot,
 			{ ...DEFAULT_CONFIG, lines: line1(["tokens", "cost"]), iconMode: "plain" },
 		);
-		assert.deepEqual(segments.map((segment) => segment.text), [
-			"in 1.5KⅠ 3.7K · out 800Ⅰ 900",
-			"$0.42Ⅰ $0.03",
-		]);
-		assert.ok(segments[0]?.parts?.some((part) => part.tone === "dim" && part.text.includes("3.7K")));
-		assert.ok(segments[1]?.parts?.some((part) => part.tone === "dim" && part.text.includes("$0.03")));
-
-		const unsplit = buildWidgetSegments(
-			{
-				...baseSnapshot,
-				auxUsage: {
-					input: 0,
-					output: 0,
-					unsplit: 3_700,
-					tokens: 3_700,
-					cost: 0.01,
-					hasUnknownCost: true,
-				},
-			},
-			{ ...DEFAULT_CONFIG, lines: line1(["tokens", "cost"]), iconMode: "plain" },
-		);
-		assert.deepEqual(unsplit.map((segment) => segment.text), [
-			"in 1.5K · out 800Ⅰ 3.7K",
-			"$0.42Ⅰ $0.01?",
-		]);
-
-		const unknown = buildWidgetSegments(
-			{
-				...baseSnapshot,
-				auxUsage: {
-					input: 0,
-					output: 0,
-					unsplit: 0,
-					tokens: 0,
-					cost: 0,
-					hasUnknownUsage: true,
-					hasUnknownCost: true,
-				},
-			},
-			{ ...DEFAULT_CONFIG, lines: line1(["tokens", "cost"]), iconMode: "plain" },
-		);
-		assert.deepEqual(unknown.map((segment) => segment.text), [
-			"in 1.5K · out 800Ⅰ ?",
-			"$0.42Ⅰ ?",
-		]);
-
-		// Known aux in/out must still surface unknown siblings as a trailing Ⅰ ?
-		const partialUnknown = buildWidgetSegments(
-			{
-				...baseSnapshot,
-				auxUsage: {
-					input: 3_700,
-					output: 0,
-					unsplit: 0,
-					tokens: 3_700,
-					cost: 0.01,
-					hasUnknownUsage: true,
-					hasUnknownCost: true,
-				},
-			},
-			{ ...DEFAULT_CONFIG, lines: line1(["tokens", "cost"]), iconMode: "plain" },
-		);
-		assert.deepEqual(partialUnknown.map((segment) => segment.text), [
-			"in 1.5KⅠ 3.7K · out 800Ⅰ ?",
-			"$0.42Ⅰ $0.01?",
-		]);
+		assert.deepEqual(segments.map((segment) => segment.text), ["in 1.5K · out 800", "$0.42"]);
 	});
 
 	it("renders fast independently and hides it when inactive", () => {
@@ -233,12 +179,15 @@ describe("buildWidgetSegments", () => {
 		);
 	});
 
-	it("uses muted supporting metadata and state-aware runtime tones", () => {
+	it("uses OMP-like category tones without hard-coded colors", () => {
 		const metadata = buildWidgetSegments(
 			{ ...baseSnapshot, branch: "feature" },
-			{ ...DEFAULT_CONFIG, lines: line1(["path", "branch"]) },
+			{ ...DEFAULT_CONFIG, lines: line1(["model", "path", "branch", "cost", "context"]) },
 		);
-		assert.ok(metadata.every((segment) => segment.parts?.every((part) => part.tone === "muted")));
+		assert.equal(metadata.find((segment) => segment.id === "model")?.parts?.[0]?.tone, "model");
+		assert.ok(metadata.find((segment) => segment.id === "path")?.parts?.every((part) => part.tone === "active"));
+		assert.ok(metadata.find((segment) => segment.id === "branch")?.parts?.every((part) => part.tone === "branch"));
+		assert.ok(metadata.find((segment) => segment.id === "cost")?.parts?.every((part) => part.tone === "cost"));
 
 		for (const [runState, expectedTone] of [
 			["Ready", "dim"],
@@ -270,20 +219,17 @@ describe("buildWidgetSegments", () => {
 		}
 	});
 
-	it("renders main as home", () => {
-		const segments = buildWidgetSegments(baseSnapshot, {
+	it("renders main and master as branch text instead of home", () => {
+		const main = buildWidgetSegments(baseSnapshot, {
 			...DEFAULT_CONFIG,
 			lines: line1(["branch"]),
 		});
-		assert.deepEqual(segments.map((segment) => segment.text), ["🏠"]);
-	});
-
-	it("renders master as home", () => {
-		const segments = buildWidgetSegments(
+		const master = buildWidgetSegments(
 			{ ...baseSnapshot, branch: "master" },
 			{ ...DEFAULT_CONFIG, lines: line1(["branch"]) },
 		);
-		assert.deepEqual(segments.map((segment) => segment.text), ["🏠"]);
+		assert.deepEqual(main.map((segment) => segment.text), ["⑂ main"]);
+		assert.deepEqual(master.map((segment) => segment.text), ["⑂ master"]);
 	});
 
 	it("shows an unavailable marker when context usage is missing or unknown after compaction", () => {
@@ -296,7 +242,7 @@ describe("buildWidgetSegments", () => {
 					{ ...baseSnapshot, context },
 					{ ...DEFAULT_CONFIG, lines: line1([widget]) },
 				);
-				assert.deepEqual(segments.map((segment) => segment.text), ["Context ?"]);
+				assert.deepEqual(segments.map((segment) => segment.text), ["🪟 ?"]);
 			}
 		}
 	});

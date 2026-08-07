@@ -3,10 +3,11 @@ import type { AuxiliaryUsageEntryV1 } from "./types.ts";
 export const AUXILIARY_USAGE_ENTRY_TYPE = "terrific-pi:auxiliary-usage-v1";
 export const AUXILIARY_USAGE_INGEST_EVENT = "terrific-pi:auxiliary-usage:ingest-v1";
 export const AUXILIARY_USAGE_CHANGED_EVENT = "terrific-pi:auxiliary-usage:changed-v1";
+export const AUXILIARY_USAGE_SCOPE_SETTLED_EVENT = "terrific-pi:auxiliary-usage:scope-settled-v1";
 
 const ENTRY_KEYS = new Set([
 	"version", "id", "task", "executor", "provider", "model", "thinking", "status", "fallbackIndex",
-	"startedAt", "durationMs", "usage", "errorCode",
+	"startedAt", "durationMs", "scopeId", "usage", "errorCode",
 ]);
 const EXECUTORS = new Set(["call", "session", "delegation"]);
 const STATUSES = new Set(["ok", "error", "aborted", "timeout"]);
@@ -39,6 +40,7 @@ export function isAuxiliaryUsageEntry(value: unknown): value is AuxiliaryUsageEn
 		&& Number.isInteger(value.fallbackIndex) && (value.fallbackIndex as number) >= 0
 		&& finite(value.startedAt)
 		&& finite(value.durationMs)
+		&& (value.scopeId === undefined || (typeof value.scopeId === "string" && value.scopeId.length > 0 && value.scopeId.length <= 128))
 		&& (value.usage === undefined || isUsage(value.usage))
 		&& (value.errorCode === undefined || typeof value.errorCode === "string");
 }

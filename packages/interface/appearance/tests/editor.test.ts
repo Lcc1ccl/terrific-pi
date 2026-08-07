@@ -52,25 +52,41 @@ test("editor keeps rounded rails, native content, padding compensation, and safe
   for (const line of scrolled) assert.ok(visibleWidth(line) <= 24);
 });
 
-test("editor embeds a width-safe status source in the bottom-right border", () => {
-  const status = "gpt-5 high · EDIT · fast";
-  const budgets: number[] = [];
-  const editor = new AppearanceEditor(tui, editorTheme, keys, (width) => {
-    budgets.push(width);
-    return truncateToWidth(status, width, "");
-  });
+test("editor embeds LINE0 at top-left and LINE1 at bottom-right", () => {
+  const budgets: Array<{ line: "line0" | "line1"; width: number }> = [];
+  const Editor = AppearanceEditor as unknown as new (
+    tui: TUI,
+    theme: EditorTheme,
+    keys: KeybindingsManager,
+    top: (width: number) => string,
+    bottom: (width: number) => string,
+  ) => AppearanceEditor;
+  const editor = new Editor(
+    tui,
+    editorTheme,
+    keys,
+    (width) => {
+      budgets.push({ line: "line0", width });
+      return truncateToWidth("gpt-5 high · EDIT", width, "");
+    },
+    (width) => {
+      budgets.push({ line: "line1", width });
+      return truncateToWidth("📁 ~/terrific-pi", width, "");
+    },
+  );
 
-  const lines = editor.render(40).map(stripAnsi);
-  assert.match(lines.at(-1) ?? "", / gpt-5 high · EDIT · fast ╯$/);
-  assert.ok((budgets.at(-1) ?? 40) < 40);
+  const lines = editor.render(50).map(stripAnsi);
+  assert.match(lines[0] ?? "", /^╭ gpt-5 high · EDIT /);
+  assert.match(lines.at(-1) ?? "", / 📁 ~\/terrific-pi ╯$/);
+  assert.ok(budgets.some(({ line, width }) => line === "line0" && width < 50));
+  assert.ok(budgets.some(({ line, width }) => line === "line1" && width < 50));
 
   editor.setText(Array.from({ length: 30 }, (_, index) => `line ${index}`).join("\n"));
-  for (const width of [1, 2, 3, 4, 12, 24, 40]) {
+  for (const width of [1, 2, 3, 4, 12, 24, 50]) {
     const rendered = editor.render(width).map(stripAnsi);
-    if (width >= 24) assert.ok(rendered.some((line) => /^╭.*↑ \d+ more.*╮$/.test(line)));
+    if (width >= 24) assert.ok(rendered.some((line) => /^╭ gpt-5.*↑ \d+ more.*╮$/.test(line)));
     for (const line of rendered) assert.ok(visibleWidth(line) <= width);
   }
-  assert.match(editor.render(40).map(stripAnsi).at(-1) ?? "", / gpt-5 high · EDIT · fast ╯$/);
 });
 
 test("editor restores the border tone after colored status metadata", () => {
@@ -78,12 +94,22 @@ test("editor restores the border tone after colored status metadata", () => {
     ...editorTheme,
     borderColor: (text: string) => `\x1b[34m${text}\x1b[39m`,
   } as EditorTheme;
-  const editor = new AppearanceEditor(
+  const Editor = AppearanceEditor as unknown as new (
+    tui: TUI,
+    theme: EditorTheme,
+    keys: KeybindingsManager,
+    top: (width: number) => string,
+    bottom: (width: number) => string,
+  ) => AppearanceEditor;
+  const editor = new Editor(
     tui,
     coloredTheme,
     keys,
-    () => "\x1b[31mstatus\x1b[39m",
+    () => "\x1b[31mtop\x1b[39m",
+    () => "\x1b[32mbottom\x1b[39m",
   );
-  const bottom = editor.render(24).at(-1) ?? "";
-  assert.match(bottom, /\x1b\[31mstatus\x1b\[39m\x1b\[34m ╯\x1b\[39m$/);
+  const [top, ...rest] = editor.render(24);
+  const bottom = rest.at(-1) ?? "";
+  assert.match(top ?? "", /^\x1b\[34m╭ \x1b\[39m\x1b\[31mtop\x1b\[39m\x1b\[34m /);
+  assert.match(bottom, /\x1b\[32mbottom\x1b\[39m\x1b\[34m ╯\x1b\[39m$/);
 });

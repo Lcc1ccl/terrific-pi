@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 /**
  * /btw — one-shot side-channel Q&A over an isolated in-memory session.
  * Does not write to the main session or expose tools/resources.
@@ -24,6 +26,7 @@ import { charsToTokens, type ClassifiableMessage } from "../lib/tokens.ts";
 import { BTW_SYSTEM_PROMPT } from "../lib/btw-context.ts";
 
 const AUXILIARY_USAGE_INGEST_EVENT = "terrific-pi:auxiliary-usage:ingest-v1";
+const AUXILIARY_USAGE_SCOPE_SETTLED_EVENT = "terrific-pi:auxiliary-usage:scope-settled-v1";
 const AUXILIARY_STATUS_KEY = "auxiliary";
 
 type AskResult =
@@ -82,13 +85,14 @@ function buildSnapshot(
 
 function publishUsage(
 	pi: ExtensionAPI,
+	scopeId: string,
 	candidate: BtwCandidate,
 	status: "ok" | "error" | "aborted" | "timeout",
 	startedAt: number,
 	usage?: Usage,
 	errorCode?: "auth_unavailable" | "timeout" | "aborted" | "provider_error" | "empty_response",
 ): void {
-	pi.events.emit(AUXILIARY_USAGE_INGEST_EVENT, createBtwUsageEntry(candidate, status, startedAt, Date.now(), usage, errorCode));
+	pi.events.emit(AUXILIARY_USAGE_INGEST_EVENT, createBtwUsageEntry(candidate, status, startedAt, Date.now(), usage, errorCode, scopeId));
 }
 
 function modelLabel(model: Model<Api>): string {
@@ -100,6 +104,7 @@ async function askQuestion(
 	ctx: ExtensionCommandContext,
 	question: string,
 	contextMode: BtwContextMode,
+	scopeId: string,
 ): Promise<AskResult> {
 	const { config, warnings } = loadConfig(
 		ctx.cwd,
@@ -156,7 +161,7 @@ async function askQuestion(
 						});
 						activeSession = session;
 						if (cancelled) {
-							publishUsage(pi, candidate, "aborted", startedAt, undefined, "aborted");
+							publishUsage(pi, scopeId, candidate, "aborted", startedAt, undefined, "aborted");
 							return { status: "cancelled" };
 						}
 						if (candidate.timeoutMs > 0) {
@@ -168,38 +173,38 @@ async function askQuestion(
 						await session.prompt(question, { source: "extension" });
 						const response = lastAssistant(session);
 						if (cancelled) {
-							publishUsage(pi, candidate, "aborted", startedAt, response?.usage, "aborted");
+							publishUsage(pi, scopeId, candidate, "aborted", startedAt, response?.usage, "aborted");
 							return { status: "cancelled" };
 						}
 						if (timedOut) {
-							publishUsage(pi, candidate, "timeout", startedAt, response?.usage, "timeout");
+							publishUsage(pi, scopeId, candidate, "timeout", startedAt, response?.usage, "timeout");
 							lastError = `BTW request timed out for ${label}`;
 							continue;
 						}
 						const result = extractAnswer(session, label);
 						if (result.status === "ok") {
-							publishUsage(pi, candidate, "ok", startedAt, response?.usage);
+							publishUsage(pi, scopeId, candidate, "ok", startedAt, response?.usage);
 							return result;
 						}
 						if (result.status === "cancelled") {
-							publishUsage(pi, candidate, "aborted", startedAt, response?.usage, "aborted");
+							publishUsage(pi, scopeId, candidate, "aborted", startedAt, response?.usage, "aborted");
 							return result;
 						}
 						lastError = result.message;
-						publishUsage(pi, candidate, "error", startedAt, response?.usage,
+						publishUsage(pi, scopeId, candidate, "error", startedAt, response?.usage,
 							result.message.includes("no text") ? "empty_response" : "provider_error");
 					} catch (error) {
 						const message = error instanceof Error ? error.message : String(error);
 						if (cancelled) {
-							publishUsage(pi, candidate, "aborted", startedAt, session ? lastAssistant(session)?.usage : undefined, "aborted");
+							publishUsage(pi, scopeId, candidate, "aborted", startedAt, session ? lastAssistant(session)?.usage : undefined, "aborted");
 							return { status: "cancelled" };
 						}
 						if (timedOut) {
-							publishUsage(pi, candidate, "timeout", startedAt, session ? lastAssistant(session)?.usage : undefined, "timeout");
+							publishUsage(pi, scopeId, candidate, "timeout", startedAt, session ? lastAssistant(session)?.usage : undefined, "timeout");
 							lastError = `BTW request timed out for ${label}`;
 						} else {
 							const authFailure = /api key|auth|credential/i.test(message);
-							publishUsage(pi, candidate, "error", startedAt, session ? lastAssistant(session)?.usage : undefined, authFailure ? "auth_unavailable" : "provider_error");
+							publishUsage(pi, scopeId, candidate, "error", startedAt, session ? lastAssistant(session)?.usage : undefined, authFailure ? "auth_unavailable" : "provider_error");
 							lastError = authFailure ? `Authentication unavailable for ${label}` : `BTW request failed for ${label}`;
 						}
 					} finally {
@@ -374,7 +379,13 @@ export default function (pi: ExtensionAPI) {
 			running = true;
 			try {
 				while (true) {
-					const result = await askQuestion(pi, ctx, question, parsed.contextMode);
+					const scopeId = randomUUID();
+					let result: AskResult;
+					try {
+						result = await askQuestion(pi, ctx, question, parsed.contextMode, scopeId);
+					} finally {
+						pi.events.emit(AUXILIARY_USAGE_SCOPE_SETTLED_EVENT, { version: 1, scopeId });
+					}
 					if (result.status === "cancelled") {
 						ctx.ui.notify("Cancelled", "info");
 						return;

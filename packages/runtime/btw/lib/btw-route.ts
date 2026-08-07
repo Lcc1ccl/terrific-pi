@@ -26,6 +26,7 @@ export interface BtwUsageEntryV1 {
 	fallbackIndex: number;
 	startedAt: number;
 	durationMs: number;
+	scopeId: string;
 	usage?: Usage;
 	errorCode?: "auth_unavailable" | "timeout" | "aborted" | "provider_error" | "empty_response";
 }
@@ -52,6 +53,7 @@ export function createBtwUsageEntry(
 	finishedAt: number,
 	usage?: Usage,
 	errorCode?: BtwUsageEntryV1["errorCode"],
+	scopeId: string = randomUUID(),
 ): BtwUsageEntryV1 {
 	return {
 		version: 1,
@@ -65,6 +67,7 @@ export function createBtwUsageEntry(
 		fallbackIndex: candidate.fallbackIndex,
 		startedAt,
 		durationMs: Math.max(0, finishedAt - startedAt),
+		scopeId,
 		...(usage ? { usage } : {}),
 		...(errorCode ? { errorCode } : {}),
 	};

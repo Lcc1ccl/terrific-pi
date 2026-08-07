@@ -94,35 +94,13 @@ export function formatTokensCompact(value: number): string {
 	return `${scaled.toFixed(decimals).replace(/\.0+$|(?<=\.[0-9]*)0+$/g, "")}${suffix}`;
 }
 
-/** Dim Ⅰ suffix marks auxiliary usage beside main tokens/cost. */
-export const AUX_USAGE_MARKER = "Ⅰ";
-
-/** Append dim Ⅰ suffix; omit auxText for unknown (`Ⅰ ?`). */
-export function appendAuxSuffix(parts: SegmentPart[], auxText?: string, uncertain = false): void {
-	parts.push({ text: AUX_USAGE_MARKER, tone: "dim" });
-	if (auxText) {
-		parts.push({ text: ` ${auxText}${uncertain ? "?" : ""}`, tone: "dim" });
-	} else {
-		parts.push({ text: " ?", tone: "dim" });
-	}
-}
-
-export function formatCost(
-	value: number,
-	_minimal = false,
-	auxCost = 0,
-	auxUnknown = false,
-): SegmentContent {
+export function formatCost(value: number, _minimal = false): SegmentContent {
 	// Keep `$` always — minimal shortens other labels, not currency identity.
 	const amount = Math.max(0, value).toFixed(2);
-	const aux = Math.max(0, auxCost);
-	const parts: SegmentPart[] = [
-		{ text: "$", tone: "label" },
-		{ text: amount, tone: "value" },
-	];
-	if (aux > 0) appendAuxSuffix(parts, `$${aux.toFixed(2)}`, auxUnknown);
-	else if (auxUnknown) appendAuxSuffix(parts);
-	return content(parts);
+	return content([
+		{ text: "$", tone: "cost" },
+		{ text: amount, tone: "cost" },
+	]);
 }
 
 export function formatCache(
@@ -157,28 +135,37 @@ export function formatCache(
 	]);
 }
 
+function contextLabel(minimal: boolean, iconMode: IconMode): SegmentPart {
+	if (resolveIconMode(iconMode) === "plain") {
+		return { text: minimal ? "ctx " : "context ", tone: "label" };
+	}
+	return { text: `${resolveGlyphs(iconMode).context} `, tone: "icon" };
+}
+
+export function formatContextUnavailable(
+	minimal = false,
+	iconMode: IconMode = "emoji",
+): SegmentContent {
+	return content([contextLabel(minimal, iconMode), { text: "?", tone: "dim" }]);
+}
+
 export function formatContextText(
 	percent: number | null | undefined,
 	mode: ContextMode,
 	minimal = false,
+	iconMode: IconMode = "emoji",
 ): SegmentContent | undefined {
 	if (percent === null || percent === undefined || Number.isNaN(percent)) return undefined;
 	const usedPercent = Math.max(0, Math.min(100, percent));
 	const used = Math.round(usedPercent);
 	const remaining = Math.max(0, Math.min(100, 100 - used));
 	const value = mode === "used" ? used : remaining;
-	const tone = usageValueTone(usedPercent);
-	if (minimal) {
-		const suffix = mode === "used" ? "%" : "% left";
-		return content([
-			{ text: "ctx ", tone: "label" },
-			{ text: `${value}${suffix}`, tone },
-		]);
-	}
-	const suffix = mode === "used" ? "% used" : "% left";
+	const suffix = mode === "used"
+		? (minimal ? "%" : "% used")
+		: "% left";
 	return content([
-		{ text: "Context ", tone: "label" },
-		{ text: `${value}${suffix}`, tone },
+		contextLabel(minimal, iconMode),
+		{ text: `${value}${suffix}`, tone: usageValueTone(usedPercent) },
 	]);
 }
 
@@ -193,6 +180,7 @@ export function formatContextBar(
 	width: number,
 	mode: ContextMode,
 	minimal = false,
+	iconMode: IconMode = "emoji",
 ): SegmentContent | undefined {
 	if (percent === null || percent === undefined || Number.isNaN(percent)) return undefined;
 	const used = Math.max(0, Math.min(100, percent));
@@ -201,7 +189,7 @@ export function formatContextBar(
 		? `${Math.round(used)}%`
 		: `${Math.max(0, Math.min(100, Math.round(100 - used)))}%`;
 	const parts: SegmentPart[] = [
-		{ text: minimal ? "ctx " : "Context ", tone: "label" },
+		contextLabel(minimal, iconMode),
 		...formatBarParts(filledRatio, width),
 		{ text: label, tone: usageValueTone(used) },
 	];
@@ -216,6 +204,21 @@ export function formatCwd(cwd: string): string {
 
 	if (!insideHome) return absolute;
 	return fromHome === "" ? "~" : `~${sep}${fromHome}`;
+}
+
+export function formatPathContent(cwd: string, iconMode: IconMode = "emoji"): SegmentContent {
+	const path = formatCwd(cwd);
+	const split = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+	const parts: SegmentPart[] = [];
+	const folder = resolveGlyphs(iconMode).folder;
+	if (resolveIconMode(iconMode) !== "plain" && folder) parts.push({ text: `${folder} `, tone: "active" });
+	if (split >= 0 && split < path.length - 1) {
+		parts.push({ text: path.slice(0, split + 1), tone: "active" });
+		parts.push({ text: path.slice(split + 1), tone: "active" });
+	} else {
+		parts.push({ text: path, tone: "active" });
+	}
+	return content(parts);
 }
 
 /** Cap session titles so dense status lines stay scannable. */
@@ -239,13 +242,11 @@ export function formatTokenDirection(
 	direction: "in" | "out",
 	value: number,
 	iconMode: IconMode = "emoji",
-	auxValue = 0,
 ): SegmentContent {
 	const compact = formatTokensCompact(value);
-	const aux = Math.max(0, auxValue);
 	const resolved = resolveIconMode(iconMode);
 	const glyphs = resolveGlyphs(iconMode);
-	const parts: SegmentPart[] = resolved === "plain"
+	return content(resolved === "plain"
 		? [
 			{ text: direction === "in" ? "in " : "out ", tone: "label" },
 			{ text: compact, tone: "value" },
@@ -253,24 +254,7 @@ export function formatTokenDirection(
 		: [
 			{ text: `${direction === "in" ? glyphs.input : glyphs.output} `, tone: "icon" },
 			{ text: compact, tone: "value" },
-		];
-	if (aux > 0) appendAuxSuffix(parts, formatTokensCompact(aux));
-	return content(parts);
-}
-
-export type AuxTokenExtras = {
-	input?: number;
-	output?: number;
-	unsplit?: number;
-	unknown?: boolean;
-};
-
-/** Append neutral unsplit/unknown aux markers after a tokens segment. */
-export function appendAuxTokenExtras(parts: SegmentPart[], extras: AuxTokenExtras = {}): void {
-	const unsplit = Math.max(0, extras.unsplit ?? 0);
-	// Unsplit totals first; always surface unknown even when some in/out is already known.
-	if (unsplit > 0) appendAuxSuffix(parts, formatTokensCompact(unsplit), extras.unknown);
-	else if (extras.unknown) appendAuxSuffix(parts);
+		]);
 }
 
 /** Compact token pair for minimal mode — keeps in/out (or emoji) labels. */
@@ -278,36 +262,20 @@ export function formatTokenPairMinimal(
 	input: number,
 	output: number,
 	iconMode: IconMode = "emoji",
-	auxInput = 0,
-	auxOutput = 0,
-	extras: AuxTokenExtras = {},
 ): SegmentContent {
-	const left = formatTokenDirection("in", input, iconMode, auxInput);
-	const right = formatTokenDirection("out", output, iconMode, auxOutput);
-	const parts: SegmentPart[] = [
+	const left = formatTokenDirection("in", input, iconMode);
+	const right = formatTokenDirection("out", output, iconMode);
+	return content([
 		...left.parts,
 		{ text: " · ", tone: "dim" },
 		...right.parts,
-	];
-	appendAuxTokenExtras(parts, {
-		input: Math.max(0, auxInput),
-		output: Math.max(0, auxOutput),
-		unsplit: extras.unsplit,
-		unknown: extras.unknown,
-	});
-	return content(parts);
+	]);
 }
 
 export function formatBranch(branch: string, iconMode: IconMode = "emoji"): SegmentContent {
 	const resolved = resolveIconMode(iconMode);
-	const glyphs = resolveGlyphs(iconMode);
-	const isDefault = branch === "main" || branch === "master";
-	if (resolved === "emoji") {
-		return content([{ text: isDefault ? glyphs.home : branch, tone: "muted" }]);
-	}
-	if (resolved === "plain") return content([{ text: branch, tone: "muted" }]);
-	if (resolved === "nerd" && isDefault) return content([{ text: glyphs.home, tone: "muted" }]);
-	return content([{ text: `${glyphs.git} ${branch}`, tone: "muted" }]);
+	if (resolved === "plain") return content([{ text: branch, tone: "branch" }]);
+	return content([{ text: `${resolveGlyphs(iconMode).branch} ${branch}`, tone: "branch" }]);
 }
 
 export function formatBranchDiff(stats: { additions: number; deletions: number }): SegmentContent | undefined {
@@ -509,8 +477,8 @@ export function formatDurationContent(
 export function formatWorktree(info: WorktreeInfo, iconMode: IconMode): SegmentContent {
 	const glyphs = resolveGlyphs(iconMode);
 	const parts: SegmentPart[] = [
-		{ text: `${glyphs.git} `, tone: "icon" },
-		{ text: info.branch ?? info.oid?.slice(0, 7) ?? "?", tone: "muted" },
+		{ text: `${glyphs.worktree} `, tone: "icon" },
+		{ text: info.branch ?? info.oid?.slice(0, 7) ?? "?", tone: "branch" },
 	];
 	const add = (count: number, glyph: string, tone: SegmentTone) => {
 		if (count <= 0) return;
@@ -648,9 +616,9 @@ export function formatModelContent(
 ): SegmentContent {
 	if (hasReasoning) {
 		return content([
-			{ text: modelId, tone: "value" },
+			{ text: modelId, tone: "model" },
 			{ text: ` ${thinkingLevel}`, tone: thinkingLevelTone(thinkingLevel) },
 		]);
 	}
-	return content([{ text: modelId, tone: "value" }]);
+	return content([{ text: modelId, tone: "model" }]);
 }
