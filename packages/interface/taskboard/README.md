@@ -5,7 +5,7 @@ Structured task milestones and task-scoped HUD for [pi](https://pi.dev).
 Taskboard keeps multi-step work inspectable while `presentation` owns collapsed tool history:
 
 - a compact editor-above HUD for the goal, task progress, current-step time, and blocker
-- a live task panel when Pi's native tool expansion is enabled (default `Ctrl+O`)
+- a live task panel toggled by `Shift+Alt+O` or Pi's native tool expansion binding
 - expandable `process_update` history without repeating the snapshot currently visible in the HUD
 
 ## Install
@@ -30,12 +30,13 @@ Snapshots support:
 
 - `running`, `waiting`, `blocked`, and `completed`
 - deterministic completion from a verified terminal `git_finalize` receipt: only when every prior step is done and the sole active final step is ready to commit
+- at most one newly completed step per `process_update` call, matched by normalized step text; batch completion is rejected before state changes
 - one to five outcome-oriented steps
 - a concise update, blocker, verification, and up to five artifacts
 - branch-aware restoration through `process-view-state-v1` custom entries
 - extension-owned step timing plus model, token, cache, and cost telemetry without adding model-facing fields
 
-Tool calls execute sequentially. Invalid snapshots throw without changing memory, session state, or the Widget. The call itself is hidden. While the HUD owns the current snapshot, its successful collapsed result is suppressed; it reappears after a newer milestone replaces it, or after the completed HUD settles away. Expanded details and errors are never suppressed. Use Pi's current `app.tools.expand` binding to inspect task and runtime history.
+Tool calls execute sequentially. Invalid snapshots throw without changing memory, session state, or the Widget. The call itself is hidden. While the HUD owns the current snapshot, its successful collapsed result is suppressed; it reappears after a newer milestone replaces it, or after the completed HUD settles away. Expanded details and errors are never suppressed. Use `Shift+Alt+O` to toggle the live panel; Pi's current `app.tools.expand` binding also controls the same expansion state.
 
 ## HUD
 
@@ -73,7 +74,7 @@ When activity is visible, only `read`, `edit`, `write`, `grep`, `find`, and `ls`
 /taskboard default <mode>  save compact|full|off for new session branches
 ```
 
-Outside TUI mode, bare `/taskboard` prints the current summary and `/taskboard clear` refuses without TUI confirmation. View mode is stored per session branch. `taskboard.defaultViewMode` in `~/.pi/agent/terrific.json` supplies the initial mode only when a branch has no saved Taskboard state; `/taskboard default <mode>` writes that global default. The extension registers no shortcuts. The default `Ctrl+O` remains owned by Pi as `app.tools.expand`, so user keybinding overrides continue to work.
+Outside TUI mode, bare `/taskboard` prints the current summary and `/taskboard clear` refuses without TUI confirmation. View mode is stored per session branch. `taskboard.defaultViewMode` in `~/.pi/agent/terrific.json` supplies the initial mode only when a branch has no saved Taskboard state; `/taskboard default <mode>` writes that global default. The extension registers `Shift+Alt+O` to toggle the live panel. Pi's default `Ctrl+O` remains the global `app.tools.expand` binding and controls the same expansion state.
 
 ## Compatibility Window
 

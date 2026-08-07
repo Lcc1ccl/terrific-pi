@@ -148,13 +148,57 @@ describe("normalizeProcessUpdate", () => {
 			}),
 			/completed requires update or verification/i,
 		);
+		const ready = snapshot();
+		ready.steps = [
+			{ text: "Inspect current state", status: "done" },
+			{ text: "Apply changes", status: "done" },
+			{ text: "Run checks", status: "active" },
+		];
 		assert.equal(normalizeProcessUpdate({
 			...runningInput(),
 			status: "completed",
 			steps: doneSteps,
 			update: undefined,
 			verification: "All checks passed",
-		}, undefined, NOW).status, "completed");
+		}, ready, NOW + 1).status, "completed");
+	});
+
+	it("matches done steps by text and permits at most one new completion", () => {
+		const doneSteps = runningInput().steps.map((step) => ({ ...step, status: "done" as const }));
+		assert.throws(
+			() => normalizeProcessUpdate({
+				...runningInput(),
+				status: "completed",
+				steps: doneSteps,
+				verification: "All checks passed",
+			}, undefined, NOW),
+			/one step.*done/i,
+		);
+
+		const previous = snapshot();
+		assert.throws(
+			() => normalizeProcessUpdate({
+				...runningInput(),
+				status: "waiting",
+				steps: [
+					{ text: "Inspect current state", status: "active" },
+					{ text: "Apply changes", status: "done" },
+					{ text: "Run checks", status: "done" },
+				],
+				update: "Two steps claimed",
+			}, previous, NOW + 1),
+			/one step.*done/i,
+		);
+
+		const reordered = normalizeProcessUpdate({
+			...runningInput(),
+			steps: [
+				{ text: "Apply changes", status: "active" },
+				{ text: "Inspect current state", status: "done" },
+				{ text: "Run checks", status: "pending" },
+			],
+		}, previous, NOW + 1);
+		assert.deepEqual(reordered.steps.map((step) => step.status), ["active", "done", "pending"]);
 	});
 
 	it("rejects empty normalized text and direct callers exceeding limits", () => {

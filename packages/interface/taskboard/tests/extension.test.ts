@@ -34,6 +34,17 @@ function runningInput(): ProcessUpdateInput {
 	};
 }
 
+function finalStepInput(): ProcessUpdateInput {
+	return {
+		...runningInput(),
+		steps: runningInput().steps.map((step, index) => ({
+			...step,
+			status: index < 2 ? "done" as const : "active" as const,
+		})),
+		update: "Verification started",
+	};
+}
+
 function completedInput(): ProcessUpdateInput {
 	return {
 		...runningInput(),
@@ -98,7 +109,7 @@ function createHarness(options: HarnessOptions = {}) {
 	const confirmCalls: Array<{ title: string; message: string }> = [];
 	const choices = [...(options.choices ?? [])];
 	const confirmations = [...(options.confirmations ?? [])];
-	const shortcuts: unknown[] = [];
+	const shortcuts: Array<{ shortcut: string; options: any }> = [];
 	let tool: any;
 	const commands = new Map<string, any>();
 	let failAppend = false;
@@ -201,8 +212,8 @@ function createHarness(options: HarnessOptions = {}) {
 		registerCommand(name: string, value: unknown) {
 			commands.set(name, value);
 		},
-		registerShortcut(value: unknown) {
-			shortcuts.push(value);
+		registerShortcut(shortcut: string, options: any) {
+			shortcuts.push({ shortcut, options });
 		},
 		appendEntry(customType: string, data: unknown) {
 			if (failAppend) throw new Error("session write failed");
@@ -255,6 +266,7 @@ describe("taskboard registration and tool", () => {
 		assert.equal(harness.tool.executionMode, "sequential");
 		assert.equal(harness.tool.renderShell, "self");
 		assert.ok(harness.tool.promptGuidelines.every((line: string) => line.includes("process_update")));
+		assert.ok(harness.tool.promptGuidelines.some((line: string) => /one step.*done/i.test(line)));
 		assert.ok(harness.command);
 		assert.equal(harness.processAlias, undefined);
 		assert.deepEqual(harness.command.getArgumentCompletions("").map((item: { value: string }) => item.value), [
@@ -263,7 +275,17 @@ describe("taskboard registration and tool", () => {
 		assert.deepEqual(harness.command.getArgumentCompletions("default ").map((item: { value: string }) => item.value), [
 			"default compact", "default full", "default off",
 		]);
-		assert.deepEqual(harness.shortcuts, []);
+		assert.equal(harness.shortcuts[0]?.shortcut, "shift+alt+o");
+		assert.match(harness.shortcuts[0]?.options.description ?? "", /Taskboard/i);
+	});
+
+	it("toggles the live panel with Shift+Alt+O", async () => {
+		const harness = createHarness();
+		assert.equal(harness.ctx.ui.getToolsExpanded(), false);
+		await harness.shortcuts[0]!.options.handler(harness.ctx);
+		assert.equal(harness.ctx.ui.getToolsExpanded(), true);
+		await harness.shortcuts[0]!.options.handler(harness.ctx);
+		assert.equal(harness.ctx.ui.getToolsExpanded(), false);
 	});
 
 	it("keeps legacy session entry and context type strings for restoration", () => {
@@ -345,6 +367,15 @@ describe("taskboard registration and tool", () => {
 		assert.match(harness.selectCalls.at(-1)?.title ?? "", /no active task/i);
 	});
 
+	it("rejects batch completion without persisting it", async () => {
+		const harness = createHarness();
+		await execute(harness);
+		const entryCount = harness.entries.length;
+		await assert.rejects(() => execute(harness, completedInput()), /one step.*done/i);
+		assert.equal(harness.entries.length, entryCount);
+		assert.deepEqual(latestSnapshot(harness.entries)?.steps.map((step) => step.status), ["done", "active", "pending"]);
+	});
+
 	it("keeps in-memory state unchanged when appendEntry fails", async () => {
 		const harness = createHarness();
 		harness.setFailAppend(true);
@@ -357,6 +388,16 @@ describe("taskboard registration and tool", () => {
 
 	it("completes an eligible final step from a verified git finalize receipt", async () => {
 		const harness = createHarness();
+		await execute(harness, {
+			title: "Release presentation",
+			status: "running",
+			steps: [
+				{ text: "Implement", status: "done" },
+				{ text: "Verify", status: "active" },
+				{ text: "Commit", status: "pending" },
+			],
+			update: "Verification started",
+		});
 		await execute(harness, {
 			title: "Release presentation",
 			status: "running",
@@ -433,6 +474,16 @@ describe("taskboard registration and tool", () => {
 			status: "running",
 			steps: [
 				{ text: "Implement", status: "done" },
+				{ text: "Verify", status: "active" },
+				{ text: "Push", status: "pending" },
+			],
+			update: "Verification started",
+		});
+		await execute(harness, {
+			title: "Release presentation",
+			status: "running",
+			steps: [
+				{ text: "Implement", status: "done" },
 				{ text: "Verify", status: "done" },
 				{ text: "Push", status: "active" },
 			],
@@ -493,6 +544,7 @@ describe("taskboard registration and tool", () => {
 			/Implement process view/,
 		);
 
+		await execute(harness, finalStepInput());
 		const completed = await execute(harness, completedInput());
 		assert.match(runningCollapsed.render(120).join("\n"), /Taskboard 1\/3/);
 		const completedCollapsed = harness.tool.renderResult(
@@ -647,6 +699,8 @@ describe("request, branch, and context lifecycle", () => {
 
 	it("hides completed work after settled while retaining its receipt entry", async () => {
 		const harness = createHarness();
+		await execute(harness);
+		await execute(harness, finalStepInput());
 		await execute(harness, completedInput());
 		assert.ok(harness.currentWidget);
 		await harness.emit("agent_settled");
@@ -662,6 +716,7 @@ describe("request, branch, and context lifecycle", () => {
 		await execute(harness, { ...runningInput(), status: "blocked", blocker: "Need decision" });
 		assert.deepEqual(harness.statusCalls.at(-1), { key: TASKBOARD_STATUS_KEY, value: "blocked" });
 
+		await execute(harness, finalStepInput());
 		await execute(harness, completedInput());
 		assert.deepEqual(harness.statusCalls.at(-1), { key: TASKBOARD_STATUS_KEY, value: undefined });
 
@@ -696,6 +751,7 @@ describe("duration timer lifecycle", () => {
 
 			await harness.command.handler("compact", harness.ctx);
 			assert.equal(active.size, 1);
+			await execute(harness, finalStepInput());
 			await execute(harness, completedInput());
 			assert.equal(active.size, 0);
 			await harness.emit("agent_settled");

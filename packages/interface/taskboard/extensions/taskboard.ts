@@ -40,6 +40,7 @@ import {
 const PROMPT_GUIDELINES = [
 	"Use process_update for work with at least three meaningful user-visible steps; skip it for simple answers or one-step work.",
 	"Call process_update only when the task starts, a step changes, work blocks, or the task completes; never use it to narrate private reasoning.",
+	"In process_update, move at most one step to done per call; never batch-complete steps.",
 	"Keep process_update to at most five outcome-oriented steps and mark completed only after requested verification is actually run.",
 	"In process_update, use status waiting when paused for a subagent or external process; use blocked when user input is required.",
 	"When the presentation file ledger is active, do not repeat ordinary file artifacts in process_update; keep tests, screenshots, URLs, commits, and reports when useful.",
@@ -497,6 +498,13 @@ export default function taskboard(pi: ExtensionAPI) {
 		},
 	};
 	pi.registerCommand("taskboard", taskboardCommand);
+	pi.registerShortcut("shift+alt+o", {
+		description: "Toggle Taskboard live panel",
+		handler: (ctx) => {
+			ctx.ui.setToolsExpanded(!ctx.ui.getToolsExpanded());
+			refreshWidget(ctx);
+		},
+	});
 
 	pi.on("session_start", async (_event, ctx) => restore(ctx));
 

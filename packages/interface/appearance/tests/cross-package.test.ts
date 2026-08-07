@@ -60,6 +60,7 @@ function createHarness(enabled: boolean) {
       handlers.set(name, [...(handlers.get(name) ?? []), { owner, handler }]);
     },
     registerCommand(name: string) { commands.set(name, owner); },
+    registerShortcut() {},
     registerTool(value: { name: string }) { tools.set(value.name, owner); },
     registerEntryRenderer(name: string) { renderers.set(name, owner); },
     appendEntry() {},

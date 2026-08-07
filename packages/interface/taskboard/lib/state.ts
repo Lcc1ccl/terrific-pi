@@ -231,6 +231,23 @@ function validateSemantics(snapshot: Pick<ProcessSnapshot, "status" | "steps" | 
 	}
 }
 
+function countNewlyCompletedSteps(
+	previous: ProcessSnapshot | undefined,
+	next: ProcessSnapshot,
+): number {
+	const previousDone = (previous?.steps ?? [])
+		.filter((step) => step.status === "done")
+		.map((step) => step.text);
+	let count = 0;
+	for (const step of next.steps) {
+		if (step.status !== "done") continue;
+		const match = previousDone.indexOf(step.text);
+		if (match >= 0) previousDone.splice(match, 1);
+		else count += 1;
+	}
+	return count;
+}
+
 export function normalizeProcessUpdate(
 	input: ProcessUpdateInput,
 	previous: ProcessSnapshot | undefined = undefined,
@@ -267,6 +284,9 @@ export function normalizeProcessUpdate(
 		updatedAt: now,
 	};
 	validateSemantics(snapshot);
+	if (countNewlyCompletedSteps(previous, snapshot) > 1) {
+		throw new ProcessUpdateError("Process updates can move only one step to done at a time");
+	}
 	return snapshot;
 }
 
