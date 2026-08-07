@@ -22,6 +22,7 @@ const MAX_EXPANDED_ARTIFACTS = 32;
 
 export const DEFAULT_PRESENTATION_CONFIG: PresentationConfig = {
 	enabled: true,
+	style: "omp",
 	workspace: true,
 	systemEvents: true,
 	artifacts: true,
@@ -48,6 +49,7 @@ function normalizeConfig(value: unknown): PresentationConfig {
 		: DEFAULT_PRESENTATION_CONFIG.maxExpandedArtifacts;
 	return {
 		enabled: typeof value.enabled === "boolean" ? value.enabled : DEFAULT_PRESENTATION_CONFIG.enabled,
+		style: value.style === "classic" || value.style === "omp" ? value.style : DEFAULT_PRESENTATION_CONFIG.style,
 		workspace: typeof value.workspace === "boolean" ? value.workspace : DEFAULT_PRESENTATION_CONFIG.workspace,
 		systemEvents: typeof value.systemEvents === "boolean" ? value.systemEvents : DEFAULT_PRESENTATION_CONFIG.systemEvents,
 		artifacts: typeof value.artifacts === "boolean" ? value.artifacts : DEFAULT_PRESENTATION_CONFIG.artifacts,

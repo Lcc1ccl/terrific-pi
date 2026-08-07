@@ -1,5 +1,5 @@
 import { basename, isAbsolute, relative, resolve, sep, win32 } from "node:path";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { sanitizeSystemText } from "../system-events.ts";
 import type { FileArtifact, PresentationArtifactState } from "../types.ts";
@@ -66,6 +66,7 @@ interface ExplorationEpisode {
 
 export interface ToolRenderOptions {
 	isEnabled(): boolean;
+	isOmpStyleEnabled?(): boolean;
 	isArtifactProjectionEnabled?(): boolean;
 	getTheme(): CompatibilityTheme | undefined;
 	now(): number;
@@ -83,7 +84,17 @@ export interface ToolRenderController {
 }
 
 const EXPLORATION = new Set(["read", "grep", "find", "ls"]);
+const SEARCH = new Set(["grep", "find"]);
+const MUTATION = new Set(["edit", "write"]);
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+const SEARCH_PREVIEW_LINES = 6;
+const OUTPUT_PREVIEW_LINES = 4;
+const DIFF_PREVIEW_LINES = 8;
+
+interface BlockSection {
+	label?: string;
+	lines: string[];
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -155,20 +166,27 @@ function color(theme: CompatibilityTheme | undefined, tone: string, value: strin
 
 function collapseAbsolutePaths(value: string): string {
 	return value
+		.replace(/\bfile:\/\/[^\s'"<>]+/gi, "<file>")
+		.replace(/\\\\[^\s'"]+/g, (path) => win32.basename(path))
 		.replace(/(['"])(\/[^'"\r\n]+)\1/g, (_match, quote: string, path: string) => `${quote}${basename(path)}${quote}`)
 		.replace(/\b[A-Za-z]:\\[^'"\r\n<>\[\](){},;:]+/g, (path) => win32.basename(path.trim()))
 		.replace(/(^|[\s(\[{:<=>])((?:\/[^/\s'"\]),;:}>]+)+)/g, (_match, prefix: string, path: string) => `${prefix}${basename(path)}`);
 }
 
+function redactDisplay(value: string, collapsePaths = false): string {
+	let display = sanitizeSystemText(value, value.length)
+		.replace(/https?:\/\/[^\s'"<>]+/gi, "<url>")
+		.replace(/\b(Bearer|Basic)\b.*$/gi, "$1 <redacted>")
+		.replace(/\b([A-Za-z0-9_]*(?:api[_-]?key|token|secret|password|credential|authorization|private[_-]?key)[A-Za-z0-9_-]*)\b(?:\s*[:=]\s*|\s+).*$/gi, "$1=<redacted>")
+		.replace(/\b(?:sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{8,}|xox[baprs]-[A-Za-z0-9-]{8,})\b/gi, "<redacted>");
+	if (collapsePaths) display = collapseAbsolutePaths(display);
+	return sanitizeSystemText(display, 2_000);
+}
+
 function safeError(result: ToolResultLike | undefined): string {
 	const code = exitCode(result);
 	const first = textOutput(result).split(/\r?\n/).map((line) => line.trim()).find(Boolean);
-	let detail = sanitizeSystemText(first ?? "", 241)
-		.replace(/https?:\/\/[^\s'"<>]+/gi, "<url>")
-		.replace(/\b(Bearer)\s+\S+/gi, "$1 <redacted>")
-		.replace(/\b(api[_-]?key|token|secret|password)\s*[:=]\s*\S+/gi, "$1=<redacted>")
-		.replace(/\b(?:sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{8,}|xox[baprs]-[A-Za-z0-9-]{8,})\b/gi, "<redacted>");
-	detail = collapseAbsolutePaths(detail);
+	let detail = redactDisplay(first ?? "", true);
 	if (/^(?:command )?exited with code \d+$/i.test(detail)) detail = "";
 	const summary = truncateToWidth(detail || "no error detail", 120, "…");
 	return code === undefined ? summary : detail ? `exit ${code} · ${summary}` : `exit ${code}`;
@@ -330,6 +348,216 @@ function explorationLine(
 	};
 }
 
+function renderBlock(
+	header: string,
+	sections: BlockSection[],
+	width: number,
+	theme: CompatibilityTheme | undefined,
+	tone: string,
+): string[] {
+	const safeWidth = Math.max(0, Math.floor(width));
+	if (safeWidth < 8) return safeWidth < 1 ? [] : [truncateToWidth(header, safeWidth, "…")];
+	const border = (value: string) => color(theme, tone, value);
+	const horizontal = "─";
+	const bar = (left: string, right: string, label?: string): string => {
+		const prefix = `${left}${horizontal.repeat(3)}`;
+		const suffix = right;
+		const available = Math.max(0, safeWidth - visibleWidth(prefix) - visibleWidth(suffix));
+		const renderedLabel = label ? truncateToWidth(` ${label} `, available, "…") : "";
+		const fill = horizontal.repeat(Math.max(0, available - visibleWidth(renderedLabel)));
+		return `${border(prefix)}${renderedLabel}${border(`${fill}${suffix}`)}`;
+	};
+	const innerWidth = Math.max(1, safeWidth - 4);
+	const lines = [bar("╭", "╮", header)];
+	for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex += 1) {
+		const section = sections[sectionIndex]!;
+		if (section.label) lines.push(bar("├", "┤", section.label));
+		for (const raw of section.lines) {
+			const content = truncateToWidth(raw, innerWidth, "…");
+			lines.push(`${border("│")} ${content}${" ".repeat(Math.max(0, innerWidth - visibleWidth(content)))} ${border("│")}`);
+		}
+	}
+	lines.push(bar("╰", "╯"));
+	return lines;
+}
+
+function numericDetail(result: ToolResultLike | undefined, key: string): number | undefined {
+	if (!isRecord(result?.details)) return undefined;
+	const value = result.details[key];
+	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function safePreviewLines(result: ToolResultLike | undefined, limit: number): string[] {
+	const allLines = textOutput(result)
+		.split(/\r?\n/)
+		.filter((line) => line.trim().length > 0);
+	if (allLines.length === 0) return ["(no output)"];
+	const lines = allLines.slice(0, limit).map((line) => redactDisplay(line, true).trimEnd());
+	const hidden = allLines.length - lines.length;
+	if (hidden > 0) lines.push(`… ${hidden} more line${hidden === 1 ? "" : "s"}`);
+	return lines;
+}
+
+function genericBlock(
+	state: ToolState,
+	width: number,
+	theme: CompatibilityTheme | undefined,
+	now: number,
+	label = labelFor(state.name),
+	previewLines = OUTPUT_PREVIEW_LINES,
+): string[] {
+	const live = !terminal(state);
+	const elapsed = state.startedAt === undefined ? 0 : (state.endedAt ?? now) - state.startedAt;
+	const marker = live
+		? color(theme, "accent", SPINNER[Math.floor(Math.max(0, elapsed) / 200) % SPINNER.length] ?? "⠋")
+		: state.isError ? color(theme, "error", "✗") : color(theme, "success", "◆");
+	const header = `${marker} ${label}${elapsed > 0 ? ` · ${formatDuration(elapsed)}` : ""}`;
+	const body = live
+		? [color(theme, "dim", "Running…")]
+		: state.isError ? [safeError(state.result)] : safePreviewLines(state.result, previewLines);
+	return renderBlock(header, [{ lines: body }], width, theme, state.isError ? "error" : live ? "accent" : "dim");
+}
+
+function listBlock(
+	state: ToolState,
+	width: number,
+	theme: CompatibilityTheme | undefined,
+	now: number,
+): string[] {
+	return genericBlock(
+		state,
+		width,
+		theme,
+		now,
+		`List: ${displayPath(pathArg(state.args), state.cwd)}`,
+		SEARCH_PREVIEW_LINES,
+	);
+}
+
+function editBlock(
+	state: ToolState,
+	width: number,
+	theme: CompatibilityTheme | undefined,
+	now: number,
+): string[] {
+	const live = !terminal(state);
+	const elapsed = state.startedAt === undefined ? 0 : (state.endedAt ?? now) - state.startedAt;
+	const marker = live
+		? color(theme, "accent", SPINNER[Math.floor(Math.max(0, elapsed) / 200) % SPINNER.length] ?? "⠋")
+		: state.isError ? color(theme, "error", "✗") : color(theme, "success", "◆");
+	const title = state.name === "write" ? "Write" : "Edit";
+	const header = `${marker} ${title}: ${displayPath(pathArg(state.args), state.cwd)}${elapsed > 0 ? ` · ${formatDuration(elapsed)}` : ""}`;
+	const args = isRecord(state.args) ? state.args : {};
+	const details = isRecord(state.result?.details) ? state.result.details : {};
+	const source = [details.diff, args.previewDiff, args.diff, args.patch]
+		.find((value): value is string => typeof value === "string" && value.trim().length > 0);
+	const sourceLines = source?.split(/\r?\n/);
+	let body = sourceLines
+		?? (live ? [color(theme, "dim", "Preparing preview…")] : safePreviewLines(state.result, 1));
+	const hidden = Math.max(0, body.length - DIFF_PREVIEW_LINES);
+	body = body.slice(0, DIFF_PREVIEW_LINES).map((line) => sourceLines ? redactDisplay(line, true).trimEnd() : line).map((line) => {
+		if (line.startsWith("+") && !line.startsWith("+++")) return color(theme, "success", line);
+		if (line.startsWith("-") && !line.startsWith("---")) return color(theme, "error", line);
+		if (line.startsWith("@@")) return color(theme, "accent", line);
+		return line;
+	});
+	if (hidden > 0) body.push(color(theme, "dim", `… ${hidden} more lines`));
+	return renderBlock(header, [{ lines: body }], width, theme, state.isError ? "error" : live ? "accent" : "dim");
+}
+
+function bashBlock(
+	state: ToolState,
+	width: number,
+	theme: CompatibilityTheme | undefined,
+	now: number,
+): string[] {
+	const args = isRecord(state.args) ? state.args : {};
+	const rawCommand = typeof args.command === "string" ? args.command : "…";
+	const command = truncateToWidth(redactDisplay(rawCommand, true), Math.max(20, width - 6), "…");
+	const live = !terminal(state);
+	const elapsed = state.startedAt === undefined ? 0 : (state.endedAt ?? now) - state.startedAt;
+	const marker = live
+		? color(theme, "accent", SPINNER[Math.floor(Math.max(0, elapsed) / 200) % SPINNER.length] ?? "⠋")
+		: state.isError ? color(theme, "error", "✗") : color(theme, "success", "◆");
+	const exit = exitCode(state.result);
+	const meta = [elapsed > 0 ? formatDuration(elapsed) : "", exit !== undefined ? `exit ${exit}` : ""].filter(Boolean).join(" · ");
+	const header = `${marker} Bash${meta ? ` · ${meta}` : ""}`;
+	const sections: BlockSection[] = [{ lines: [`$ ${command}`] }];
+	if (!live) {
+		const allOutput = textOutput(state.result)
+			.split(/\r?\n/)
+			.filter((line) => line.trim().length > 0);
+		const output = allOutput.slice(-OUTPUT_PREVIEW_LINES).map((line) => redactDisplay(line, true).trimEnd());
+		if (allOutput.length > output.length) output.unshift(color(theme, "dim", `… ${allOutput.length - output.length} earlier lines`));
+		sections.push({ label: "Output", lines: output.length > 0 ? output : [color(theme, "dim", "(no output)")] });
+	}
+	return renderBlock(header, sections, width, theme, state.isError ? "error" : live ? "accent" : "dim");
+}
+
+function searchBlock(
+	state: ToolState,
+	width: number,
+	theme: CompatibilityTheme | undefined,
+	now: number,
+): string[] {
+	const args = isRecord(state.args) ? state.args : {};
+	const pattern = typeof args.pattern === "string" ? truncateToWidth(redactDisplay(args.pattern, true), 80, "…") : "…";
+	const matches = numericDetail(state.result, "matchCount");
+	const files = numericDetail(state.result, "fileCount");
+	const meta = matches !== undefined
+		? ` · ${matches} match${matches === 1 ? "" : "es"}${files !== undefined ? ` in ${files} file${files === 1 ? "" : "s"}` : ""}`
+		: "";
+	const elapsed = state.startedAt === undefined ? 0 : (state.endedAt ?? now) - state.startedAt;
+	const live = !terminal(state);
+	const marker = live
+		? color(theme, "accent", SPINNER[Math.floor(Math.max(0, elapsed) / 200) % SPINNER.length] ?? "⠋")
+		: state.isError ? color(theme, "error", "✗") : "⌕";
+	const header = `${marker} Search: ${pattern}${meta}${elapsed > 0 ? ` · ${formatDuration(elapsed)}` : ""}`;
+	const body = live
+		? [color(theme, "dim", explorationTarget(state))]
+		: state.isError ? [safeError(state.result)] : safePreviewLines(state.result, SEARCH_PREVIEW_LINES);
+	return renderBlock(header, [{ lines: body }], width, theme, state.isError ? "error" : live ? "accent" : "dim");
+}
+
+function readTree(
+	episode: ExplorationEpisode,
+	states: Map<string, ToolState>,
+	theme: CompatibilityTheme | undefined,
+	now: number,
+): { representative?: string; lines: string[] } {
+	const members = episode.members
+		.map((id) => states.get(id))
+		.filter((state): state is ToolState => state?.name === "read");
+	const representative = members.at(-1)?.id;
+	if (!representative) return { lines: [] };
+	const active = members.some((state) => !terminal(state));
+	const started = members.map((state) => state.startedAt).filter((value): value is number => value !== undefined);
+	const ended = members.map((state) => state.endedAt).filter((value): value is number => value !== undefined);
+	const elapsed = started.length > 0
+		? active
+			? now - Math.min(...started)
+			: ended.length > 0 ? Math.max(...ended) - Math.min(...started) : 0
+		: 0;
+	const marker = active
+		? color(theme, "accent", SPINNER[Math.floor(Math.max(0, elapsed) / 200) % SPINNER.length] ?? "⠋")
+		: color(theme, members.some((state) => state.isError) ? "warning" : "success", "•");
+	const rows: Array<ToolState | string> = members.length <= 7
+		? members
+		: [...members.slice(0, 5), `… ${members.length - 6} more paths`, members.at(-1)!];
+	const lines = [`${marker} ${strong(theme, "Read")} (${members.length})${elapsed > 0 ? color(theme, "dim", ` · ${formatDuration(elapsed)}`) : ""}`];
+	for (let index = 0; index < rows.length; index += 1) {
+		const row = rows[index]!;
+		const connector = index === rows.length - 1 ? "└─" : "├─";
+		if (typeof row === "string") {
+			lines.push(`${connector} ${color(theme, "dim", row)}`);
+			continue;
+		}
+		const status = row.isError ? `${color(theme, "error", "✗")} ` : !terminal(row) ? `${color(theme, "accent", "…")} ` : "";
+		lines.push(`${connector} ${status}${displayPath(pathArg(row.args), row.cwd)}`);
+	}
+	return { representative, lines };
+}
+
 export function createToolRenderController(options: ToolRenderOptions): ToolRenderController {
 	const states = new Map<string, ToolState>();
 	const episodes = new Map<number, ExplorationEpisode>();
@@ -455,7 +683,8 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 				startedAt: prior?.startedAt ?? input.timestamp ?? options.now(),
 				isError: false,
 			};
-			if (EXPLORATION.has(input.toolName) && !input.skillName) {
+			const groupable = EXPLORATION.has(input.toolName);
+			if (groupable && !input.skillName) {
 				activeEpisode ??= { id: ++nextEpisodeId, members: [] };
 				activeEpisode.members.push(input.toolCallId);
 				episodes.set(activeEpisode.id, activeEpisode);
@@ -522,7 +751,8 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 							...(skillName ? { skillName } : {}),
 							isError: false,
 						};
-						if (EXPLORATION.has(state.name) && !skillName) {
+						const groupable = EXPLORATION.has(state.name);
+						if (groupable && !skillName) {
 							activeEpisode ??= { id: ++nextEpisodeId, members: [] };
 							activeEpisode.members.push(state.id);
 							episodes.set(activeEpisode.id, activeEpisode);
@@ -571,26 +801,40 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 			const artifactEnabled = options.isArtifactProjectionEnabled?.() ?? options.isEnabled();
 			const artifact = artifactEnabled && typeof instance.toolCallId === "string" ? artifactsByAnchor.get(instance.toolCallId) : undefined;
 			const compactTools = options.isEnabled();
+			const ompStyle = options.isOmpStyleEnabled?.() ?? false;
+			const ompCompact = compactTools && ompStyle;
 			const projectArtifact = Boolean(artifact);
+			const withArtifact = (lines: string[]): string[] => artifact && ompCompact && width > 0
+				? [...lines, truncateToWidth(artifactSummary(artifact, options.getTheme()), width, "…")]
+				: lines;
 			if ((!compactTools && !projectArtifact) || instance.toolName === "process_update") return original.call(instanceValue, width);
 			if (instance.expanded === true) {
 				const native = original.call(instanceValue, width);
+				if (ompStyle) return native;
 				return artifact ? [...native, ...artifactDetails(artifact, options.getTheme()).map((line) => truncateToWidth(line, width, "…"))] : native;
 			}
 			if (typeof instance.toolCallId === "string" && supersededArtifactAnchors.has(instance.toolCallId)) return [];
-			if (artifact) {
+			if (artifact && !ompCompact) {
 				if (!compactTools) {
 					const native = original.call(instanceValue, width);
 					return width < 1 ? native : [...native, "", truncateToWidth(artifactSummary(artifact, options.getTheme()), width, "…")];
 				}
 				return width < 1 ? [] : ["", truncateToWidth(artifactSummary(artifact, options.getTheme()), width, "…")];
 			}
-			if (!state) return original.call(instanceValue, width);
+			if (!state) return artifact && ompCompact && width > 0
+				? ["", truncateToWidth(artifactSummary(artifact, options.getTheme()), width, "…")]
+				: original.call(instanceValue, width);
 			try {
 				const duplicate = state.isError ? duplicateFailure(state) : undefined;
 				if (duplicate && duplicate.representative !== state.id) return [];
 				let line: string | undefined;
-				if (state.groupId) {
+				if (state.groupId && (!options.isOmpStyleEnabled?.() || state.name === "read")) {
+					if (options.isOmpStyleEnabled?.()) {
+						const episode = episodes.get(state.groupId);
+						const group = episode ? readTree(episode, states, options.getTheme(), options.now()) : { lines: [] };
+						if (group.representative !== state.id) return [];
+						return width < 1 ? [] : withArtifact(["", ...group.lines.map((value) => truncateToWidth(value, width, "…"))]);
+					}
 					if (state.isError) line = terminalLine(state, options.getTheme());
 					else {
 						const episode = episodes.get(state.groupId);
@@ -598,17 +842,25 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 						if (group.representative !== state.id) return [];
 						line = group.line;
 					}
+				} else if (options.isOmpStyleEnabled?.() && SEARCH.has(state.name)) {
+					return withArtifact(["", ...searchBlock(state, width, options.getTheme(), options.now())]);
 				} else if (state.skillName) {
 					line = terminal(state)
 						? terminalLine(state, options.getTheme())
 						: `${color(options.getTheme(), "accent", "◆")} ${strong(options.getTheme(), `Skill(${state.skillName})`)} · loading`;
 				} else if (state.name === "bash") {
+					if (options.isOmpStyleEnabled?.()) return withArtifact(["", ...bashBlock(state, width, options.getTheme(), options.now())]);
 					line = bashLine(state, options.getTheme(), options.now());
+				} else if (options.isOmpStyleEnabled?.() && MUTATION.has(state.name)) {
+					return withArtifact(["", ...editBlock(state, width, options.getTheme(), options.now())]);
+				} else if (options.isOmpStyleEnabled?.() && state.name === "ls") {
+					return withArtifact(["", ...listBlock(state, width, options.getTheme(), options.now())]);
 				} else if (EXPLORATION.has(state.name)) {
 					if (state.isError) line = terminalLine(state, options.getTheme());
 					else if (!terminal(state)) line = runningLine(explorationTarget(state), state, options.getTheme(), options.now());
 					else line = `${color(options.getTheme(), "success", "◆")} ${strong(options.getTheme(), "Explored")} · ${explorationTarget(state)}`;
 				} else {
+					if (options.isOmpStyleEnabled?.()) return withArtifact(["", ...genericBlock(state, width, options.getTheme(), options.now())]);
 					line = terminal(state)
 						? terminalLine(state, options.getTheme())
 						: runningLine(labelFor(state.name), state, options.getTheme(), options.now());

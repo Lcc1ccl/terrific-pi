@@ -42,6 +42,11 @@ test("npm tarball contains every declared extension entry", () => {
 	for (const entry of EXTENSIONS) {
 		assert.equal(packedPaths.has(entry.replace(/^\.\//, "")), true, `missing from tarball: ${entry}`);
 	}
+	assert.equal(
+		packedPaths.has("packages/interface/presentation/lib/LICENSES/oh-my-pi-MIT.txt"),
+		true,
+		"missing OMP attribution from tarball",
+	);
 });
 
 test("component packages are private and retired distribution paths are absent", () => {

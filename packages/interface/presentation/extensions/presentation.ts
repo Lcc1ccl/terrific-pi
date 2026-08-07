@@ -43,7 +43,9 @@ export default function presentation(pi: ExtensionAPI): void {
 	const bootstrap = loadPresentationConfig(getAgentDir());
 	let config: PresentationConfig = bootstrap.config;
 	const compactToolsActive = () => config.enabled && config.compactTools;
+	const ompStyleActive = () => config.enabled && config.style === "omp";
 	let configErrorNotified = false;
+	let hostErrorNotified = false;
 	let latestContext: ExtensionContext | undefined;
 	const skillByPath = new Map<string, string>();
 	const resolveSkillName = (args: unknown, cwd: string): string | undefined => {
@@ -56,6 +58,7 @@ export default function presentation(pi: ExtensionAPI): void {
 	const compatibility = installPresentationCompatibility({
 		isUserMessageBoxEnabled: () => config.enabled && config.userMessageBox,
 		isCompactToolsEnabled: compactToolsActive,
+		isOmpStyleEnabled: ompStyleActive,
 		isArtifactProjectionEnabled: () => config.enabled && config.artifacts,
 		getTheme: () => latestContext?.ui.theme,
 		resolveSkillName,
@@ -106,7 +109,7 @@ export default function presentation(pi: ExtensionAPI): void {
 		const toolMode = compactToolsActive() ? "compatibility renderer active" : "native rows";
 		return [
 			`Presentation: ${config.enabled ? "on" : "off"}`,
-			`workspace=${config.workspace ? "on" : "off"} system=${config.systemEvents ? "on" : "off"} user=${config.userMessageBox ? "box" : "native"} artifacts=${config.artifacts ? "on" : "off"} tools=${config.compactTools ? "compact" : "native"} expanded=${config.maxExpandedArtifacts}`,
+			`style=${config.style} workspace=${config.workspace ? "on" : "off"} system=${config.systemEvents ? "on" : "off"} user=${config.style === "omp" ? "native-band" : config.userMessageBox ? "box" : "native"} artifacts=${config.artifacts ? "on" : "off"} tools=${config.compactTools ? "compact" : "native"} expanded=${config.maxExpandedArtifacts}`,
 			`integration: tools=${toolMode} taskboard=${taskboard ? "available" : "missing"}`,
 		].join("\n");
 	};
@@ -134,6 +137,7 @@ export default function presentation(pi: ExtensionAPI): void {
 				"System entries own discrete state changes; tool summaries own read/search/command history; file receipts own successful mutations.",
 			].join("\n"), [
 				`Presentation: ${config.enabled ? "on" : "off"}`,
+				`Transcript style: ${config.style}`,
 				`Workspace entry: ${config.workspace ? "on" : "off"}`,
 				`System entries: ${config.systemEvents ? "on" : "off"}`,
 				`User message box: ${config.userMessageBox ? "on" : "off"}`,
@@ -147,6 +151,9 @@ export default function presentation(pi: ExtensionAPI): void {
 			if (!choice || choice === "Done") return;
 			if (choice.startsWith("Presentation:")) {
 				persistConfig(ctx, { enabled: !config.enabled }, `Presentation ${config.enabled ? "off" : "on"}`);
+			} else if (choice.startsWith("Transcript style:")) {
+				const style = config.style === "omp" ? "classic" : "omp";
+				persistConfig(ctx, { style }, `Transcript style: ${style}`);
 			} else if (choice.startsWith("Workspace entry:")) {
 				persistConfig(ctx, { workspace: !config.workspace }, `Workspace entry ${config.workspace ? "off" : "on"}`);
 			} else if (choice.startsWith("System entries:")) {
@@ -227,7 +234,7 @@ export default function presentation(pi: ExtensionAPI): void {
 	pi.registerCommand("presentation", {
 		description: "Configure low-noise transcript presentation",
 		getArgumentCompletions(prefix) {
-			return ["config", "on", "off", "status", "reset", "workspace on", "workspace off", "system on", "system off", "user on", "user off", "tools on", "tools off", "artifacts on", "artifacts off"]
+			return ["config", "on", "off", "status", "reset", "style omp", "style classic", "workspace on", "workspace off", "system on", "system off", "user on", "user off", "tools on", "tools off", "artifacts on", "artifacts off"]
 				.filter((value) => value.startsWith(prefix.trim().toLowerCase()))
 				.map((value) => ({ value, label: value }));
 		},
@@ -244,6 +251,8 @@ export default function presentation(pi: ExtensionAPI): void {
 			}
 			const patch = action === "on" ? { enabled: true }
 				: action === "off" ? { enabled: false }
+				: action === "style omp" ? { style: "omp" as const }
+				: action === "style classic" ? { style: "classic" as const }
 				: action === "workspace on" ? { workspace: true }
 				: action === "workspace off" ? { workspace: false }
 				: action === "system on" ? { systemEvents: true }
@@ -257,7 +266,7 @@ export default function presentation(pi: ExtensionAPI): void {
 				: action === "reset" ? DEFAULT_PRESENTATION_CONFIG
 				: undefined;
 			if (!patch) {
-				report(ctx, "Usage: /presentation [config|status|reset|on|off|workspace on|workspace off|system on|system off|user on|user off|tools on|tools off|artifacts on|artifacts off]", "error");
+				report(ctx, "Usage: /presentation [config|status|reset|on|off|style omp|style classic|workspace on|workspace off|system on|system off|user on|user off|tools on|tools off|artifacts on|artifacts off]", "error");
 				return;
 			}
 			persistConfig(ctx, patch, "Presentation configuration updated");
@@ -278,6 +287,10 @@ export default function presentation(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => {
 		latestContext = ctx;
 		reloadConfig(ctx);
+		if (!compatibility.host.supported && !hostErrorNotified) {
+			hostErrorNotified = true;
+			ctx.ui.notify(`Presentation compatibility disabled: ${compatibility.host.reason}`, "warning");
+		}
 		hydrateDeduper(ctx);
 		compatibility.hydrate(ctx.sessionManager.getBranch(), ctx.cwd);
 		await journal.begin(ctx.cwd);
@@ -285,6 +298,7 @@ export default function presentation(pi: ExtensionAPI): void {
 
 	pi.on("session_tree", async (_event, ctx) => {
 		latestContext = ctx;
+		compatibility.assistantReset();
 		hydrateDeduper(ctx);
 		compatibility.hydrate(ctx.sessionManager.getBranch(), ctx.cwd);
 		await journal.begin(ctx.cwd);
@@ -344,6 +358,21 @@ export default function presentation(pi: ExtensionAPI): void {
 		}), ctx);
 	});
 
+	pi.on("message_start", async (event, ctx) => {
+		latestContext = ctx;
+		compatibility.assistantStart(event.message);
+	});
+
+	pi.on("message_update", async (event, ctx) => {
+		latestContext = ctx;
+		compatibility.assistantUpdate(event.message);
+	});
+
+	pi.on("message_end", async (event, ctx) => {
+		latestContext = ctx;
+		compatibility.assistantEnd(event.message);
+	});
+
 	pi.on("tool_execution_start", async (event, ctx) => {
 		latestContext = ctx;
 		compatibility.toolStart({
@@ -393,6 +422,7 @@ export default function presentation(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", async () => {
+		compatibility.assistantReset();
 		compatibility.uninstall();
 		if (modelTimer) clearTimeout(modelTimer);
 		modelTimer = undefined;

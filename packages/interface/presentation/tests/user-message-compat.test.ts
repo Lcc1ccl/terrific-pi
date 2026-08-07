@@ -18,6 +18,32 @@ function occurrences(lines: string[], marker: string): number {
 	return lines.join("").split(marker).length - 1;
 }
 
+test("OMP profile keeps Pi's native shaded user band instead of the classic frame", () => {
+	initTheme("dark", false);
+	const original = UserMessageComponent.prototype.render;
+	const handle = installPresentationCompatibility({
+		isUserMessageBoxEnabled: () => true,
+		isCompactToolsEnabled: () => false,
+		isOmpStyleEnabled: () => true,
+		getTheme: () => ({
+			fg(_color: string, text: string) { return text; },
+			bg(_color: string, text: string) { return text; },
+			bold(text: string) { return text; },
+		}),
+	} as never);
+	try {
+		const lines = new UserMessageComponent("native shaded prompt", undefined, 0).render(40);
+		const plain = lines.map(stripVTControlCharacters).join("\n");
+		assert.match(plain, /native shaded prompt/);
+		assert.doesNotMatch(plain, /╭ user |╰─+╯|│/);
+		assert.equal(occurrences(lines, OSC_A), 1);
+		assert.equal(occurrences(lines, OSC_B), 1);
+	} finally {
+		handle.uninstall();
+	}
+	assert.equal(UserMessageComponent.prototype.render, original);
+});
+
 test("new compatibility ownership survives an older reload handle unloading", () => {
 	initTheme("dark", false);
 	const original = UserMessageComponent.prototype.render;

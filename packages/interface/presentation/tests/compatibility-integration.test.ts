@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+	AssistantMessageComponent,
 	ToolExecutionComponent,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
@@ -50,17 +51,20 @@ function createHarness() {
 	};
 }
 
-test("presentation patches display only and restores both prototypes on shutdown", async () => {
+test("presentation patches display only and restores all three prototypes on shutdown", async () => {
+	const originalAssistantRender = AssistantMessageComponent.prototype.render;
 	const originalUserRender = UserMessageComponent.prototype.render;
 	const originalToolRender = ToolExecutionComponent.prototype.render;
 	const harness = createHarness();
 	try {
 		assert.deepEqual(harness.tools, [], "presentation must not own built-in execution tools");
+		assert.notEqual(AssistantMessageComponent.prototype.render, originalAssistantRender);
 		assert.notEqual(UserMessageComponent.prototype.render, originalUserRender);
 		assert.notEqual(ToolExecutionComponent.prototype.render, originalToolRender);
 	} finally {
 		await harness.emit("session_shutdown", { reason: "quit" });
 	}
+	assert.equal(AssistantMessageComponent.prototype.render, originalAssistantRender);
 	assert.equal(UserMessageComponent.prototype.render, originalUserRender);
 	assert.equal(ToolExecutionComponent.prototype.render, originalToolRender);
 });

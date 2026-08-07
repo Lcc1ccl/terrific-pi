@@ -95,6 +95,87 @@ test("branch hydration suppresses superseded artifact anchors after resume", () 
 	}
 });
 
+test("OMP artifact anchor keeps the edit block, appends one net receipt, and expands native-only", () => {
+	const controller = createToolRenderController({
+		isEnabled: () => true,
+		isOmpStyleEnabled: () => true,
+		isArtifactProjectionEnabled: () => true,
+		getTheme: () => theme,
+		now: () => 1_000,
+	});
+	try {
+		const args = { path: "src/app.ts" };
+		const result = {
+			content: [{ type: "text", text: "Updated src/app.ts" }],
+			details: { diff: "- old\n+ new" },
+			isError: false,
+		};
+		controller.start({ toolCallId: "edit-omp", toolName: "edit", args, cwd: "/workspace/project", requestId: "request-omp", timestamp: 100 });
+		controller.end({ toolCallId: "edit-omp", toolName: "edit", result, isError: false, timestamp: 500 });
+		controller.setArtifact({
+			version: 2,
+			receiptId: "receipt-omp",
+			requestId: "request-omp",
+			revision: 1,
+			anchorToolCallId: "edit-omp",
+			files: [{ path: "src/app.ts", operation: "modified", additions: 1, deletions: 1, sources: ["edit"] }],
+			successfulWrites: 1,
+			failedWrites: 0,
+			gitReconciled: true,
+			startedAt: 1,
+			revisedAt: 2,
+		});
+		const component = historyTool("edit-omp", "edit", args, "request-omp");
+		component.result = result;
+		const collapsed = controller.render(component, 120, () => ["native collapsed"]).join("\n");
+		assert.match(collapsed, /╭/);
+		assert.match(collapsed, /Edit: src\/app\.ts/);
+		assert.match(collapsed, /- old/);
+		assert.equal(collapsed.match(/Files 1 changed/g)?.length, 1);
+
+		component.expanded = true;
+		const expanded = controller.render(component, 120, () => ["native expanded"]).join("\n");
+		assert.equal(expanded, "native expanded");
+		assert.doesNotMatch(expanded, /Files 1 changed/);
+	} finally {
+		controller.dispose();
+	}
+});
+
+test("OMP keeps expanded artifact anchors native-only when compact tools are disabled", () => {
+	const controller = createToolRenderController({
+		isEnabled: () => false,
+		isOmpStyleEnabled: () => true,
+		isArtifactProjectionEnabled: () => true,
+		getTheme: () => theme,
+		now: () => 1_000,
+	});
+	try {
+		controller.setArtifact({
+			version: 2,
+			receiptId: "receipt-native-expanded",
+			requestId: "request-native-expanded",
+			revision: 1,
+			anchorToolCallId: "edit-native-expanded",
+			files: [{ path: "src/app.ts", operation: "modified", additions: 1, deletions: 1, sources: ["edit"] }],
+			successfulWrites: 1,
+			failedWrites: 0,
+			gitReconciled: true,
+			startedAt: 1,
+			revisedAt: 2,
+		});
+		const component = historyTool("edit-native-expanded", "edit", { path: "src/app.ts" }, "request-native-expanded");
+		const collapsed = controller.render(component, 100, () => ["native collapsed"]).join("\n");
+		assert.match(collapsed, /native collapsed/);
+		assert.equal(collapsed.match(/Files 1 changed/g)?.length, 1);
+
+		component.expanded = true;
+		assert.deepEqual(controller.render(component, 100, () => ["native expanded"]), ["native expanded"]);
+	} finally {
+		controller.dispose();
+	}
+});
+
 test("artifact revisions project only the latest request snapshot onto its anchor tool", () => {
 	const controller = createToolRenderController({ isEnabled: () => true, getTheme: () => theme, now: () => 1_000 });
 	try {

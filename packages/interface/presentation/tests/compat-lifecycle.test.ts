@@ -6,6 +6,7 @@ import test from "node:test";
 import {
 	createBashToolDefinition,
 	initTheme,
+	AssistantMessageComponent,
 	ToolExecutionComponent,
 	UserMessageComponent,
 } from "@earendil-works/pi-coding-agent";
@@ -25,7 +26,7 @@ function runningInstance() {
 	};
 }
 
-test("production patch allowlist contains exactly the two native render targets", () => {
+test("production patch allowlist contains exactly the three approved native render targets", () => {
 	const root = join(import.meta.dirname, "..");
 	const files = [
 		...readdirSync(join(root, "extensions"), { recursive: true }).filter((value) => String(value).endsWith(".ts")).map((value) => join(root, "extensions", String(value))),
@@ -40,6 +41,7 @@ test("production patch allowlist contains exactly the two native render targets"
 		}
 	}
 	assert.deepEqual(calls.sort(), [
+		"AssistantMessageComponent.prototype.render",
 		"ToolExecutionComponent.prototype.render",
 		"UserMessageComponent.prototype.render",
 	]);
@@ -47,6 +49,7 @@ test("production patch allowlist contains exactly the two native render targets"
 
 test("ten compatibility generations unload unordered and reverse without patch or timer leaks", () => {
 	initTheme("dark", false);
+	const originalAssistant = AssistantMessageComponent.prototype.render;
 	const originalUser = UserMessageComponent.prototype.render;
 	const originalTool = ToolExecutionComponent.prototype.render;
 	const realSetInterval = globalThis.setInterval;
@@ -68,6 +71,7 @@ test("ten compatibility generations unload unordered and reverse without patch o
 				now: () => 1_000,
 			}));
 		}
+		assert.notEqual(AssistantMessageComponent.prototype.render, originalAssistant);
 		assert.notEqual(UserMessageComponent.prototype.render, originalUser);
 		assert.notEqual(ToolExecutionComponent.prototype.render, originalTool);
 		const component = new ToolExecutionComponent(
@@ -92,6 +96,7 @@ test("ten compatibility generations unload unordered and reverse without patch o
 
 		for (const index of [8, 6, 4, 3, 1]) handles[index]?.uninstall();
 		assert.equal(active.size, 0);
+		assert.equal(AssistantMessageComponent.prototype.render, originalAssistant);
 		assert.equal(UserMessageComponent.prototype.render, originalUser);
 		assert.equal(ToolExecutionComponent.prototype.render, originalTool);
 	} finally {

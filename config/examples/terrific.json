@@ -11,6 +11,7 @@
   },
   "presentation": {
     "enabled": true,
+    "style": "omp",
     "workspace": true,
     "systemEvents": true,
     "artifacts": true,

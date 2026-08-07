@@ -84,6 +84,8 @@ export interface PresentationToolEntry {
 
 export interface PresentationConfig {
 	enabled: boolean;
+	/** Selects the existing compact renderer or the OMP-inspired transcript profile. */
+	style: "classic" | "omp";
 	workspace: boolean;
 	systemEvents: boolean;
 	artifacts: boolean;

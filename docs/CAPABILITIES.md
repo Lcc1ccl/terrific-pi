@@ -9,7 +9,7 @@ This document is the current capability map for the core `terrific-pi` distribut
 | Interface | statusline | `/statusline`, automatic footer | Sole status-widget owner; model/editor metadata, usage, settled-run metrics/notification, context, Git, runtime, and footer layout |
 | Interface | appearance | `/appearance`, startup | Header and editor surfaces only |
 | Interface | taskboard | `/taskboard`, `process_update` | Structured task milestones, waiting/blocked state, and task HUD |
-| Interface | presentation | `/presentation`, automatic renderers | Transcript presentation, system entries, and file receipts |
+| Interface | presentation | `/presentation`, automatic renderers | OMP/classic assistant, user, and tool transcript projection; system entries and file receipts |
 | Session control | mode | `/mode` | ask/plan/edit/auto tool policy |
 | Session control | fast | `/fast` | GPT/OpenAI Responses priority-tier preference and effective state |
 | Session control | context | `/context` | Context occupancy inspection and explicit confirmed compaction |
@@ -26,12 +26,12 @@ The root Pi manifest loads exactly these ten extension entries.
 | Footer | statusline |
 | Header/editor | appearance |
 | Task state/HUD | taskboard |
-| Transcript/tool presentation | presentation |
+| Assistant/user/tool transcript projection and file receipts | presentation |
 | Tool permission policy | mode |
 | Priority request mutation | fast |
 | Auxiliary usage ledger | auxiliary |
 
-Dedicated status keys are not duplicated into generic progress. Runtime code has no cross-component source imports; integrations use Pi status, events, and session entries. While Appearance owns the editor, Statusline `LINE0` renders at its top-left and `LINE1` at its bottom-right through the versioned bridge; `LINE2`-`LINE4` remain footer rows. Without an active Appearance editor owner, all five lines fall back to the footer in order. Auxiliary usage remains Auxiliary-owned and is never merged into Statusline main-session totals.
+Dedicated status keys are not duplicated into generic progress. Presentation's OMP profile is display-only: it does not own root TUI, terminal/session/provider streaming, themes, statusline, working indicators, tool execution, permissions, sandboxing, or model context. Runtime code has no cross-component source imports; integrations use Pi status, events, and session entries. While Appearance owns the editor, Statusline `LINE0` renders at its top-left and `LINE1` at its bottom-right through the versioned bridge; `LINE2`-`LINE4` remain footer rows. Without an active Appearance editor owner, all five lines fall back to the footer in order. Auxiliary usage remains Auxiliary-owned and is never merged into Statusline main-session totals.
 
 ## Configuration
 

@@ -24,13 +24,15 @@ test("presentation config defaults when absent and fails closed when corrupt", (
 	}
 });
 
-test("presentation config enables user boxes and compact tools by default and respects explicit opt-outs", () => {
+test("presentation config enables the OMP profile, user messages, and compact tools by default", () => {
 	const dir = mkdtempSync(join(tmpdir(), "presentation-config-tools-"));
 	const path = join(dir, "terrific.json");
 	try {
+		assert.equal(loadPresentationConfig(dir).config.style, "omp");
 		assert.equal(loadPresentationConfig(dir).config.userMessageBox, true);
 		assert.equal(loadPresentationConfig(dir).config.compactTools, true);
-		writeFileSync(path, JSON.stringify({ presentation: { userMessageBox: false, compactTools: false } }), "utf8");
+		writeFileSync(path, JSON.stringify({ presentation: { style: "classic", userMessageBox: false, compactTools: false } }), "utf8");
+		assert.equal(loadPresentationConfig(dir).config.style, "classic");
 		assert.equal(loadPresentationConfig(dir).config.userMessageBox, false);
 		assert.equal(loadPresentationConfig(dir).config.compactTools, false);
 	} finally {
