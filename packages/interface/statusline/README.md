@@ -62,8 +62,9 @@ Optional config file:
 - file override: `PI_STATUSLINE_CONFIG=/path/to.json`
 - legacy directory fallback: `PI_AGENT_DIR`
 
-`lines` is the only persisted widget source of truth:
+`lines` is the runtime widget source of truth:
 
+- `widgetOrder` is optional editor metadata written by `/statusline`; it preserves line ownership and ordering for disabled widgets and does not enable or render them.
 - `line0` renders at the editor top-left when Appearance owns it.
 - `line1` renders at the editor bottom-right with an independent width budget.
 - `line2` through `line4` render as independent footer rows below the editor.
@@ -112,7 +113,7 @@ Optional config file:
 }
 ```
 
-Legacy `widgets`, `layout`, and `widgetGroups` files remain readable. On load, `model`/`mode`/`fast` migrate to `LINE0`; old single layouts migrate remaining widgets to `LINE1`; old stacked groups migrate to `LINE1`-`LINE4`. The next successful save writes only `lines`.
+Legacy `widgets`, `layout`, and `widgetGroups` files remain readable. On load, `model`/`mode`/`fast` migrate to `LINE0`; old single layouts migrate remaining widgets to `LINE1`; old stacked groups migrate to `LINE1`-`LINE4`. The next successful save writes `lines`; widget editor changes may also write `widgetOrder`.
 
 `toolActivityMode` defaults to `compact` so enabling `toolActivity` later stays dense. In `/statusline`, **Context & usage** is shown only when at least one of `context`, `contextBar`, or `toolActivity` is enabled on any line.
 
@@ -275,7 +276,7 @@ These are account-level signals, not a guarantee of the current Pi session budge
 
 In TUI mode, `/statusline` opens a nested menu:
 
-- **Widgets**: partitioned by `LINE0`-`LINE4`; `Space` toggles, `g` cycles the selected widget through lines, Up/Down selects, Left/Right reorders across line boundaries, Enter finishes. Any widget can occupy any line.
+- **Widgets**: partitioned by `LINE0`-`LINE4`; `Space` toggles, `g` cycles the selected widget through lines, Up/Down selects, Left/Right reorders across line boundaries and wraps between `LINE0`/`LINE4`, Enter finishes. Disabled widgets retain their line ownership when the editor is reopened. Any widget can occupy any line.
 - **Appearance**: icon mode, separator, spacing, **Minimal profile**
 - **Context & usage**: contextMode, contextBarWidth (only if `contextBar` enabled), toolActivityMode (only if `toolActivity` enabled)
 - **Run notification**: one direct on/off toggle; independent from the `run*` widgets

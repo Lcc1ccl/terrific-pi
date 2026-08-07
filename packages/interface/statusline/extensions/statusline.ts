@@ -481,12 +481,13 @@ export default function statusline(pi: ExtensionAPI) {
 								};
 							}),
 						confirm: (title, message) => ctx.ui.confirm(title, message),
-						editWidgets: (title, allWidgets, lines, onChange, onReject) =>
+						editWidgets: (title, allWidgets, lines, widgetOrder, onChange, onReject) =>
 							ctx.ui.custom<typeof lines | undefined>((tui, theme, keybindings, done) =>
 								new WidgetsSetupComponent({
 									title,
 									allWidgets,
 									lines,
+									widgetOrder,
 									theme,
 									previewConfig: cloneConfig(config),
 									keybindings,

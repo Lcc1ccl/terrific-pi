@@ -71,7 +71,8 @@ export type ConfigureUi = {
 		title: string,
 		allWidgets: readonly WidgetId[],
 		lines: WidgetLines,
-		onChange: (lines: WidgetLines) => boolean,
+		widgetOrder: WidgetLines | undefined,
+		onChange: (lines: WidgetLines, widgetOrder: WidgetLines) => boolean,
 		onReject?: (error: string) => void,
 	): Promise<WidgetLines | undefined>;
 	notify(message: string, level?: "info" | "warning" | "error"): void;
@@ -105,11 +106,26 @@ export function flattenWidgetLines(lines: WidgetLines): WidgetId[] {
 	return WIDGET_LINE_IDS.flatMap((line) => lines[line]);
 }
 
-/** Add disabled catalog entries to transient LINE1 while preserving configured line order. */
-export function initialEditorLines(lines: WidgetLines, allWidgets: readonly WidgetId[]): WidgetLines {
+/** Add disabled catalog entries while preserving persisted editor ownership and order. */
+export function initialEditorLines(
+	lines: WidgetLines,
+	allWidgets: readonly WidgetId[],
+	widgetOrder?: WidgetLines,
+): WidgetLines {
 	const all = new Set<WidgetId>(allWidgets);
+	const enabledLine = new Map<WidgetId, WidgetLineId>();
+	for (const line of WIDGET_LINE_IDS) {
+		for (const id of lines[line]) if (all.has(id)) enabledLine.set(id, line);
+	}
 	const seen = new Set<WidgetId>();
 	const editorLines = emptyWidgetLines();
+	for (const line of WIDGET_LINE_IDS) {
+		for (const id of (widgetOrder ?? lines)[line]) {
+			if (!all.has(id) || seen.has(id)) continue;
+			seen.add(id);
+			editorLines[enabledLine.get(id) ?? line].push(id);
+		}
+	}
 	for (const line of WIDGET_LINE_IDS) {
 		for (const id of lines[line]) {
 			if (!all.has(id) || seen.has(id)) continue;
@@ -170,8 +186,8 @@ export function moveWidgetInLines(
 		next[sourceLine] = swapped.items;
 		return next;
 	}
-	const destinationLine = WIDGET_LINE_IDS[WIDGET_LINE_IDS.indexOf(sourceLine) + delta];
-	if (!destinationLine) return undefined;
+	const sourceLineIndex = WIDGET_LINE_IDS.indexOf(sourceLine);
+	const destinationLine = WIDGET_LINE_IDS[(sourceLineIndex + delta + WIDGET_LINE_IDS.length) % WIDGET_LINE_IDS.length]!;
 	next[sourceLine] = next[sourceLine].filter((widget) => widget !== id);
 	if (delta > 0) next[destinationLine].unshift(id);
 	else next[destinationLine].push(id);
@@ -287,7 +303,12 @@ async function editWidgetsLoop(deps: ConfigureDeps, allWidgets: readonly WidgetI
 		"Widgets by LINE",
 		allWidgets,
 		cloneWidgetLines(config.lines),
-		(lines) => applyOrNotify(deps, { ...deps.getConfig(), lines: cloneWidgetLines(lines) }, "widget lines updated"),
+		config.widgetOrder ? cloneWidgetLines(config.widgetOrder) : undefined,
+		(lines, widgetOrder) => applyOrNotify(deps, {
+			...deps.getConfig(),
+			lines: cloneWidgetLines(lines),
+			widgetOrder: cloneWidgetLines(widgetOrder),
+		}, "widget lines updated"),
 		(error) => deps.ui.notify(error, "warning"),
 	);
 }

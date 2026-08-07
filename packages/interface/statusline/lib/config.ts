@@ -134,7 +134,11 @@ export const MINIMAL_PROFILE: StatuslineConfig = {
 };
 
 export function cloneStatuslineConfig(config: StatuslineConfig): StatuslineConfig {
-	return { ...config, lines: cloneWidgetLines(config.lines) };
+	return {
+		...config,
+		lines: cloneWidgetLines(config.lines),
+		...(config.widgetOrder ? { widgetOrder: cloneWidgetLines(config.widgetOrder) } : {}),
+	};
 }
 
 export function cloneMinimalProfile(): StatuslineConfig {
@@ -295,6 +299,7 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 	const lines = candidateLines && WIDGET_LINE_IDS.some((line) => candidateLines[line].length > 0)
 		? candidateLines
 		: cloneWidgetLines(DEFAULT_LINES);
+	const widgetOrder = asWidgetLines(raw.widgetOrder);
 	const iconMode = asIconMode(raw.iconMode);
 	const contextMode = asContextMode(raw.contextMode);
 	const contextBarWidth = asContextBarWidth(raw.contextBarWidth);
@@ -306,6 +311,7 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 
 	return {
 		lines,
+		...(widgetOrder ? { widgetOrder } : {}),
 		iconMode: iconMode ?? DEFAULT_CONFIG.iconMode,
 		contextMode: contextMode ?? DEFAULT_CONFIG.contextMode,
 		contextBarWidth: contextBarWidth ?? DEFAULT_CONFIG.contextBarWidth,
@@ -337,6 +343,7 @@ export function loadStatuslineConfigResult(path: string): ConfigLoadResult {
 export function saveStatuslineConfig(path: string, config: StatuslineConfig): void {
 	const payload: StatuslineConfig = {
 		lines: cloneWidgetLines(config.lines),
+		...(config.widgetOrder ? { widgetOrder: cloneWidgetLines(config.widgetOrder) } : {}),
 		iconMode: config.iconMode,
 		contextMode: config.contextMode,
 		contextBarWidth: config.contextBarWidth,

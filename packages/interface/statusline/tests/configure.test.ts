@@ -78,7 +78,13 @@ describe("widget line editor operations", () => {
 		assert.deepEqual(enabledLines(editor, enabled), lines({ line0: ["model"], line3: ["state"] }));
 	});
 
-	it("moves within a line and enters an adjacent empty line", () => {
+	it("restores disabled widgets from persisted editor lines", () => {
+		const configured = lines({ line1: ["path"] });
+		const persisted = lines({ line0: ["model"], line1: ["path"] });
+		assert.deepEqual(initialEditorLines(configured, ["path", "model"], persisted), persisted);
+	});
+
+	it("moves within a line, enters empty lines, and wraps across LINE0/LINE4", () => {
 		const value = lines({ line0: ["tokens", "model"], line2: ["path", "state"] });
 		assert.deepEqual(moveWidgetInLines(value, "tokens", 1), lines({
 			line0: ["model", "tokens"],
@@ -94,6 +100,8 @@ describe("widget line editor operations", () => {
 			line1: ["path"],
 			line2: ["state"],
 		}));
+		assert.deepEqual(moveWidgetInLines(lines({ line4: ["state"] }), "state", 1), lines({ line0: ["state"] }));
+		assert.deepEqual(moveWidgetInLines(lines({ line0: ["model"] }), "model", -1), lines({ line4: ["model"] }));
 	});
 
 	it("cycles any widget through LINE0-LINE4", () => {
@@ -180,24 +188,26 @@ describe("statusline configurator", () => {
 		assert.equal(nestedCalls, 0);
 	});
 
-	it("applies line changes from the widget editor", async () => {
+	it("applies line changes and persists disabled widget ownership", async () => {
 		const start = config({ lines: lines({ line1: ["path"] }) });
+		const order = lines({ line0: ["model"], line1: ["path"], line4: ["state"] });
 		const { deps, getConfig } = depsFor(start, ["Widgets", "Done"], {
-			editWidgets: async (_title, _all, _lines, onChange) => {
-				assert.equal(onChange(lines({ line0: ["tokens"], line4: ["state"] })), true);
+			editWidgets: async (_title, _all, _lines, _order, onChange) => {
+				assert.equal(onChange(lines({ line1: ["path"], line4: ["state"] }), order), true);
 				return undefined;
 			},
 		});
-		await runStatuslineConfigurator(deps, ["path", "tokens", "state"]);
-		assert.deepEqual(getConfig().lines, lines({ line0: ["tokens"], line4: ["state"] }));
+		await runStatuslineConfigurator(deps, ["path", "model", "state"]);
+		assert.deepEqual(getConfig().lines, lines({ line1: ["path"], line4: ["state"] }));
+		assert.deepEqual(getConfig().widgetOrder, order);
 	});
 
 	it("reports a rejected line mutation back to the editor", async () => {
 		const start = config({ lines: lines({ line1: ["path"] }) });
 		let accepted: boolean | undefined;
 		const { deps } = depsFor(start, ["Widgets", "Done"], {
-			editWidgets: async (_title, _all, _lines, onChange) => {
-				accepted = onChange(lines({ line4: ["state"] }));
+			editWidgets: async (_title, _all, _lines, _order, onChange) => {
+				accepted = onChange(lines({ line4: ["state"] }), lines({ line1: ["path"], line4: ["state"] }));
 				return undefined;
 			},
 		});

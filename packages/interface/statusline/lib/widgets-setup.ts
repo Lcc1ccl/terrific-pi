@@ -25,13 +25,14 @@ export type WidgetsSetupOptions = {
 	title: string;
 	allWidgets: readonly WidgetId[];
 	lines: WidgetLines;
+	widgetOrder?: WidgetLines;
 	theme: WidgetsSetupTheme;
 	previewConfig: StatuslineConfig;
 	keybindings: {
 		matches(data: string, binding: WidgetEditorBinding): boolean;
 		getKeys?(binding: WidgetEditorBinding): string[];
 	};
-	onChange: (lines: WidgetLines) => boolean;
+	onChange: (lines: WidgetLines, widgetOrder: WidgetLines) => boolean;
 	onReject?: (error: string) => void;
 	done: (lines: WidgetLines | undefined) => void;
 	requestRender: () => void;
@@ -57,7 +58,7 @@ export class WidgetsSetupComponent {
 
 	constructor(options: WidgetsSetupOptions) {
 		this.title = options.title;
-		this.editorLines = initialEditorLines(options.lines, options.allWidgets);
+		this.editorLines = initialEditorLines(options.lines, options.allWidgets, options.widgetOrder);
 		this.enabledSet = new Set(flattenWidgetLines(options.lines));
 		this.items = this.rebuildItems();
 		this.theme = options.theme;
@@ -158,7 +159,7 @@ export class WidgetsSetupComponent {
 
 	private commit(nextEditorLines: WidgetLines, nextEnabled: ReadonlySet<WidgetId>): boolean {
 		const nextLines = enabledLines(nextEditorLines, nextEnabled);
-		if (!this.onChange(cloneWidgetLines(nextLines))) {
+		if (!this.onChange(cloneWidgetLines(nextLines), cloneWidgetLines(nextEditorLines))) {
 			this.rejectMessage = "Change was not saved";
 			this.bump();
 			return false;

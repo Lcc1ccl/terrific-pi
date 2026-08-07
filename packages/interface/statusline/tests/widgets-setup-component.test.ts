@@ -52,6 +52,24 @@ it("renders all five lines and moves disabled widgets before enabling them", () 
 	assert.deepEqual(changes.at(-1), lines({ line1: ["path"], line2: ["tokens"] }));
 });
 
+it("reopens disabled widgets on their persisted lines", () => {
+	const configured = lines({ line1: ["path"] });
+	const component = new WidgetsSetupComponent({
+		title: "Widgets by LINE",
+		allWidgets: ["model", "path"],
+		lines: configured,
+		widgetOrder: lines({ line0: ["model"], line1: ["path"] }),
+		theme: { fg: (_color, text) => text },
+		previewConfig: { ...DEFAULT_CONFIG, lines: configured },
+		keybindings: { matches: () => false } as never,
+		onChange: () => true,
+		done() {},
+		requestRender() {},
+	});
+
+	assert.match(component.render(120).join("\n"), /— LINE0 —[\s\S]*\[ \] model[\s\S]*— LINE1 —[\s\S]*\[x\] path/);
+});
+
 it("rolls back a rejected cross-line move", () => {
 	const configured = lines({ line0: ["model"], line1: ["path"] });
 	const component = new WidgetsSetupComponent({

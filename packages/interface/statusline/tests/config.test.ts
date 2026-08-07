@@ -270,7 +270,8 @@ describe("saveStatuslineConfig", () => {
 		const dir = mkdtempSync(join(tmpdir(), "pi-statusline-"));
 		const nested = join(dir, "nested", "statusline.json");
 		const config = mergeStatuslineConfig({
-			lines: { line0: ["model"], line2: ["path", "cost"] },
+			lines: { line0: [], line1: ["path"], line4: ["state"] },
+			widgetOrder: { line0: ["model", "mode", "fast"], line1: ["path"], line4: ["state"] },
 			iconMode: "plain",
 			contextMode: "used",
 			contextBarWidth: 8,
@@ -287,11 +288,18 @@ describe("saveStatuslineConfig", () => {
 		assert.equal(raw.endsWith("\n"), true);
 		const parsed = JSON.parse(raw) as Record<string, unknown>;
 		assert.deepEqual(parsed.lines, {
-			line0: ["model"],
-			line1: [],
-			line2: ["path", "cost"],
+			line0: [],
+			line1: ["path"],
+			line2: [],
 			line3: [],
-			line4: [],
+			line4: ["state"],
+		});
+		assert.deepEqual(parsed.widgetOrder, {
+			line0: ["model", "mode", "fast"],
+			line1: ["path"],
+			line2: [],
+			line3: [],
+			line4: ["state"],
 		});
 		assert.equal(Object.hasOwn(parsed, "widgets"), false);
 		assert.equal(Object.hasOwn(parsed, "layout"), false);

@@ -199,6 +199,8 @@ export interface StatusSnapshot {
 
 export interface StatuslineConfig {
 	lines: WidgetLines;
+	/** Editor ownership/order for enabled and disabled widgets. Runtime rendering still uses lines. */
+	widgetOrder?: WidgetLines;
 	iconMode: IconMode;
 	contextMode: ContextMode;
 	contextBarWidth: number;
