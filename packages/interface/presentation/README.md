@@ -27,7 +27,7 @@ The `classic` style preserves the earlier presentation behavior: framed user mes
 
 Successful file changes remain one request-scoped net receipt projected onto the final contributing native tool row. Exact registered Skill reads keep their `Skill(name)` identity. Legacy projection entries remain hidden so restored sessions do not duplicate native history.
 
-Compatibility patches are all-or-nothing for `AssistantMessageComponent.prototype.render`, `UserMessageComponent.prototype.render`, and `ToolExecutionComponent.prototype.render` on verified Pi versions `0.81.1`, `0.83.0`, and `0.84.1`. Unknown versions or missing render exports fall back to native output with one warning. Patch ownership remains reference-counted and compare-and-swap on unload.
+Compatibility patches are all-or-nothing for `AssistantMessageComponent.prototype.render`, `UserMessageComponent.prototype.render`, and `ToolExecutionComponent.prototype.render`. Any Pi version with the required component constructors and methods is accepted; missing exports or methods fall back to native output with one warning. Patch ownership remains reference-counted and compare-and-swap on unload.
 
 Presentation does not own Pi root TUI, terminal/session/provider streaming, themes, statusline, header, editor, footer, widgets, working indicator, tool execution, permissions, sandboxing, or model context. OMP-derived pulse glyphs are attributed under MIT in `lib/LICENSES/oh-my-pi-MIT.txt`.
 

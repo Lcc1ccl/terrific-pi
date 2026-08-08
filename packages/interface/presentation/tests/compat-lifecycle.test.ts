@@ -26,7 +26,7 @@ function runningInstance() {
 	};
 }
 
-test("production patch allowlist contains exactly the three approved native render targets", () => {
+test("production patch scope contains exactly the three native render targets", () => {
 	const root = join(import.meta.dirname, "..");
 	const files = [
 		...readdirSync(join(root, "extensions"), { recursive: true }).filter((value) => String(value).endsWith(".ts")).map((value) => join(root, "extensions", String(value))),

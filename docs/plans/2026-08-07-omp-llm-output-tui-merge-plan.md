@@ -5,7 +5,7 @@
 > 适用仓库：`terrific-pi`
 > 目标范围：只改善 LLM transcript 的输出体验，不接管或重绘 `appearance`、`statusline`、`taskboard` 等已有界面所有者
 >
-> **实施修订（后续用户决策）**：初版调研建议只保留 user/tool 两个私有 patch；用户随后明确选择并授权平衡侵入版方案 A，增加精确版本 gate 下的第三个 target：`AssistantMessageComponent.prototype.render`。该 patch 只装饰 Pi 原生 render 输出，用于 hidden-thinking pulse、最终清理与首个 native spacer 清理；不创建第二 transcript，不写 session/context，不调用 working/header/editor/footer/widget setters，也不注册 Markdown transformer。`style: "classic"` 动态恢复原 presentation 投影。本文后续关于“禁止第三 target”“hidden thinking 只能等待上游”和“两 target allowlist”的早期结论，均以本修订及第 16 节最终标准为准。
+> **实施修订（后续用户决策）**：初版调研建议只保留 user/tool 两个私有 patch；用户随后明确选择并授权平衡侵入版方案 A，增加 host shape gate 下的第三个 target：`AssistantMessageComponent.prototype.render`，并进一步移除硬编码 Pi 版本 allowlist。该 patch 只装饰 Pi 原生 render 输出，用于 hidden-thinking pulse、最终清理与首个 native spacer 清理；不创建第二 transcript，不写 session/context，不调用 working/header/editor/footer/widget setters，也不注册 Markdown transformer。`style: "classic"` 动态恢复原 presentation 投影。本文后续关于“禁止第三 target”“hidden thinking 只能等待上游”和“两 target scope”的早期结论，均以本修订及第 16 节最终标准为准。
 
 ## 1. 结论
 
@@ -31,13 +31,13 @@
 | `@oh-my-pi/pi-tui` | `17.2.10` | OMP 完整 TUI fork |
 | 本机 Pi runtime | `0.84.1` | 当前实际运行真值 |
 | 根仓开发基线 | `0.83.0` | 根 `package.json` 的 Pi devDependencies |
-| `presentation` 包开发基线 | `0.83.0` | 已与根仓基线对齐；runtime gate 另验证 0.81.1/0.84.1 |
+| `presentation` 包开发基线 | `0.83.0` | 已与根仓基线对齐；runtime shape probe 另验证 0.81.1/0.84.1 |
 
 OMP source：`https://github.com/can1357/oh-my-pi` @ `3a8591a8af5b6d200088d12ca75a5517cb064fa8`。
 
 Pi 0.84.1 runtime 通过安装包 namespace 与实际 render probe 验证，不在仓库文档固化机器路径。
 
-版本错位已通过精确 allowlist 与 0.81.1/0.83.0/0.84.1 注入式实际 render probe 处理。
+版本错位通过 host shape probe 处理；0.81.1/0.83.0/0.84.1 保留为注入式实际 render probe 证据，不构成运行时白名单。
 
 ## 3. 范围与所有权
 
@@ -47,7 +47,7 @@ Pi 0.84.1 runtime 通过安装包 namespace 与实际 render probe 验证，不�
 - live stream、final、resize、`/resume`、`/tree`、`/compact` 后 replay 的一致性。
 - transcript 内已由 `presentation` 拥有的 user frame 和 compact tool row 的兼容性验证。
 - OMP 视觉语言中可局部使用的 glyph、动画节奏和 semantic color 用法。
-- 0.83.0 与 0.84.1 的 API/shape/version gate。
+- 0.83.0 与 0.84.1 的 API/shape probe。
 
 ### 3.2 本轮不包含
 
@@ -124,7 +124,7 @@ OMP `Markdown` 已超过普通视觉 formatter：它包含 streaming stable-pref
 | 参与方 | 视觉/交互职责 | 可移植性 |
 |---|---|---|
 | `theme/theme.ts` | 语义色、Markdown/editor/list adapter、symbols、spinner、terminal color mode | 只能取样；整体 theme 会泄漏到全局 UI |
-| `AssistantMessageComponent` | text/thinking/image/error、hidden-thinking pulse、token speed、fast path、settled rows | 保留原生内容/Markdown；仅精确版本 gate 下装饰最终 render 行 |
+| `AssistantMessageComponent` | text/thinking/image/error、hidden-thinking pulse、token speed、fast path、settled rows | 保留原生内容/Markdown；仅在 host shape 兼容时装饰最终 render 行 |
 | `ToolExecutionComponent` | pending/partial/final、spinner、diff preview、custom renderer、images | 部分行为可在现有 tool compat 内重做，不复制组件 |
 | `ReadToolGroupComponent` | 连续 read 分组、preview、usage attachment | 与 OMP event/replay 深度耦合；保留当前 exploration grouping |
 | `BashExecutionComponent`/`EvalExecutionComponent` | streaming output 和展开 | 保留当前 Pi/native fallback |
@@ -261,7 +261,7 @@ Pi 0.84.1 相比仓库 0.83.0 基线新增两个相关能力：
 | B. 再 patch `AssistantMessageComponent`，选择性搬 OMP assistant | 中高 | 中低 | 高 | 默认禁止，需单独批准 |
 | C. Fork Pi/替换为 OMP TUI runtime | 高 | 低 | 很高 | 不属于本计划 |
 
-方案 A 保留 Pi 的 assistant 内容构建与 Markdown，只在三版本精确 allowlist 下装饰最终行。它复刻 native user band、hidden-thinking pulse/final cleanup、bounded tool blocks 与 single artifact receipt；不复刻 working ownership、30fps reveal、mid-message scrollback settling、advanced Markdown layout 或 transcript rebuild。
+方案 A 保留 Pi 的 assistant 内容构建与 Markdown，只在三个 component target 的 shape probe 通过后装饰最终行。它复刻 native user band、hidden-thinking pulse/final cleanup、bounded tool blocks 与 single artifact receipt；不复刻 working ownership、30fps reveal、mid-message scrollback settling、advanced Markdown layout 或 transcript rebuild。
 
 方案 B 指完整移植 OMP assistant/transcript internals，会突破已冻结的三 target surface，并依赖 0.84.1 已变化的 constructor/update/private fields；即使已有 assistant render decorator，也不应继续复制整套组件。
 
@@ -319,17 +319,17 @@ Gate 0：
 - 当前 runtime 0.84.1 的 native user/assistant/tool 纯 render probe 成功。
 - 没有修改 live theme、`terrific.json` 或用户 Pi settings。
 
-### Phase 1：先加 host version/shape fail-closed
+### Phase 1：先加 host shape fail-closed
 
-目标：视觉增强之前，确保三个私有 render patch 在未知 Pi 版本上不会污染整个进程。
+目标：视觉增强之前，确保三个私有 render patch 在 host shape 不兼容时不会污染整个进程。
 
 工作项：
 
-1. 把 compat 对 `AssistantMessageComponent`/`ToolExecutionComponent`/`UserMessageComponent` 的静态 named import 改为 package namespace lookup；`VERSION` 也从同一 namespace 读取。这样 future host 删除某个 named export 时，ESM module instantiation 仍能完成并进入 gate。
+1. 把 compat 对 `AssistantMessageComponent`/`ToolExecutionComponent`/`UserMessageComponent` 的静态 named import 改为 package namespace lookup；`VERSION` 也从同一 namespace 读取并仅用于诊断。这样 future host 删除某个 named export 时，ESM module instantiation 仍能完成并进入 shape probe。
 2. 不导入 package 未 export 的 `dist/...` subpath，也不把 private deep import 当 fallback。
-3. 私有 patch 使用精确已验证版本 allowlist。首轮候选为 `0.81.1`、`0.83.0`、`0.84.1`；每个版本必须有实际 probe 后才能进入列表。
-4. 同时检查 namespace 中的 class、`prototype.render` 和最小实例 render；不能只依赖 `Function.length`。
-5. unknown version 或缺失任一 component export 时完全不安装 assistant/user/tool patch，只告警一次并保持 native renderer；`presentation` 其余公开能力仍可加载。
+3. 私有 patch 不维护版本 allowlist；兼容性只由必需的 component constructors 和 prototype methods 决定。
+4. 同时检查 namespace 中的 class、`prototype.render` 和必要更新方法；不能只依赖 `Function.length`。
+5. unknown/future version 在 shape 兼容时正常安装；缺失任一 component export 或必要方法时完全不安装 assistant/user/tool patch，只告警一次并保持 native renderer；`presentation` 其余公开能力仍可加载。
 6. 增加真实 ESM module-resolution fixture：模拟 package 缺少一个 component export，断言 extension 初始化不因 import error 失败。
 7. source-contract test 锁住 production patch target 只有：
    - `AssistantMessageComponent.prototype.render`
@@ -341,7 +341,7 @@ Gate 0：
 Gate 1：
 
 - 0.81.1、0.83.0 与 0.84.1 compatibility tests/实际 render probe 通过。
-- unknown/future version和缺失 component export fixture 均明确回落 native，extension 本身仍成功加载。
+- unknown/future/versionless host 在 shape 兼容时安装；缺失 component export 或必要方法时明确回落 native，extension 本身仍成功加载。
 - `npm --prefix packages/interface/presentation run check` 通过。
 - 根 `npm run check` 通过。
 
@@ -422,11 +422,11 @@ Gate 3：
 
 ### 11.1 静态与纯 render
 
-- 版本/export/shape probe：0.81.1、0.83.0、0.84.1。
+- export/shape probe：0.81.1、0.83.0、0.84.1、future version 与 versionless host。
 - user/assistant/tool：40/80/120/160 列。
 - Markdown：heading、list、table、code、partial fence、CJK、emoji、OSC 8、长 token。
 - tool：pending、partial、success、error、collapsed、expanded、artifact projection。
-- source allowlist：只有三个 production prototype target（assistant/user/tool）。
+- source contract：只有三个 production prototype target（assistant/user/tool）。
 - setter owner audit：生产代码中 `setHeader`/`setEditorComponent` 只属于 appearance，`setFooter` 只属于 statusline；本计划不新增 working indicator/message setter。
 - custom message、custom UI-only entry、compaction/branch summary、skill/usage row、retry/error/late diagnostics 均有 native baseline。
 
@@ -472,8 +472,8 @@ Kitty/Ghostty/SIXEL 仅在有真实终端时验证；不能用伪造环境变量
 
 | 风险 | 等级 | 缓解 |
 |---|---|---|
-| `presentation` 私有 prototype 在 Pi minor 版本漂移 | 高 | 精确版本 allowlist、shape probe、unknown native fallback |
-| Assistant prototype shape 随 Pi minor 版本漂移 | 高 | 三 target 共用精确版本/shape gate，任一不匹配即全部 native fallback |
+| `presentation` 私有 prototype 在 Pi minor 版本漂移 | 高 | 必需方法 shape probe、不兼容时 native fallback |
+| Assistant prototype shape 随 Pi minor 版本漂移 | 高 | 三 target 共用 shape gate，任一不匹配即全部 native fallback |
 | 全局 theme 改变已有插件 | 高 | 不发布/安装 OMP theme；只消费当前 semantic theme |
 | 自建 reveal/transcript 与 Pi native 重复 | 高 | 不创建第二 transcript、overlay 或 assistant stream |
 | transformer 每个 delta 同步执行造成卡顿 | 中 | 纯函数、无 I/O、fixture benchmark；无明确收益就不注册 |
@@ -492,7 +492,7 @@ Kitty/Ghostty/SIXEL 仅在有真实终端时验证；不能用伪造环境变量
 1. `style="classic"` 可恢复之前的 presentation 投影；`enabled=false` 完全 pass-through，均不需要 session migration。
 2. `style="classic"` 可立即恢复原 presentation 投影；`presentation.enabled=false` 完全 pass-through。未注册 Markdown transformer，无注销或累积问题。
 3. `compactTools=false` 或 `userMessageBox=false` 可分别回到 native tool/user renderer；不影响 assistant。
-4. unknown Pi version 或缺失 component export 自动不安装私有 compat，但 `presentation` 公开功能仍加载。
+4. 缺失 component export 或必要方法时自动不安装私有 compat；unknown/future version 只要 shape 兼容即可加载。
 5. extension shutdown/reload 只恢复本插件实际拥有的 prototype descriptor；不触碰 working indicator/message。
 6. 若 release 回滚，只需回退对应 package commit；session JSONL 仍可由原生 Pi replay。
 
@@ -552,7 +552,7 @@ Kitty/Ghostty/SIXEL 仅在有真实终端时验证；不能用伪造环境变量
 - 模型消息、tool facts、session JSONL 和 context 与 native 模式相同。
 - appearance header/editor、statusline footer、taskboard HUD 与基线无变化，working indicator/message 未被本插件占用。
 - production 私有 patch 只有 assistant/user/tool 三个精确 target；任一 host shape 不兼容时三者全部回 native，expanded tool 保真。
-- Pi 0.83.0 与 0.84.1 验证通过；未知版本或缺失 export 时 extension 成功加载并 fail closed 到 native。
+- Pi 0.83.0 与 0.84.1 验证通过；unknown/future/versionless host 在 shape 兼容时可加载，缺失 export 或必要方法时 extension 成功加载并 fail closed 到 native。
 - package check、root check、PTY capture 和实际 Windows Terminal 人工验收都有证据。
 
 方案 A 以 `style="omp"` 作为默认可回滚配置：Pi 原生 assistant Markdown、OMP-style hidden-thinking pulse/最终清理、native user band、bounded tool blocks 和单次 artifact receipt 已实现。Smooth reveal、settled scrollback、assistant-local Markdown engine 与 working-loader ownership 仍属于 Phase 4 上游能力，当前结果不冒充这些高保真行为。

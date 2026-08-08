@@ -11,7 +11,6 @@ import {
 import { renderUserMessageBox, type CompatibilityTheme } from "./user-message.ts";
 import type { PresentationArtifactState } from "../types.ts";
 
-const SUPPORTED_HOST_VERSIONS = new Set(["0.81.1", "0.83.0", "0.84.1"]);
 const REQUIRED_COMPONENT_METHODS = {
 	AssistantMessageComponent: ["render", "updateContent", "setHideThinkingBlock"],
 	UserMessageComponent: ["render"],
@@ -25,9 +24,6 @@ export type PresentationHostProbe =
 export function probePresentationHost(value: unknown): PresentationHostProbe {
 	const host = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
 	const version = typeof host.VERSION === "string" ? host.VERSION : "unknown";
-	if (!SUPPORTED_HOST_VERSIONS.has(version)) {
-		return { supported: false, version, reason: `unsupported Pi version ${version}` };
-	}
 	for (const [name, methods] of Object.entries(REQUIRED_COMPONENT_METHODS)) {
 		const component = host[name];
 		if (typeof component !== "function") {
