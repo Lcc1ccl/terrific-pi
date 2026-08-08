@@ -15,6 +15,7 @@ import {
 	createTombstone,
 	interruptSnapshot,
 	isProcessSnapshot,
+	isProcessUpdateErrorMessage,
 	normalizeProcessUpdate,
 	recordAssistantUsage,
 	restoreProcessState,
@@ -36,6 +37,8 @@ import {
 	type TaskboardViewMode,
 	type RuntimeControlState,
 } from "../lib/types.ts";
+
+const PROCESS_UPDATE_SCHEMA_ERROR_PREFIX = "Validation failed for tool \"process_update\":";
 
 const PROMPT_GUIDELINES = [
 	"Use process_update for work with at least three meaningful user-visible steps; skip it for simple answers or one-step work.",
@@ -63,7 +66,13 @@ function taskboardSummary(state: PersistedTaskboardState): string {
 	const snapshot = state.snapshot;
 	if (!snapshot) return `Taskboard: ${state.viewMode} · no active task`;
 	const done = snapshot.steps.filter((step) => step.status === "done").length;
-	return `Taskboard: ${state.viewMode} · ${snapshot.status} ${done}/${snapshot.steps.length} · ${snapshot.title}`;
+	let current = snapshot.steps.findIndex((step) => step.status === "active");
+	if (current < 0) current = snapshot.steps.findIndex((step) => step.status === "failed");
+	if (current < 0) current = snapshot.steps.findIndex((step) => step.status === "pending");
+	const progress = snapshot.status === "completed" || current < 0
+		? `${done}/${snapshot.steps.length}`
+		: `Step ${current + 1}/${snapshot.steps.length}`;
+	return `Taskboard: ${state.viewMode} · ${snapshot.status} · ${progress} · ${snapshot.title}`;
 }
 
 const COMMIT_HASH = /^[0-9a-f]{7,64}$/i;
@@ -143,27 +152,21 @@ export default function taskboard(pi: ExtensionAPI) {
 	let widgetMounted = false;
 	let requestWidgetRender: (() => void) | undefined;
 	let durationTickTimer: ReturnType<typeof setInterval> | undefined;
-	let getToolsExpanded: (() => boolean) | undefined;
+	let panelExpanded = false;
 	let pendingTelemetry: ProcessTelemetry | undefined;
 	let telemetryDirty = false;
 	let uiFailureNotified = false;
 	let corruptStateNotified = false;
 
-	const renderState = (): TaskboardRenderState => {
-		let expanded = false;
-		try {
-			expanded = getToolsExpanded?.() ?? false;
-		} catch {}
-		return {
-			viewMode: state.viewMode,
-			activityMode,
-			...(state.snapshot ? { snapshot: state.snapshot } : {}),
-			...(state.telemetry ? { telemetry: state.telemetry } : {}),
-			activity: activity.getSnapshot(),
-			expanded,
-			now: Date.now(),
-		};
-	};
+	const renderState = (): TaskboardRenderState => ({
+		viewMode: state.viewMode,
+		activityMode,
+		...(state.snapshot ? { snapshot: state.snapshot } : {}),
+		...(state.telemetry ? { telemetry: state.telemetry } : {}),
+		activity: activity.getSnapshot(),
+		expanded: panelExpanded,
+		now: Date.now(),
+	});
 
 	const shouldShowWidget = (): boolean => {
 		if (state.viewMode === "off") return false;
@@ -228,7 +231,6 @@ export default function taskboard(pi: ExtensionAPI) {
 			stopDurationTick();
 			return;
 		}
-		getToolsExpanded = () => ctx.ui.getToolsExpanded();
 		try {
 			if (!shouldShowWidget()) {
 				if (widgetMounted) ctx.ui.setWidget(TASKBOARD_WIDGET_KEY, undefined);
@@ -292,7 +294,7 @@ export default function taskboard(pi: ExtensionAPI) {
 		activity.reset();
 		pendingTelemetry = undefined;
 		telemetryDirty = false;
-		getToolsExpanded = ctx.mode === "tui" ? () => ctx.ui.getToolsExpanded() : undefined;
+		panelExpanded = false;
 		uiFailureNotified = false;
 		if (!restored.corrupted && state.snapshot?.status === "running") {
 			const running = state.snapshot;
@@ -318,6 +320,13 @@ export default function taskboard(pi: ExtensionAPI) {
 		}
 		refreshWidget(ctx);
 	};
+
+	const isProcessUpdateValidationFailure = (
+		result: { content: Array<{ type: string; text?: string }> },
+	): boolean => result.content.some((item) => item.type === "text" && (
+		isProcessUpdateErrorMessage(item.text)
+		|| item.text?.startsWith(PROCESS_UPDATE_SCHEMA_ERROR_PREFIX)
+	));
 
 	pi.registerTool({
 		name: "process_update",
@@ -355,6 +364,7 @@ export default function taskboard(pi: ExtensionAPI) {
 		},
 
 		renderResult(result, { expanded }, theme, context) {
+			if (context.isError && isProcessUpdateValidationFailure(result)) return new Container();
 			const rendered = renderToolResult(result, expanded, context.isError, theme);
 			if (expanded || context.isError) return rendered;
 			return {
@@ -422,12 +432,12 @@ export default function taskboard(pi: ExtensionAPI) {
 
 	const runTaskboardManager = async (ctx: ExtensionContext) => {
 		while (true) {
-			const expanded = ctx.ui.getToolsExpanded();
+			const expanded = panelExpanded;
 			const defaultMode = loadTaskboardDefault(getAgentDir());
 			const choice = await selectMenu(ctx, taskboardSummary(state), [
 				`View mode: ${state.viewMode}`,
 				`Default for new sessions: ${defaultMode}`,
-				`${expanded ? "Collapse" : "Expand"} live panel`,
+				...(state.viewMode === "compact" ? [`${expanded ? "Collapse" : "Expand"} live panel`] : []),
 				...(state.snapshot ? ["Clear current task"] : []),
 				"Done",
 			]);
@@ -443,7 +453,7 @@ export default function taskboard(pi: ExtensionAPI) {
 				continue;
 			}
 			if (choice.endsWith("live panel")) {
-				ctx.ui.setToolsExpanded(!expanded);
+				panelExpanded = !expanded;
 				refreshWidget(ctx);
 				continue;
 			}
@@ -501,7 +511,7 @@ export default function taskboard(pi: ExtensionAPI) {
 	pi.registerShortcut("shift+alt+o", {
 		description: "Toggle Taskboard live panel",
 		handler: (ctx) => {
-			ctx.ui.setToolsExpanded(!ctx.ui.getToolsExpanded());
+			panelExpanded = !panelExpanded;
 			refreshWidget(ctx);
 		},
 	});
@@ -674,7 +684,7 @@ export default function taskboard(pi: ExtensionAPI) {
 		}
 		widgetMounted = false;
 		requestWidgetRender = undefined;
-		getToolsExpanded = undefined;
+		panelExpanded = false;
 		stopDurationTick();
 		activity.reset();
 		pendingTelemetry = undefined;

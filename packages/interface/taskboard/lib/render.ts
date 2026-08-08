@@ -54,6 +54,11 @@ function currentStep(snapshot: ProcessSnapshot): ProcessStep | undefined {
 		?? snapshot.steps.at(-1);
 }
 
+function stepProgress(snapshot: ProcessSnapshot, step = currentStep(snapshot)): string {
+	if (snapshot.status === "completed" || !step) return `${doneCount(snapshot)}/${snapshot.steps.length}`;
+	return `Step ${snapshot.steps.indexOf(step) + 1}/${snapshot.steps.length}`;
+}
+
 function stepSymbol(step: ProcessStep): string {
 	if (step.status === "done") return "✓";
 	if (step.status === "active") return "●";
@@ -156,7 +161,7 @@ function compactSummary(state: TaskboardRenderState, width: number, theme: Proce
 	const current = currentStep(snapshot);
 	const elapsed = formatElapsed(stepElapsedMs(telemetryForStep(snapshot, state.telemetry, current), state.now));
 	const symbol = theme.fg(meta.tone, snapshot.status === "running" ? meta.symbol : `${meta.symbol} ${meta.label}`);
-	const progress = `${doneCount(snapshot)}/${snapshot.steps.length}`;
+	const progress = stepProgress(snapshot, current);
 	const currentLabel = width >= 90 ? "Now: " : "";
 	const fixed = `${symbol}  · ${progress} · ${currentLabel} · ${elapsed}`;
 	const available = width - visibleWidth(fixed);
@@ -259,8 +264,8 @@ function detailPanelLines(state: TaskboardRenderState, width: number, theme: Pro
 	if (width < 1) return [];
 	const snapshot = state.snapshot!;
 	const meta = STATUS_META[snapshot.status];
-	const progress = `${doneCount(snapshot)}/${snapshot.steps.length}`;
 	const current = currentStep(snapshot);
+	const progress = stepProgress(snapshot, current);
 	const currentMetric = telemetryForStep(snapshot, state.telemetry, current);
 	const totalElapsed = formatElapsed(totalElapsedMs(state.telemetry, state.now));
 	const currentElapsed = formatElapsed(stepElapsedMs(currentMetric, state.now));
@@ -339,13 +344,13 @@ export function formatToolResultLines(
 				: "";
 			return [`Taskboard done ${done}/${snapshot.steps.length} · ${summary}${artifacts}`];
 		}
-		return [`Taskboard ${done}/${snapshot.steps.length} · ${currentStep(snapshot)?.text ?? snapshot.title}`];
+		return [`Taskboard · ${stepProgress(snapshot)} · ${currentStep(snapshot)?.text ?? snapshot.title}`];
 	}
 
 	const meta = STATUS_META[snapshot.status];
 	const rawTelemetry = (result.details as { telemetry?: unknown }).telemetry;
 	const telemetry = isProcessTelemetry(rawTelemetry, snapshot) ? rawTelemetry : undefined;
-	const lines = [`${meta.symbol} ${meta.label} · ${done}/${snapshot.steps.length} ${snapshot.title}`];
+	const lines = [`${meta.symbol} ${meta.label} · ${stepProgress(snapshot)} ${snapshot.title}`];
 	for (let index = 0; index < snapshot.steps.length; index += 1) {
 		const step = snapshot.steps[index]!;
 		const metric = telemetry?.steps[index];

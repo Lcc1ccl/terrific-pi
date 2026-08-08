@@ -279,13 +279,19 @@ describe("taskboard registration and tool", () => {
 		assert.match(harness.shortcuts[0]?.options.description ?? "", /Taskboard/i);
 	});
 
-	it("toggles the live panel with Shift+Alt+O", async () => {
+	it("toggles only the Taskboard live panel with Shift+Alt+O", async () => {
 		const harness = createHarness();
+		await execute(harness);
 		assert.equal(harness.ctx.ui.getToolsExpanded(), false);
-		await harness.shortcuts[0]!.options.handler(harness.ctx);
-		assert.equal(harness.ctx.ui.getToolsExpanded(), true);
+		assert.doesNotMatch(harness.currentWidget.render(110).join("\n"), /Tasks|Runtime/);
+
 		await harness.shortcuts[0]!.options.handler(harness.ctx);
 		assert.equal(harness.ctx.ui.getToolsExpanded(), false);
+		assert.match(harness.currentWidget.render(110).join("\n"), /Taskboard.*Tasks.*Runtime/s);
+
+		await harness.shortcuts[0]!.options.handler(harness.ctx);
+		assert.equal(harness.ctx.ui.getToolsExpanded(), false);
+		assert.doesNotMatch(harness.currentWidget.render(110).join("\n"), /Tasks|Runtime/);
 	});
 
 	it("keeps legacy session entry and context type strings for restoration", () => {
@@ -367,13 +373,36 @@ describe("taskboard registration and tool", () => {
 		assert.match(harness.selectCalls.at(-1)?.title ?? "", /no active task/i);
 	});
 
-	it("rejects batch completion without persisting it", async () => {
+	it("rejects batch completion without persisting it or revealing the validation error after state advances", async () => {
 		const harness = createHarness();
 		await execute(harness);
 		const entryCount = harness.entries.length;
-		await assert.rejects(() => execute(harness, completedInput()), /one step.*done/i);
+		let errorMessage = "";
+		await assert.rejects(
+			() => execute(harness, completedInput()),
+			(error: unknown) => {
+				errorMessage = error instanceof Error ? error.message : String(error);
+				return /one step.*done/i.test(errorMessage);
+			},
+		);
 		assert.equal(harness.entries.length, entryCount);
 		assert.deepEqual(latestSnapshot(harness.entries)?.steps.map((step) => step.status), ["done", "active", "pending"]);
+
+		const renderedError = harness.tool.renderResult(
+			{ content: [{ type: "text", text: errorMessage }] },
+			{ expanded: false },
+			theme,
+			{ isError: true, args: completedInput() },
+		);
+		assert.deepEqual(renderedError.render(120), []);
+		await execute(harness, finalStepInput());
+		const rerenderedError = harness.tool.renderResult(
+			{ content: [{ type: "text", text: errorMessage }] },
+			{ expanded: false },
+			theme,
+			{ isError: true, args: completedInput() },
+		).render(120);
+		assert.deepEqual(rerenderedError, []);
 	});
 
 	it("keeps in-memory state unchanged when appendEntry fails", async () => {
@@ -546,7 +575,7 @@ describe("taskboard registration and tool", () => {
 
 		await execute(harness, finalStepInput());
 		const completed = await execute(harness, completedInput());
-		assert.match(runningCollapsed.render(120).join("\n"), /Taskboard 1\/3/);
+		assert.match(runningCollapsed.render(120).join("\n"), /Taskboard · Step 2\/3/);
 		const completedCollapsed = harness.tool.renderResult(
 			completed,
 			{ expanded: false },
@@ -557,13 +586,43 @@ describe("taskboard registration and tool", () => {
 		await harness.emit("agent_settled");
 		assert.match(completedCollapsed.render(120).join("\n"), /Taskboard done 3\/3/);
 
-		const error = harness.tool.renderResult(
-			{ content: [{ type: "text", text: "Invalid update" }] },
+		const semanticError = harness.tool.renderResult(
+			{ content: [{ type: "text", text: "Taskboard validation: Running requires exactly one active step" }] },
 			{ expanded: false },
 			theme,
-			{ isError: true },
+			{
+				isError: true,
+				args: {
+					...runningInput(),
+					steps: runningInput().steps.map((step) => ({ ...step, status: "pending" })),
+				},
+			},
 		).render(120);
-		assert.deepEqual(error.map((line: string) => line.trimEnd()), ["Invalid update"]);
+		assert.deepEqual(semanticError, []);
+
+		const schemaError = harness.tool.renderResult(
+			{ content: [{ type: "text", text: "Validation failed for tool \"process_update\":\n  - title: Expected string" }] },
+			{ expanded: false },
+			theme,
+			{ isError: true, args: {} },
+		).render(120);
+		assert.deepEqual(schemaError, []);
+
+		const invalidArgsInternalError = harness.tool.renderResult(
+			{ content: [{ type: "text", text: "session write failed" }] },
+			{ expanded: false },
+			theme,
+			{ isError: true, args: {} },
+		).render(120);
+		assert.deepEqual(invalidArgsInternalError.map((line: string) => line.trimEnd()), ["session write failed"]);
+
+		const internalError = harness.tool.renderResult(
+			{ content: [{ type: "text", text: "session write failed" }] },
+			{ expanded: false },
+			theme,
+			{ isError: true, args: runningInput() },
+		).render(120);
+		assert.deepEqual(internalError.map((line: string) => line.trimEnd()), ["session write failed"]);
 	});
 });
 
@@ -830,7 +889,8 @@ describe("presentation activity integration", () => {
 			const widget = harness.currentWidget as { render(width: number): string[] } | undefined;
 			assert.ok(widget);
 			assert.doesNotMatch(widget.render(100).join("\n"), /read src\/a\.ts/);
-			harness.setToolsExpanded(true);
+			await harness.shortcuts[0]!.options.handler(harness.ctx);
+			assert.equal(harness.ctx.ui.getToolsExpanded(), false);
 			assert.match(widget.render(100).join("\n"), /Active: read src\/a\.ts/);
 		} finally {
 			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -841,16 +901,25 @@ describe("presentation activity integration", () => {
 });
 
 describe("commands and passive telemetry", () => {
-	it("opens a shallow manager that changes view mode and native expansion", async () => {
-		const harness = createHarness({
-			choices: ["View mode", "full", "Expand live panel", "Done"],
-		});
+	it("opens the manager and toggles Taskboard expansion independently", async () => {
+		const harness = createHarness({ choices: ["Expand live panel", "Done"] });
+		await execute(harness);
+		await harness.command.handler("", harness.ctx);
+
+		assert.equal(harness.entries.at(-1)?.data.viewMode, "compact");
+		assert.equal(harness.ctx.ui.getToolsExpanded(), false);
+		assert.match(harness.currentWidget.render(110).join("\n"), /Taskboard.*Tasks.*Runtime/s);
+		assert.match(harness.selectCalls[0]?.title ?? "", /running.*step 2\/3.*Implement process view/i);
+	});
+
+	it("omits the live-panel toggle while full mode pins the panel open", async () => {
+		const harness = createHarness({ choices: ["View mode", "full", "Done"] });
 		await execute(harness);
 		await harness.command.handler("", harness.ctx);
 
 		assert.equal(harness.entries.at(-1)?.data.viewMode, "full");
-		assert.equal(harness.ctx.ui.getToolsExpanded(), true);
-		assert.match(harness.selectCalls[0]?.title ?? "", /running 1\/3.*Implement process view/i);
+		assert.doesNotMatch(harness.selectCalls.at(-1)?.title ?? "", /Expand live panel|Collapse live panel/);
+		assert.match(harness.currentWidget.render(110).join("\n"), /Taskboard.*Tasks.*Runtime/s);
 	});
 
 	it("confirms clearing the current task from the manager", async () => {
@@ -910,12 +979,15 @@ describe("commands and passive telemetry", () => {
 		assert.match(print.notifications.at(-1)?.message ?? "", /requires TUI confirmation/i);
 	});
 
-	it("follows native tool expansion and records task-local assistant usage", async () => {
+	it("keeps Taskboard expansion independent from native tool expansion and records task-local assistant usage", async () => {
 		const harness = createHarness();
 		await execute(harness);
 		assert.doesNotMatch(harness.currentWidget.render(110).join("\n"), /Tasks|Runtime/);
 
 		harness.setToolsExpanded(true);
+		assert.doesNotMatch(harness.currentWidget.render(110).join("\n"), /Tasks|Runtime/);
+		await harness.shortcuts[0]!.options.handler(harness.ctx);
+		assert.equal(harness.ctx.ui.getToolsExpanded(), true);
 		assert.match(harness.currentWidget.render(110).join("\n"), /Taskboard.*Tasks.*Runtime/s);
 
 		await harness.emit("message_end", {

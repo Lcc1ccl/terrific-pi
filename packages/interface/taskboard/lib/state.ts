@@ -22,9 +22,15 @@ const ARTIFACT_KINDS = new Set<ArtifactKind>(["file", "test", "screenshot", "url
 const VIEW_MODES = new Set<TaskboardViewMode>(["compact", "full", "off"]);
 const MAX_TRACKED_MODELS = 8;
 
+const PROCESS_UPDATE_ERROR_PREFIX = "Taskboard validation: ";
+
+export function isProcessUpdateErrorMessage(value: unknown): boolean {
+	return typeof value === "string" && value.startsWith(PROCESS_UPDATE_ERROR_PREFIX);
+}
+
 export class ProcessUpdateError extends Error {
 	constructor(message: string) {
-		super(message);
+		super(`${PROCESS_UPDATE_ERROR_PREFIX}${message}`);
 		this.name = "ProcessUpdateError";
 	}
 }

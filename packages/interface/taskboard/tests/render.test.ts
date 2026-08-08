@@ -131,9 +131,9 @@ describe("formatTaskboardLines", () => {
 		assert.doesNotMatch(offExpanded, /bash private command/);
 	});
 
-	it("puts the goal, task progress, current task, and elapsed time on the first compact line", () => {
+	it("puts the goal, current step position, current task, and elapsed time on the first compact line", () => {
 		const lines = formatTaskboardLines(state(), 120, plainTheme);
-		assert.match(lines[0] ?? "", /Update reward configuration.*1\/4.*Apply changes.*1m05s/);
+		assert.match(lines[0] ?? "", /Update reward configuration.*Step 2\/4.*Apply changes.*1m05s/);
 		assert.doesNotMatch(lines.join("\n"), /✓ Inspect naming.*○ Validate workbook/);
 		assert.match(lines[1] ?? "", /Running 3 tools/);
 		assert.doesNotMatch(lines[1] ?? "", /Bonus_Config\.xlsx|\bbash\b/);
@@ -148,12 +148,12 @@ describe("formatTaskboardLines", () => {
 			},
 		}), 60, plainTheme);
 		assert.ok(lines.length <= 2);
-		assert.match(lines[0] ?? "", /1\/4/);
+		assert.match(lines[0] ?? "", /Step 2\/4/);
 		assert.match(lines[0] ?? "", /1m05s/);
 		assertFits(lines, 60);
 	});
 
-	it("uses native tool expansion for a responsive live task and runtime panel", () => {
+	it("uses Taskboard expansion for a responsive live task and runtime panel", () => {
 		for (const width of [1, 2, 3, 8, 20, 40, 60, 72, 80, 100, 120]) {
 			const responsive = formatTaskboardLines(state({ expanded: true } as Partial<TaskboardRenderState>), width, plainTheme);
 			assertFits(responsive, width);
@@ -162,7 +162,7 @@ describe("formatTaskboardLines", () => {
 		const lines = formatTaskboardLines(state({ expanded: true } as Partial<TaskboardRenderState>), 110, plainTheme);
 		assertFits(lines, 110);
 		assert.ok(lines.length <= 15);
-		assert.match(lines.join("\n"), /Taskboard.*Running.*1\/4/);
+		assert.match(lines.join("\n"), /Taskboard.*Running.*Step 2\/4/);
 		assert.doesNotMatch(lines.join("\n"), /\d+%/);
 		assert.match(lines.join("\n"), /Time: total 1m17s · current 1m05s/);
 		assert.match(lines.join("\n"), /Current: Apply changes/);
@@ -190,12 +190,18 @@ describe("formatTaskboardLines", () => {
 		assert.match(joined, /● Apply changes[\s\S]*1m05s/);
 	});
 
-	it("prioritizes blocked and interrupted reasons", () => {
+	it("keeps the current step position while prioritizing waiting, blocked, and interrupted reasons", () => {
+		const waiting = formatTaskboardLines(state({
+			snapshot: snapshot({ status: "waiting", update: "Waiting for continuation" }),
+			activity: { stage: "settled", activeTools: [] },
+		}), 80, plainTheme);
+		assert.match(waiting.join("\n"), /Waiting.*Step 2\/4/);
+
 		const blocked = formatTaskboardLines(state({
 			snapshot: snapshot({ status: "blocked", blocker: "Choose the target sheet" }),
 			activity: { stage: "settled", activeTools: [] },
 		}), 80, plainTheme);
-		assert.match(blocked.join("\n"), /! Blocked/);
+		assert.match(blocked.join("\n"), /! Blocked.*Step 2\/4/);
 		assert.match(blocked.join("\n"), /Need: Choose the target sheet/);
 		const narrowBlocked = formatTaskboardLines(state({
 			snapshot: snapshot({ status: "blocked", blocker: "Choose the target sheet" }),
@@ -207,7 +213,7 @@ describe("formatTaskboardLines", () => {
 			snapshot: snapshot({ status: "interrupted", update: "Run stopped after an error" }),
 			activity: { stage: "settled", activeTools: [] },
 		}), 80, plainTheme);
-		assert.match(interrupted.join("\n"), /! Interrupted/);
+		assert.match(interrupted.join("\n"), /! Interrupted.*Step 2\/4/);
 		assert.match(interrupted.join("\n"), /Update: Run stopped after an error/);
 	});
 
@@ -256,10 +262,12 @@ describe("formatTaskboardLines", () => {
 });
 
 describe("formatToolResultLines", () => {
-	it("renders a one-line running or completed receipt", () => {
-		assert.deepEqual(formatToolResultLines({ content: [], details: snapshot() }, false, false), [
-			"Taskboard 1/4 · Apply changes",
+	it("renders current step position consistently in collapsed and expanded receipts", () => {
+		const running = snapshot();
+		assert.deepEqual(formatToolResultLines({ content: [], details: running }, false, false), [
+			"Taskboard · Step 2/4 · Apply changes",
 		]);
+		assert.match(formatToolResultLines({ content: [], details: running }, true, false)[0] ?? "", /Running · Step 2\/4/);
 		const completed = snapshot({
 			status: "completed",
 			steps: snapshot().steps.map((step) => ({ ...step, status: "done" })),

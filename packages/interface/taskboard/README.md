@@ -5,7 +5,7 @@ Structured task milestones and task-scoped HUD for [pi](https://pi.dev).
 Taskboard keeps multi-step work inspectable while `presentation` owns collapsed tool history:
 
 - a compact editor-above HUD for the goal, task progress, current-step time, and blocker
-- a live task panel toggled by `Shift+Alt+O` or Pi's native tool expansion binding
+- a live task panel toggled independently with `Shift+Alt+O`
 - expandable `process_update` history without repeating the snapshot currently visible in the HUD
 
 ## Install
@@ -36,11 +36,11 @@ Snapshots support:
 - branch-aware restoration through `process-view-state-v1` custom entries
 - extension-owned step timing plus model, token, cache, and cost telemetry without adding model-facing fields
 
-Tool calls execute sequentially. Invalid snapshots throw without changing memory, session state, or the Widget. The call itself is hidden. While the HUD owns the current snapshot, its successful collapsed result is suppressed; it reappears after a newer milestone replaces it, or after the completed HUD settles away. Expanded details and errors are never suppressed. Use `Shift+Alt+O` to toggle the live panel; Pi's current `app.tools.expand` binding also controls the same expansion state.
+Tool calls execute sequentially. Invalid snapshots throw without changing memory, session state, or the Widget. The call itself is hidden, and validation errors remain available to the model while rendering silently in the TUI. While the HUD owns the current snapshot, its successful collapsed result is suppressed; it reappears after a newer milestone replaces it, or after the completed HUD settles away. Expanded successful details are never suppressed. Use `Shift+Alt+O` to toggle only the Taskboard live panel; Pi's `app.tools.expand` binding remains independent.
 
 ## HUD
 
-The Widget key is `terrific-pi:taskboard` and uses Pi theme tokens. Its compact first line keeps the goal, completed/total task count, current step, and current-step active time together. The latest blocker, update, or verification may use one additional line.
+The Widget key is `terrific-pi:taskboard` and uses Pi theme tokens. Its compact first line keeps the goal, labeled current-step position, current task, and current-step active time together. The latest blocker, update, or verification may use one additional line.
 
 `taskboard.activityMode` controls runtime activity independently from task state. Existing `processView` config is read only when `taskboard` is absent; the next `/taskboard default <mode>` migrates it atomically:
 
@@ -50,9 +50,9 @@ The Widget key is `terrific-pi:taskboard` and uses Pi theme tokens. Its compact 
 
 Taskboard writes only the `taskboard` object and preserves unknown legacy fields during that migration.
 
-When Pi's native tool expansion is enabled, compact mode switches to a live panel with:
+When the Taskboard live panel is expanded, compact mode switches to a detailed view with:
 
-- goal status, completed/total task count, current step, total task time, and current-step time
+- goal status, labeled current-step position, total task time, and current-step time
 - every step's completion state, active time, turns, ↑input ↓output, and model when available
 - task-local input/output/cache/cost totals and runtime activity when `activityMode` is not `off`
 - the latest blocker, update, verification, or artifact labels
@@ -67,14 +67,14 @@ When activity is visible, only `read`, `edit`, `write`, `grep`, `find`, and `ls`
 
 ```text
 /taskboard              TUI manager: summary, view mode, global default, live-panel expansion, confirmed clear
-/taskboard compact      compact by default; follow Pi's native tool expansion
+/taskboard compact      compact by default; Shift+Alt+O toggles the live panel
 /taskboard full         pin the live task/runtime panel open
 /taskboard off          hide the HUD while retaining state and receipts
 /taskboard clear        TUI confirmation, then write a tombstone and clear the current task
 /taskboard default <mode>  save compact|full|off for new session branches
 ```
 
-Outside TUI mode, bare `/taskboard` prints the current summary and `/taskboard clear` refuses without TUI confirmation. View mode is stored per session branch. `taskboard.defaultViewMode` in `~/.pi/agent/terrific.json` supplies the initial mode only when a branch has no saved Taskboard state; `/taskboard default <mode>` writes that global default. The extension registers `Shift+Alt+O` to toggle the live panel. Pi's default `Ctrl+O` remains the global `app.tools.expand` binding and controls the same expansion state.
+Outside TUI mode, bare `/taskboard` prints the current summary and `/taskboard clear` refuses without TUI confirmation. View mode is stored per session branch. `taskboard.defaultViewMode` in `~/.pi/agent/terrific.json` supplies the initial mode only when a branch has no saved Taskboard state; `/taskboard default <mode>` writes that global default. The extension registers `Shift+Alt+O` to toggle only the live panel. Pi's default `Ctrl+O` remains bound to `app.tools.expand` and does not affect the Taskboard live panel.
 
 ## Compatibility Window
 
