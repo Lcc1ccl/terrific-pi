@@ -25,12 +25,36 @@ function readJson(path: string): Record<string, any> {
 test("core root manifest exposes exactly the three approved domains", () => {
 	const manifest = readJson(join(ROOT, "package.json"));
 	assert.equal(manifest.name, "terrific-pi");
+	assert.equal(manifest.version, "0.2.0");
 	assert.deepEqual(manifest.pi?.extensions, EXTENSIONS);
 	assert.equal(manifest.pi?.skills, undefined);
 	assert.equal(manifest.pi?.subagents, undefined);
 	for (const relative of EXTENSIONS) {
 		assert.equal(existsSync(join(ROOT, relative)), true, `missing resource: ${relative}`);
 	}
+});
+
+test("public examples keep safe defaults and omit device-only configuration", () => {
+	const terrific = readJson(join(ROOT, "config/examples/terrific.json"));
+	assert.equal(terrific.fast.enabled, false);
+	assert.equal(terrific.auxiliary.usageReports, false);
+	assert.equal(terrific.auxiliary.git.confirm, true);
+	assert.deepEqual(terrific.appearance, { enabled: true, settingsLanguage: "en", header: true, editor: true });
+	assert.equal(terrific.presentation.style, "omp");
+	assert.equal(terrific.presentation.maxExpandedArtifacts, 16);
+	assert.equal(terrific.modelProfile, undefined);
+	assert.equal(terrific.docsflow, undefined);
+
+	const statusline = readJson(join(ROOT, "config/examples/statusline.json"));
+	assert.deepEqual(statusline.lines, {
+		line0: ["mode", "session", "path", "branch", "branchDiff"],
+		line1: ["state", "progress", "model", "fast", "duration", "runTtft"],
+		line2: ["contextBar", "cache", "tokens", "cost"],
+		line3: [],
+		line4: [],
+	});
+	assert.equal(statusline.contextMode, "used");
+	assert.equal(statusline.contextBarWidth, 8);
 });
 
 test("npm tarball contains every declared extension entry", () => {

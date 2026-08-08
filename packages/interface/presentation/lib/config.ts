@@ -28,7 +28,7 @@ export const DEFAULT_PRESENTATION_CONFIG: PresentationConfig = {
 	artifacts: true,
 	userMessageBox: true,
 	compactTools: true,
-	maxExpandedArtifacts: 8,
+	maxExpandedArtifacts: 16,
 };
 
 export type PresentationConfigLoadResult = { config: PresentationConfig; error?: string };

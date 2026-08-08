@@ -55,6 +55,28 @@ describe("mergeStatuslineConfig", () => {
 		assert.equal(Object.hasOwn(merged, "widgetGroups"), false);
 	});
 
+	it("uses the published three-surface layout as the package default", () => {
+		assert.deepEqual(DEFAULT_CONFIG.lines, {
+			line0: ["mode", "session", "path", "branch", "branchDiff"],
+			line1: ["state", "progress", "model", "fast", "duration", "runTtft"],
+			line2: ["contextBar", "cache", "tokens", "cost"],
+			line3: [],
+			line4: [],
+		});
+		assert.deepEqual(DEFAULT_CONFIG.widgetOrder, {
+			line0: ["mode", "session", "path", "branch", "branchDiff"],
+			line1: [
+				"state", "progress", "model", "fast", "duration", "runTtft", "context", "quota", "environment",
+				"worktree", "runtime", "runTps", "runDuration", "runTokens", "runStalls", "runCostRate",
+			],
+			line2: ["contextBar", "cache", "tokens", "cost", "toolActivity"],
+			line3: [],
+			line4: [],
+		});
+		assert.equal(DEFAULT_CONFIG.contextMode, "used");
+		assert.equal(DEFAULT_CONFIG.contextBarWidth, 8);
+	});
+
 	it("keeps defaults for empty input without sharing line arrays", () => {
 		const merged = mergeStatuslineConfig({});
 		assert.deepEqual(merged, DEFAULT_CONFIG);
@@ -121,17 +143,17 @@ describe("mergeStatuslineConfig", () => {
 		for (const spacing of [-1, 5, 1.5, "1"]) {
 			assert.equal(mergeStatuslineConfig({ spacing }).spacing, 1);
 		}
-		assert.equal(mergeStatuslineConfig({ contextBarWidth: 8.9 }).contextBarWidth, 10);
+		assert.equal(mergeStatuslineConfig({ contextBarWidth: 8.9 }).contextBarWidth, 8);
 		assert.equal(mergeStatuslineConfig({ separator: "│" }).separator, "dot");
 		assert.equal(mergeStatuslineConfig({ iconMode: "unknown" }).iconMode, "emoji");
 	});
 
-	it("registers independent run metric widgets without enabling them by default", () => {
+	it("registers independent run metric widgets and enables only TTFT by default", () => {
 		assert.equal(DEFAULT_CONFIG.runNotification, false);
 		assert.equal(DEFAULT_CONFIG.toolActivityMode, "compact");
 		for (const id of ["runTps", "runTtft", "runDuration", "runTokens", "runStalls", "runCostRate"] as const) {
 			assert.equal(WIDGET_IDS.includes(id), true, id);
-			assert.equal(hasWidget(DEFAULT_CONFIG, id), false, id);
+			assert.equal(hasWidget(DEFAULT_CONFIG, id), id === "runTtft", id);
 		}
 		assert.equal(WIDGET_IDS.includes("performance" as never), false);
 		assert.equal(WIDGET_IDS.includes("auxUsage" as never), false);

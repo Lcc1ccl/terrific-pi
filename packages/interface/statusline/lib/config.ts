@@ -80,30 +80,44 @@ export function widgetLineOf(lines: WidgetLines, id: WidgetId): WidgetLineId | u
 }
 
 export const DEFAULT_LINES: WidgetLines = {
-	line0: ["model", "mode", "fast"],
+	line0: ["mode", "session", "path", "branch", "branchDiff"],
+	line1: ["state", "progress", "model", "fast", "duration", "runTtft"],
+	line2: ["contextBar", "cache", "tokens", "cost"],
+	line3: [],
+	line4: [],
+};
+
+export const DEFAULT_WIDGET_ORDER: WidgetLines = {
+	line0: ["mode", "session", "path", "branch", "branchDiff"],
 	line1: [
-		"path",
-		"session",
-		"tokens",
-		"cache",
-		"cost",
-		"contextBar",
-		"branch",
-		"branchDiff",
-		"progress",
-		"duration",
 		"state",
+		"progress",
+		"model",
+		"fast",
+		"duration",
+		"runTtft",
+		"context",
+		"quota",
+		"environment",
+		"worktree",
+		"runtime",
+		"runTps",
+		"runDuration",
+		"runTokens",
+		"runStalls",
+		"runCostRate",
 	],
-	line2: [],
+	line2: ["contextBar", "cache", "tokens", "cost", "toolActivity"],
 	line3: [],
 	line4: [],
 };
 
 export const DEFAULT_CONFIG: StatuslineConfig = {
 	lines: cloneWidgetLines(DEFAULT_LINES),
+	widgetOrder: cloneWidgetLines(DEFAULT_WIDGET_ORDER),
 	iconMode: "emoji",
-	contextMode: "remaining",
-	contextBarWidth: DEFAULT_CONTEXT_BAR_WIDTH,
+	contextMode: "used",
+	contextBarWidth: 8,
 	minimal: false,
 	separator: "dot",
 	spacing: DEFAULT_WIDGET_SPACING,
@@ -295,11 +309,12 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 	if (!isRecord(raw)) return cloneStatuslineConfig(DEFAULT_CONFIG);
 
 	const parsedLines = asWidgetLines(raw.lines);
-	const candidateLines = parsedLines ?? migrateLegacyLines(raw);
+	const hasLegacyLayout = Object.hasOwn(raw, "widgets") || Object.hasOwn(raw, "layout") || Object.hasOwn(raw, "widgetGroups");
+	const candidateLines = parsedLines ?? (hasLegacyLayout ? migrateLegacyLines(raw) : undefined);
 	const lines = candidateLines && WIDGET_LINE_IDS.some((line) => candidateLines[line].length > 0)
 		? candidateLines
 		: cloneWidgetLines(DEFAULT_LINES);
-	const widgetOrder = asWidgetLines(raw.widgetOrder);
+	const widgetOrder = asWidgetLines(raw.widgetOrder) ?? cloneWidgetLines(DEFAULT_WIDGET_ORDER);
 	const iconMode = asIconMode(raw.iconMode);
 	const contextMode = asContextMode(raw.contextMode);
 	const contextBarWidth = asContextBarWidth(raw.contextBarWidth);
@@ -311,7 +326,7 @@ export function mergeStatuslineConfig(raw: unknown): StatuslineConfig {
 
 	return {
 		lines,
-		...(widgetOrder ? { widgetOrder } : {}),
+		widgetOrder,
 		iconMode: iconMode ?? DEFAULT_CONFIG.iconMode,
 		contextMode: contextMode ?? DEFAULT_CONFIG.contextMode,
 		contextBarWidth: contextBarWidth ?? DEFAULT_CONFIG.contextBarWidth,

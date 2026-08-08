@@ -4,11 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 
-import { loadAppearanceConfig, writeAppearanceSection } from "../lib/config.ts";
+import { DEFAULT_APPEARANCE_SETTINGS, loadAppearanceConfig, writeAppearanceSection } from "../lib/config.ts";
 
 const valid = { enabled: true, settingsLanguage: "en", header: true, editor: true } as const;
 
 describe("appearance config", () => {
+  it("publishes the enabled header and editor profile as the configuration default", () => {
+    assert.deepEqual(DEFAULT_APPEARANCE_SETTINGS, valid);
+  });
+
   it("fails closed when the global section is absent", () => {
     const dir = mkdtempSync(join(tmpdir(), "appearance-absent-"));
     assert.deepEqual(loadAppearanceConfig(dir), { config: undefined });

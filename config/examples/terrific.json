@@ -9,6 +9,12 @@
     "defaultViewMode": "compact",
     "activityMode": "full"
   },
+  "appearance": {
+    "enabled": true,
+    "settingsLanguage": "en",
+    "header": true,
+    "editor": true
+  },
   "presentation": {
     "enabled": true,
     "style": "omp",
@@ -17,7 +23,7 @@
     "artifacts": true,
     "userMessageBox": true,
     "compactTools": true,
-    "maxExpandedArtifacts": 8
+    "maxExpandedArtifacts": 16
   },
   "mode": {
     "default": "edit",

@@ -24,7 +24,7 @@ export interface AppearanceConfig {
 }
 
 export const DEFAULT_APPEARANCE_SETTINGS: AppearanceConfig = {
-  enabled: false,
+  enabled: true,
   settingsLanguage: "en",
   header: true,
   editor: true,

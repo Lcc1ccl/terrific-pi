@@ -1,27 +1,70 @@
 {
   "lines": {
     "line0": [
-      "model",
       "mode",
-      "fast"
+      "session",
+      "path",
+      "branch",
+      "branchDiff"
     ],
     "line1": [
-      "path",
-      "cache",
-      "cost",
-      "contextBar",
-      "branch",
-      "progress",
       "state",
-      "duration"
+      "progress",
+      "model",
+      "fast",
+      "duration",
+      "runTtft"
     ],
-    "line2": [],
+    "line2": [
+      "contextBar",
+      "cache",
+      "tokens",
+      "cost"
+    ],
     "line3": [],
     "line4": []
   },
+  "widgetOrder": {
+    "line0": [
+      "mode",
+      "session",
+      "path",
+      "branch",
+      "branchDiff"
+    ],
+    "line1": [
+      "state",
+      "progress",
+      "model",
+      "fast",
+      "duration",
+      "runTtft",
+      "context",
+      "quota",
+      "environment",
+      "worktree",
+      "runtime",
+      "runTps",
+      "runDuration",
+      "runTokens",
+      "runStalls",
+      "runCostRate"
+    ],
+    "line2": [
+      "contextBar",
+      "cache",
+      "tokens",
+      "cost",
+      "toolActivity"
+    ],
+    "line3": [],
+    "line4": []
+  },
+  "iconMode": "emoji",
   "contextMode": "used",
-  "contextBarWidth": 10,
+  "contextBarWidth": 8,
   "minimal": false,
   "separator": "dot",
-  "spacing": 1
+  "spacing": 1,
+  "toolActivityMode": "compact"
 }

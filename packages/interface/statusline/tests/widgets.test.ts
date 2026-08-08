@@ -42,36 +42,36 @@ describe("buildWidgetSegments", () => {
 		assert.deepEqual(
 			segments.map((segment) => segment.id),
 			[
-				"model",
-				"fast",
-				"path",
 				"session",
-				"tokens",
-				"cache",
-				"cost",
-				"contextBar",
+				"path",
 				"branch",
 				"branchDiff",
-				"progress",
-				"duration",
 				"state",
+				"progress",
+				"model",
+				"fast",
+				"duration",
+				"contextBar",
+				"cache",
+				"tokens",
+				"cost",
 			],
 		);
 		assert.deepEqual(
 			segments.filter((segment) => segment.id !== "path").map((segment) => segment.text),
 			[
-				"gpt-5 high",
-				"",
 				"demo",
-				"🔼 1.5K · 🔽 800",
-				"🎯 66.7%",
-				"$0.42",
-				"🪟 [██████░░░░] 60%",
 				"⑂ main",
 				"+12 -3",
-				"task 1/2",
-				"🕒 12s / 1m45s",
 				"Ready",
+				"task 1/2",
+				"gpt-5 high",
+				"",
+				"🕒 12s / 1m45s",
+				"🪟 [███░░░░░] 40%",
+				"🎯 66.7%",
+				"🔼 1.5K · 🔽 800",
+				"$0.42",
 			],
 		);
 		const path = segments.find((segment) => segment.id === "path");
@@ -326,7 +326,7 @@ describe("buildWidgetSegments", () => {
 		assert.equal(texts[2], "$0.42");
 		assert.equal(texts[3], "ctx 60% left");
 		assert.equal(texts[4], "t 12s/1m45s");
-		assert.equal(texts[5], "ctx [██████░░░░] 60%");
+		assert.equal(texts[5], "ctx [█████░░░] 60%");
 	});
 });
 

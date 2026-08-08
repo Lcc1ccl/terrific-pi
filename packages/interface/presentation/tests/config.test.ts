@@ -31,6 +31,7 @@ test("presentation config enables the OMP profile, user messages, and compact to
 		assert.equal(loadPresentationConfig(dir).config.style, "omp");
 		assert.equal(loadPresentationConfig(dir).config.userMessageBox, true);
 		assert.equal(loadPresentationConfig(dir).config.compactTools, true);
+		assert.equal(loadPresentationConfig(dir).config.maxExpandedArtifacts, 16);
 		writeFileSync(path, JSON.stringify({ presentation: { style: "classic", userMessageBox: false, compactTools: false } }), "utf8");
 		assert.equal(loadPresentationConfig(dir).config.style, "classic");
 		assert.equal(loadPresentationConfig(dir).config.userMessageBox, false);
