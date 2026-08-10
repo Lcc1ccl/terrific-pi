@@ -4,6 +4,7 @@ import { describe, test } from "node:test";
 import {
 	InMemoryCredentialStore,
 	createFauxCore,
+	createAssistantMessageEventStream,
 	fauxAssistantMessage,
 	type AssistantMessage,
 	type Model,
@@ -102,6 +103,20 @@ const request = {
 	requiredInput: "text" as const,
 	messages: [{ role: "user" as const, content: [{ type: "text" as const, text: "hello" }], timestamp: Date.now() }],
 };
+
+async function within<T>(promise: Promise<T>, ms = 500): Promise<T> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			promise,
+			new Promise<T>((_resolve, reject) => {
+				timer = setTimeout(() => reject(new Error("operation remained pending")), ms);
+			}),
+		]);
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
+}
 
 describe("AuxiliaryRuntime", () => {
 	test("calls the configured model and records bounded usage metadata", async () => {
@@ -203,6 +218,126 @@ describe("AuxiliaryRuntime", () => {
 		await assert.rejects(timeoutRuntime.call(request, { ...route, timeoutMs: 10 }), (error: unknown) => error instanceof AuxiliaryError && error.code === "timeout");
 	});
 
+	test("observes an auth rejection when setup aborts synchronously", async () => {
+		const controller = new AbortController();
+		let authPromise: Promise<never> | undefined;
+		let observed = false;
+		const runtime = new AuxiliaryRuntime({
+			registry: {
+				find: () => model("openai", "small"),
+				getApiKeyAndHeaders: () => {
+					controller.abort();
+					authPromise = Promise.reject(new Error("orphaned auth rejection"));
+					const then = authPromise.then.bind(authPromise);
+					(authPromise as any).then = (...args: any[]) => {
+						observed = true;
+						return then(...args);
+					};
+					return authPromise;
+				},
+				getRegisteredProviderIds: () => [],
+				getRegisteredProviderConfig: () => undefined,
+			},
+			getCurrentModel: () => undefined,
+		});
+		try {
+			await assert.rejects(
+				within(runtime.call({ ...request, signal: controller.signal }, route)),
+				(error: unknown) => error instanceof AuxiliaryError && error.code === "aborted",
+			);
+			assert.equal(observed, true);
+		} finally {
+			await authPromise?.catch(() => {});
+			runtime.shutdown();
+		}
+	});
+
+	test("times out authentication that never settles", async () => {
+		const runtime = new AuxiliaryRuntime({
+			registry: {
+				find: () => model("openai", "small"),
+				getApiKeyAndHeaders: async () => await new Promise<never>(() => {}),
+				getRegisteredProviderIds: () => [],
+				getRegisteredProviderConfig: () => undefined,
+			},
+			getCurrentModel: () => undefined,
+		});
+		await assert.rejects(
+			within(runtime.call(request, { ...route, timeoutMs: 20 })),
+			(error: unknown) => error instanceof AuxiliaryError && error.code === "timeout",
+		);
+		runtime.shutdown();
+	});
+
+	test("times out sidecar creation that never settles", async () => {
+		const runtime = new AuxiliaryRuntime({
+			registry: {
+				find: () => model("openai", "small"),
+				getApiKeyAndHeaders: async () => ({ ok: true as const, apiKey: "ephemeral" }),
+				getRegisteredProviderIds: () => [],
+				getRegisteredProviderConfig: () => undefined,
+			},
+			getCurrentModel: () => undefined,
+			createRuntime: async () => await new Promise<never>(() => {}),
+		});
+		await assert.rejects(
+			within(runtime.call(request, { ...route, timeoutMs: 20 })),
+			(error: unknown) => error instanceof AuxiliaryError && error.code === "timeout",
+		);
+		runtime.shutdown();
+	});
+
+	test("times out a provider promise that ignores abort", async () => {
+		const runtime = new AuxiliaryRuntime({
+			registry: {
+				find: () => model("openai", "small"),
+				getApiKeyAndHeaders: async () => ({ ok: true as const, apiKey: "ephemeral" }),
+				getRegisteredProviderIds: () => [],
+				getRegisteredProviderConfig: () => undefined,
+			},
+			getCurrentModel: () => undefined,
+			createRuntime: async () => ({
+				registerProvider() {},
+				streamSimple() { throw new Error("not used"); },
+				completeSimple: async () => await new Promise<AssistantMessage>(() => {}),
+			}),
+		});
+		await assert.rejects(
+			within(runtime.call(request, { ...route, timeoutMs: 20 })),
+			(error: unknown) => error instanceof AuxiliaryError && error.code === "timeout",
+		);
+		runtime.shutdown();
+	});
+
+	test("aborts a provider promise that ignores lifecycle shutdown", async () => {
+		let started!: () => void;
+		const providerStarted = new Promise<void>((resolve) => { started = resolve; });
+		const runtime = new AuxiliaryRuntime({
+			registry: {
+				find: () => model("openai", "small"),
+				getApiKeyAndHeaders: async () => ({ ok: true as const, apiKey: "ephemeral" }),
+				getRegisteredProviderIds: () => [],
+				getRegisteredProviderConfig: () => undefined,
+			},
+			getCurrentModel: () => undefined,
+			createRuntime: async () => ({
+				registerProvider() {},
+				streamSimple() { throw new Error("not used"); },
+				completeSimple: async () => {
+					started();
+					return await new Promise<AssistantMessage>(() => {});
+				},
+			}),
+		});
+		const call = runtime.call(request, route);
+		await providerStarted;
+		runtime.shutdown();
+		await assert.rejects(
+			within(call),
+			(error: unknown) => error instanceof AuxiliaryError && error.code === "aborted",
+		);
+	});
+
 	test("rejects truncated output without falling back", async () => {
 		const { runtime, attempts } = harness([response("partial", { stopReason: "length" }), response("unused")]);
 		await assert.rejects(
@@ -266,6 +401,62 @@ describe("AuxiliaryRuntime", () => {
 		assert.equal(attempts.length, 1);
 		assert.equal(attempts[0]!.status, "ok");
 		assert.equal(faux.state.callCount, 2);
+	});
+
+	test("times out compaction sidecar creation that never settles", async () => {
+		const runtime = new AuxiliaryRuntime({
+			registry: {
+				find: () => model("openai", "small"),
+				getApiKeyAndHeaders: async () => ({ ok: true as const, apiKey: "ephemeral" }),
+				getRegisteredProviderIds: () => [],
+				getRegisteredProviderConfig: () => undefined,
+			},
+			getCurrentModel: () => undefined,
+			createRuntime: async () => await new Promise<never>(() => {}),
+		});
+		await assert.rejects(within(runtime.compact({
+			preparation: {
+				firstKeptEntryId: "kept",
+				messagesToSummarize: [{ role: "user", content: [{ type: "text", text: "old history" }], timestamp: Date.now() }],
+				turnPrefixMessages: [],
+				isSplitTurn: false,
+				tokensBefore: 4_000,
+				fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+				settings: { enabled: true, reserveTokens: 2_000, keepRecentTokens: 500 },
+			},
+			signal: new AbortController().signal,
+		}, { ...route, timeoutMs: 20 })), (error: unknown) => error instanceof AuxiliaryError && error.code === "timeout");
+		runtime.shutdown();
+	});
+
+	test("times out a compaction stream that ignores abort", async () => {
+		const runtime = new AuxiliaryRuntime({
+			registry: {
+				find: () => model("openai", "small"),
+				getApiKeyAndHeaders: async () => ({ ok: true as const, apiKey: "ephemeral" }),
+				getRegisteredProviderIds: () => [],
+				getRegisteredProviderConfig: () => undefined,
+			},
+			getCurrentModel: () => undefined,
+			createRuntime: async () => ({
+				registerProvider() {},
+				completeSimple() { throw new Error("not used"); },
+				streamSimple: () => createAssistantMessageEventStream(),
+			}),
+		});
+		await assert.rejects(within(runtime.compact({
+			preparation: {
+				firstKeptEntryId: "kept",
+				messagesToSummarize: [{ role: "user", content: [{ type: "text", text: "old history" }], timestamp: Date.now() }],
+				turnPrefixMessages: [],
+				isSplitTurn: false,
+				tokensBefore: 4_000,
+				fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+				settings: { enabled: true, reserveTokens: 2_000, keepRecentTokens: 500 },
+			},
+			signal: new AbortController().signal,
+		}, { ...route, timeoutMs: 20 })), (error: unknown) => error instanceof AuxiliaryError && error.code === "timeout");
+		runtime.shutdown();
 	});
 
 	test("deduplicates current and explicit fallback models for compaction", async () => {

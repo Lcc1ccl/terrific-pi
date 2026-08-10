@@ -321,6 +321,7 @@ describe("auxiliary extension registration", () => {
 			});
 			await hooks.get("agent_settled")?.[0]({}, ctx);
 			assert.match(notifications.find((message) => message.startsWith("Aux call web_research")) ?? "", /usage unknown.*cost unknown/i);
+			assert.match(notifications.find((message) => message.startsWith("Aux call text_summary")) ?? "", /provider_error/i);
 			assert.match(notifications.find((message) => message.startsWith("Aux turn")) ?? "", /in 4.*out 1.*usage unknown.*cost unknown/i);
 		} finally {
 			if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -342,14 +343,16 @@ describe("auxiliary extension registration", () => {
 		(AuxiliaryRuntime.prototype as any).call = (request: any) => new Promise((_resolve, reject) => {
 			titleCalls += 1;
 			request.signal.addEventListener("abort", () => {
-				if (request.shouldRecordAttempt?.()) {
-					events.emit("terrific-pi:auxiliary-usage:ingest-v1", {
-						version: 1, id: `title-aborted-${titleCalls}`, task: "title_generation", executor: "call", provider: "openai", model: "mini",
-						thinking: "off", status: "aborted", fallbackIndex: 0, startedAt: 1, durationMs: 10, errorCode: "aborted",
-						usage: { input: 3, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 3, cost: { total: 0.01 } },
-					});
-				}
-				reject(new Error("aborted"));
+				queueMicrotask(() => {
+					if (request.shouldRecordAttempt?.()) {
+						events.emit("terrific-pi:auxiliary-usage:ingest-v1", {
+							version: 1, id: `title-aborted-${titleCalls}`, task: "title_generation", executor: "call", provider: "openai", model: "mini",
+							thinking: "off", status: "aborted", fallbackIndex: 0, startedAt: 1, durationMs: 10, errorCode: "aborted",
+							usage: { input: 3, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 3, cost: { total: 0.01 } },
+						});
+					}
+					reject(new Error("aborted"));
+				});
 			}, { once: true });
 		});
 		const branch: any[] = [
@@ -392,6 +395,53 @@ describe("auxiliary extension registration", () => {
 			await hooks.get("session_shutdown")?.[0]({}, ctx);
 			assert.equal(entries.some((entry) => entry.id === "title-aborted-2"), true);
 			assert.equal(notifications.filter((message) => message.startsWith("Aux turn")).length, 2);
+		} finally {
+			AuxiliaryRuntime.prototype.call = originalCall;
+			if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previous;
+		}
+	});
+
+	test("does not wait for a title provider that ignores abort", async () => {
+		const previous = process.env.PI_CODING_AGENT_DIR;
+		const originalCall = AuxiliaryRuntime.prototype.call;
+		const agentDir = mkdtempSync(join(tmpdir(), "aux-title-noncooperative-"));
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		const hooks = new Map<string, any[]>();
+		const events = new Events();
+		let aborts = 0;
+		(AuxiliaryRuntime.prototype as any).call = (request: any) => new Promise(() => {
+			request.signal.addEventListener("abort", () => { aborts += 1; }, { once: true });
+		});
+		const branch: any[] = [
+			{ type: "message", message: { role: "user", content: [{ type: "text", text: "fix title cancellation" }] } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "done" }] } },
+		];
+		const pi = {
+			events, registerCommand() {}, registerTool() {},
+			on(name: string, handler: unknown) { hooks.set(name, [...(hooks.get(name) ?? []), handler]); },
+			appendEntry() {}, setSessionName() {}, getSessionName() { return undefined; },
+			getActiveTools() { return []; }, setActiveTools() {},
+			exec: async () => ({ code: 0, stdout: "", stderr: "", killed: false }),
+		};
+		auxiliary(pi as never);
+		const ctx = {
+			hasUI: false,
+			modelRegistry: { find: () => undefined },
+			sessionManager: { getBranch: () => branch, getEntries: () => branch },
+			ui: { setStatus() {}, notify() {} },
+		};
+		const settles = async (promise: Promise<unknown> | undefined) => await Promise.race([
+			Promise.resolve(promise).then(() => true),
+			new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 100)),
+		]);
+		try {
+			await hooks.get("session_start")?.[0]({}, ctx);
+			hooks.get("agent_settled")?.[0]({}, ctx);
+			assert.equal(await settles(hooks.get("session_tree")?.[0]({}, ctx)), true);
+			hooks.get("agent_settled")?.[0]({}, ctx);
+			assert.equal(await settles(hooks.get("session_shutdown")?.[0]({}, ctx)), true);
+			assert.equal(aborts, 2);
 		} finally {
 			AuxiliaryRuntime.prototype.call = originalCall;
 			if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;

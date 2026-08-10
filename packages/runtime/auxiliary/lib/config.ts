@@ -38,7 +38,7 @@ export const DEFAULT_AUXILIARY_CONFIG: AuxiliaryConfig = {
 	default: DEFAULT_ROUTE,
 	tasks: {
 		compression: { thinking: "low", timeoutMs: 120_000, maxOutputTokens: 12_000, maxRetries: 0 },
-		title_generation: { timeoutMs: 30_000, maxOutputTokens: 96 },
+		title_generation: { thinking: "off", timeoutMs: 30_000, maxOutputTokens: 96 },
 		text_summary: { maxOutputTokens: 3_000, fallbackModels: ["openai/gpt-5.6-luna"] },
 		commit_message: { thinking: "off", timeoutMs: 30_000, maxOutputTokens: 256 },
 		btw: { thinking: "low", maxOutputTokens: 2_000 },

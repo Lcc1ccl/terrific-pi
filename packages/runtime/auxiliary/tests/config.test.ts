@@ -145,6 +145,18 @@ describe("auxiliary config", () => {
 		assert.deepEqual(route.fallbackModels, ["openai/fallback", "grok/a", "grok/b"]);
 	});
 
+	test("keeps title generation non-reasoning unless explicitly overridden", () => {
+		const inherited = mergeAuxiliaryConfig({
+			auxiliary: { default: { thinking: "high" }, tasks: { title_generation: { maxOutputTokens: 96 } } },
+		});
+		assert.equal(resolveTaskRoute(inherited.config, "title_generation").thinking, "off");
+
+		const overridden = mergeAuxiliaryConfig({
+			auxiliary: { default: { thinking: "high" }, tasks: { title_generation: { thinking: "low" } } },
+		});
+		assert.equal(resolveTaskRoute(overridden.config, "title_generation").thinking, "low");
+	});
+
 	test("keeps commit subjects non-reasoning unless explicitly overridden", () => {
 		const inherited = mergeAuxiliaryConfig({
 			auxiliary: { default: { thinking: "high" }, tasks: { commit_message: { maxOutputTokens: 256 } } },

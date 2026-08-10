@@ -102,6 +102,24 @@ function statusFor(code: AuxiliaryErrorCode): AuxiliaryUsageEntryV1["status"] {
 	return "error";
 }
 
+function raceWithSignal<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const onAbort = () => reject(signal.reason ?? new Error("Operation aborted"));
+		void operation.then(
+			(value) => {
+				signal.removeEventListener("abort", onAbort);
+				resolve(value);
+			},
+			(error) => {
+				signal.removeEventListener("abort", onAbort);
+				reject(error);
+			},
+		);
+		if (signal.aborted) onAbort();
+		else signal.addEventListener("abort", onAbort, { once: true });
+	});
+}
+
 function sumUsage(messages: readonly AssistantMessage[]): Usage | undefined {
 	if (messages.length === 0) return undefined;
 	const total: Usage = {
@@ -146,14 +164,14 @@ export class AuxiliaryRuntime {
 		this.active = new ActiveTaskTracker(options.onActiveChange ?? (() => {}));
 	}
 
-	private async getRuntime(): Promise<RuntimeLike> {
+	private async getRuntime(signal: AbortSignal): Promise<RuntimeLike> {
 		this.sidecar ??= (this.options.createRuntime
 			? this.options.createRuntime()
 			: ModelRuntime.create({
 				credentials: new InMemoryCredentialStore(),
 				allowModelNetwork: false,
 			}));
-		const runtime = await this.sidecar;
+		const runtime = await raceWithSignal(this.sidecar, signal);
 		for (const provider of this.options.registry.getRegisteredProviderIds()) {
 			const config = this.options.registry.getRegisteredProviderConfig(provider);
 			if (config) runtime.registerProvider(provider, config);
@@ -201,25 +219,24 @@ export class AuxiliaryRuntime {
 				const startedAt = Date.now();
 				let selected: Model<Api> | undefined;
 				let response: AssistantMessage | undefined;
-				let timeoutSignal: AbortSignal | undefined;
+				const timeoutSignal = AbortSignal.timeout(route.timeoutMs);
+				const signals = [timeoutSignal, this.lifecycle.signal];
+				if (request.signal) signals.push(request.signal);
+				const signal = AbortSignal.any(signals);
 				try {
 					selected = this.resolveModel(ref, request.requiredInput);
 					const selectedKey = modelIdentity(selected);
 					if (seenModels.has(selectedKey)) continue;
 					seenModels.add(selectedKey);
-					const auth = await this.options.registry.getApiKeyAndHeaders(selected);
+					const auth = await raceWithSignal(this.options.registry.getApiKeyAndHeaders(selected), signal);
 					if (!auth.ok) throw new AuxiliaryError("auth_unavailable", "Auxiliary model authentication is unavailable", true);
-					const runtime = await this.getRuntime();
-					timeoutSignal = AbortSignal.timeout(route.timeoutMs);
-					const signals = [timeoutSignal, this.lifecycle.signal];
-					if (request.signal) signals.push(request.signal);
-					const signal = AbortSignal.any(signals);
+					const runtime = await this.getRuntime(signal);
 					const thinking: ThinkingLevel = selected.reasoning ? route.thinking : "off";
 					const context: Context = {
 						...(request.systemPrompt ? { systemPrompt: request.systemPrompt } : {}),
 						messages: request.messages as Message[],
 					};
-					response = await runtime.completeSimple(selected, context, {
+					response = await raceWithSignal(runtime.completeSimple(selected, context, {
 						apiKey: auth.apiKey,
 						headers: auth.headers,
 						env: auth.env,
@@ -229,7 +246,7 @@ export class AuxiliaryRuntime {
 						maxRetryDelayMs: 10_000,
 						timeoutMs: route.timeoutMs,
 						signal,
-					});
+					}), signal);
 					if (response.stopReason === "error") throw new AuxiliaryError("provider_error", "Auxiliary provider returned an error", true);
 					if (response.stopReason === "aborted") {
 						if (request.signal?.aborted || this.lifecycle.signal.aborted) throw new AuxiliaryError("aborted", "Auxiliary call was aborted");
@@ -312,18 +329,17 @@ export class AuxiliaryRuntime {
 				const startedAt = Date.now();
 				const intended = intendedModel(ref, current);
 				let selected: Model<Api> | undefined;
-				let timeoutSignal: AbortSignal | undefined;
+				const timeoutSignal = AbortSignal.timeout(route.timeoutMs);
+				const signal = AbortSignal.any([request.signal, this.lifecycle.signal, timeoutSignal]);
 				try {
 					if (request.signal.aborted || this.lifecycle.signal.aborted) throw new AuxiliaryError("aborted", "Compaction was aborted");
 					selected = this.resolveModel(ref, "text");
 					const selectedKey = modelIdentity(selected);
 					if (seenModels.has(selectedKey)) continue;
 					seenModels.add(selectedKey);
-					const auth = await this.options.registry.getApiKeyAndHeaders(selected);
+					const auth = await raceWithSignal(this.options.registry.getApiKeyAndHeaders(selected), signal);
 					if (!auth.ok) throw new AuxiliaryError("auth_unavailable", "Compression model authentication is unavailable", true);
-					const runtime = await this.getRuntime();
-					timeoutSignal = AbortSignal.timeout(route.timeoutMs);
-					const signal = AbortSignal.any([request.signal, this.lifecycle.signal, timeoutSignal]);
+					const runtime = await this.getRuntime(signal);
 					const captures: Array<Promise<AssistantMessage | undefined>> = [];
 					const stream = (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => {
 						const result = runtime.streamSimple(model, context, options);
@@ -331,7 +347,7 @@ export class AuxiliaryRuntime {
 						return result;
 					};
 					const thinking: ThinkingLevel = selected.reasoning ? route.thinking : "off";
-					const result = await nativeCompact(
+					const result = await raceWithSignal(nativeCompact(
 						request.preparation,
 						{ ...selected, maxTokens: Math.min(selected.maxTokens, route.maxOutputTokens) },
 						auth.apiKey,
@@ -341,8 +357,8 @@ export class AuxiliaryRuntime {
 						thinking,
 						stream,
 						auth.env,
-					);
-					const responses = (await Promise.all(captures)).filter((value): value is AssistantMessage => value !== undefined);
+					), signal);
+					const responses = (await raceWithSignal(Promise.all(captures), signal)).filter((value): value is AssistantMessage => value !== undefined);
 					const usage = sumUsage(responses);
 					const durationMs = Date.now() - startedAt;
 					this.record({

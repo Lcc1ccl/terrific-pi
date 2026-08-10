@@ -194,7 +194,7 @@ function formatAuxiliaryCallReport(entry: AuxiliaryUsageEntryV1): string {
 	return [
 		`Aux call ${entry.task}`,
 		`${entry.provider}/${entry.model}`,
-		entry.status,
+		entry.errorCode ?? entry.status,
 		...auxiliaryUsageMetrics([entry]),
 		`${entry.durationMs}ms`,
 	].join(" · ");
@@ -253,11 +253,19 @@ export default function auxiliary(pi: ExtensionAPI) {
 	};
 	const cancelTitleGeneration = async (): Promise<void> => {
 		const task = titleTask;
-		titleController?.abort();
-		if (task) await task.catch(() => {});
-		if (titleTask === task) titleTask = undefined;
-		titleController = undefined;
+		const controller = titleController;
+		const usage = settledTitleUsage;
+		controller?.abort();
+		// Let AuxiliaryRuntime record the abort before invalidating task ownership.
+		await Promise.resolve();
 		titleGeneration += 1;
+		if (titleTask === task) titleTask = undefined;
+		if (titleController === controller) titleController = undefined;
+		if (settledTitleUsage === usage) {
+			if (usage && latestContext) reportUsage(latestContext, usage);
+			settledTitleUsage = undefined;
+		}
+		void task?.catch(() => {});
 	};
 
 	const syncSeenUsageIds = (ctx: ExtensionContext): void => {
