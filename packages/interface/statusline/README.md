@@ -195,6 +195,8 @@ The footer follows the active pi theme rather than maintaining separate RGB pale
 - normal values use `text`; labels and supporting metadata use `muted`; separators, idle state, and tertiary metadata use `dim`
 - tool status glyphs use `accent` / `success` / `error`; names stay muted and counts stay neutral
 - fast emoji uses `warning` (gold/yellow); context and quota bars stay neutral, with only high percentages colored
+
+Context widgets retain Pi's raw token/window data but render a conservative percentage when the active model's context window still has a positive budget after subtracting maximum output plus 16,384 tokens. Otherwise they fall back to Pi's raw percentage. This is a warning budget, not the effective Pi compaction threshold.
 - thinking levels use `thinkingOff` through `thinkingMax`, the same tokens as pi's editor border
 
 `plain` mode is recommended for a restrained HUD because terminal emoji retain their own colors.
@@ -211,8 +213,8 @@ The footer follows the active pi theme rather than maintaining separate RGB pale
 | `tokens` | active-branch main-session input/output totals |
 | `cache` | active-branch cumulative cache hit rate |
 | `cost` | active-branch main-session cost USD |
-| `context` | text context percent with a window marker |
-| `contextBar` | window marker + compact bar + percent |
+| `context` | text context percent against the conservative safe-input budget with a window marker |
+| `contextBar` | window marker + compact bar + conservative safe-input percent |
 | `branch` | git branch with `⑂` in emoji mode |
 | `branchDiff` | committed line diff from merge-base to `HEAD` vs default branch |
 | `quota` | native OAuth Claude/Codex usage windows, including loading/first-load error state |

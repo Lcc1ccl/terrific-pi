@@ -68,10 +68,9 @@ function harness(configText?: string, options: { mode?: string; hasUI?: boolean;
 const enabled = JSON.stringify({ appearance: { enabled: true, settingsLanguage: "en", header: true, editor: true } });
 
 describe("appearance extension ownership", () => {
-  it("has zero UI side effects for absent, malformed, disabled, and headless config", async () => {
+  it("has zero UI side effects for absent, disabled, and headless config", async () => {
     const cases: Array<[string | undefined, { mode?: string; hasUI?: boolean } | undefined]> = [
       [undefined, undefined],
-      ["{ bad", undefined],
       [JSON.stringify({ appearance: { enabled: false, settingsLanguage: "en", header: true, editor: true } }), undefined],
       [enabled, { mode: "rpc", hasUI: false }],
     ];
@@ -80,6 +79,20 @@ describe("appearance extension ownership", () => {
       await scenario.handlers.get("session_start")?.({}, scenario.ctx);
       assert.deepEqual(scenario.calls, { header: 0, editor: 0, notify: [] });
     }
+  });
+
+  it("fails closed and reports malformed configuration once", async () => {
+    const scenario = harness("{ bad");
+    await scenario.handlers.get("session_start")?.({}, scenario.ctx);
+    await scenario.handlers.get("session_start")?.({}, scenario.ctx);
+    let customCalls = 0;
+    (scenario.ctx.ui as any).custom = async () => { customCalls += 1; };
+    await scenario.command?.("", scenario.ctx);
+    assert.equal(customCalls, 0);
+    assert.equal(scenario.calls.header, 0);
+    assert.equal(scenario.calls.editor, 0);
+    assert.equal(scenario.calls.notify.length, 1);
+    assert.match(scenario.calls.notify[0] ?? "", /terrific\.json|parse|malformed/i);
   });
 
   it("fails completely closed and notifies when a foreign editor owns the requested editor slot", async () => {

@@ -26,7 +26,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { formatFastStatus } from "../lib/status.ts";
+import { formatFastStatus, type FastRequestStatus } from "../lib/status.ts";
 
 const FAST_APIS = new Set(["openai-responses", "openai-codex-responses", "azure-openai-responses"]);
 const FAST_STATUS = "";
@@ -298,8 +298,16 @@ function reportFastStatus(
 	preferred: boolean,
 	api: string | undefined,
 	modelId: string | undefined,
+	lastRequest?: FastRequestStatus,
 ): void {
-	const text = formatFastStatus(preferred, api, resolveConfigPath(), modelId);
+	const text = formatFastStatus(
+		preferred,
+		api,
+		resolveConfigPath(),
+		modelId,
+		supportsFastModel(api, modelId),
+		lastRequest,
+	);
 	if (ctx.mode === "print") process.stdout.write(`${text}\n`);
 	else ctx.ui.notify(text, "info");
 }
@@ -311,6 +319,7 @@ export default function (pi: ExtensionAPI) {
 	let lastApi: string | undefined;
 	let lastModelId: string | undefined;
 	let hasObservedModel = false;
+	let lastRequest: FastRequestStatus | undefined;
 
 	const rememberModel = (api: string | undefined, modelId: string | undefined) => {
 		lastApi = api;
@@ -408,10 +417,11 @@ export default function (pi: ExtensionAPI) {
 		},
 		handler: async (args, ctx) => {
 			preferred = loadFastEnabled();
+			refresh(ctx);
 			const arg = args.trim().toLowerCase();
 			if (arg === "status") {
 				const current = currentModel(ctx);
-				reportFastStatus(ctx, preferred, current.api, current.modelId);
+				reportFastStatus(ctx, preferred, current.api, current.modelId, lastRequest);
 			} else if (arg === "on") setPreferred(ctx, true);
 			else if (arg === "off") setPreferred(ctx, false);
 			else if (arg === "" || arg === "toggle") setPreferred(ctx, !preferred);
@@ -420,6 +430,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	const restore = (ctx: ExtensionContext) => {
+		lastRequest = undefined;
 		if (hasFastPreference()) {
 			preferred = loadFastEnabled();
 		} else {
@@ -435,13 +446,15 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
-		// Preference is global; just re-sync badge after tree navigation.
+		// Preference is global; clear request-local evidence on branch changes.
+		lastRequest = undefined;
 		refresh(ctx);
 	});
 
 	pi.on("model_select", async (event, ctx) => {
 		// model-profile / /model / cycle all emit this after setModel.
 		// Non-GPT or non-openai-family → yield immediately.
+		lastRequest = undefined;
 		refresh(ctx, event.model);
 	});
 
@@ -453,6 +466,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("before_provider_request", (event, ctx) => {
 		preferred = loadFastEnabled();
+		refresh(ctx);
 		const current = currentModel(ctx);
 		// Payload model id is a secondary check when session model id is missing.
 		const payloadModel =
@@ -461,7 +475,9 @@ export default function (pi: ExtensionAPI) {
 				: undefined;
 		const modelId =
 			current.modelId ?? (typeof payloadModel === "string" ? payloadModel : undefined);
-		if (!shouldInjectPriority(preferred, current.api, modelId)) return;
-		return injectPriority(event.payload);
+		const eligible = supportsFastModel(current.api, modelId);
+		const result = preferred && eligible ? injectPriority(event.payload) : undefined;
+		lastRequest = { api: current.api, modelId, eligible, injected: result !== undefined };
+		return result;
 	});
 }

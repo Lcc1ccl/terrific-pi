@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { analyzeContext, charsToTokens, topEntries } from "../lib/tokens.ts";
+import { analyzeContext, charsToTokens, safeContextUsage, topEntries } from "../lib/tokens.ts";
 import { redactPreview } from "../lib/redact.ts";
 
 describe("charsToTokens", () => {
@@ -18,6 +18,23 @@ describe("charsToTokens", () => {
 
 	it("uses ~3 chars per token for code and JSON", () => {
 		assert.equal(charsToTokens('{"a":1}'), 3);
+	});
+});
+
+describe("safeContextUsage", () => {
+	it("reserves model output plus a safety margin from the advertised window", () => {
+		assert.deepEqual(safeContextUsage(340_000, 500_000, 128_000), {
+			safeInputLimit: 355_616,
+			remainingTokens: 15_616,
+			percent: 95.6,
+		});
+		assert.equal(safeContextUsage(null, 500_000, 128_000), undefined);
+		assert.equal(safeContextUsage(10, null, 128_000), undefined);
+	});
+
+	it("declines a safe percentage when output and reserve consume the full window", () => {
+		assert.equal(safeContextUsage(1, 131_072, 131_072), undefined);
+		assert.equal(safeContextUsage(1, 131_072, 114_688), undefined);
 	});
 });
 

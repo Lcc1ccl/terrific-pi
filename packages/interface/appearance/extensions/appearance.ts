@@ -34,6 +34,12 @@ export default function appearance(pi: ExtensionAPI): void {
   let editorUi: ExtensionContext["ui"] | undefined;
   let statusSource: EditorStatusSource | undefined;
   let bridgeRequested = false;
+  let configErrorNotified = false;
+  const reportConfigError = (ctx: ExtensionContext, error: string): void => {
+    if (configErrorNotified) return;
+    configErrorNotified = true;
+    ctx.ui.notify(`Appearance disabled: ${error}`, "warning");
+  };
   const editorFactory: NonNullable<Parameters<ExtensionContext["ui"]["setEditorComponent"]>[0]> =
     (tui, theme, keybindings) => {
       editorTui = tui;
@@ -62,6 +68,10 @@ export default function appearance(pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, ctx) => {
     if (!isTui(ctx)) return;
     const loaded = loadAppearanceConfig(getAgentDir());
+    if (loaded.error) {
+      reportConfigError(ctx, loaded.error);
+      return;
+    }
     const config = loaded.config;
     if (!config?.enabled) return;
 
@@ -92,6 +102,10 @@ export default function appearance(pi: ExtensionAPI): void {
     handler: async (_args, ctx) => {
       if (!isTui(ctx)) return;
       const loaded = loadAppearanceConfig(getAgentDir());
+      if (loaded.error) {
+        reportConfigError(ctx, loaded.error);
+        return;
+      }
       const initial = loaded.config ?? DEFAULT_APPEARANCE_SETTINGS;
       await ctx.ui.custom<void>((tui, theme, _keybindings, done) => createAppearanceSettings(
         theme,

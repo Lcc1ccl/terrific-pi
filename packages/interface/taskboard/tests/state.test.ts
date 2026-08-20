@@ -163,32 +163,27 @@ describe("normalizeProcessUpdate", () => {
 		}, ready, NOW + 1).status, "completed");
 	});
 
-	it("matches done steps by text and permits at most one new completion", () => {
+	it("matches done steps by text and accepts truthful batch completion", () => {
 		const doneSteps = runningInput().steps.map((step) => ({ ...step, status: "done" as const }));
-		assert.throws(
-			() => normalizeProcessUpdate({
-				...runningInput(),
-				status: "completed",
-				steps: doneSteps,
-				verification: "All checks passed",
-			}, undefined, NOW),
-			/one step.*done/i,
-		);
+		assert.equal(normalizeProcessUpdate({
+			...runningInput(),
+			status: "completed",
+			steps: doneSteps,
+			verification: "All checks passed",
+		}, undefined, NOW).status, "completed");
 
 		const previous = snapshot();
-		assert.throws(
-			() => normalizeProcessUpdate({
-				...runningInput(),
-				status: "waiting",
-				steps: [
-					{ text: "Inspect current state", status: "active" },
-					{ text: "Apply changes", status: "done" },
-					{ text: "Run checks", status: "done" },
-				],
-				update: "Two steps claimed",
-			}, previous, NOW + 1),
-			/one step.*done/i,
-		);
+		const batch = normalizeProcessUpdate({
+			...runningInput(),
+			status: "waiting",
+			steps: [
+				{ text: "Inspect current state", status: "active" },
+				{ text: "Apply changes", status: "done" },
+				{ text: "Run checks", status: "done" },
+			],
+			update: "Two steps completed",
+		}, previous, NOW + 1);
+		assert.deepEqual(batch.steps.map((step) => step.status), ["active", "done", "done"]);
 
 		const reordered = normalizeProcessUpdate({
 			...runningInput(),

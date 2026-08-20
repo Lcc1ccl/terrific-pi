@@ -7,6 +7,14 @@ import type { FileArtifact, PresentationArtifactState } from "./types.ts";
 
 const MAX_TEXT_BYTES = 256 * 1024;
 const MAX_DIFF_CELLS = 1_000_000;
+export const MAX_PERSISTED_ARTIFACTS = 100;
+export const MAX_PERSISTED_ARTIFACT_BYTES = 64 * 1024;
+const NON_MUTATING_TOOL_NAMES = new Set([
+	"read", "grep", "find", "ls",
+	"web_search", "fetch_content", "get_search_content", "web_research",
+	"aux_summarize", "process_update", "question", "questionnaire",
+	"intercom", "subagent_supervisor", "subagent_wait",
+]);
 const CONTROL_CHARACTERS = /[\x00-\x1f\x7f-\x9f]/g;
 
 type ToolResultLike = { content?: unknown; details?: unknown };
@@ -560,16 +568,25 @@ export class ArtifactJournal {
 			result.toolName === "bash" && typeof result.toolCallId === "string",
 		)?.toolCallId;
 		const fallbackAnchor = reversedResults.find((result) =>
-			result.toolName !== "process_update" && typeof result.toolCallId === "string",
+			result.toolName !== "process_update"
+			&& typeof result.toolName === "string"
+			&& !NON_MUTATING_TOOL_NAMES.has(result.toolName)
+			&& typeof result.toolCallId === "string",
 		)?.toolCallId;
 		const anchor = typeof explicitAnchor === "string"
 			? explicitAnchor
 			: typeof bashAnchor === "string"
 				? bashAnchor
-				: typeof fallbackAnchor === "string" ? fallbackAnchor : this.lastRelevantToolCallId;
+				: typeof fallbackAnchor === "string"
+					? fallbackAnchor
+					: toolResults.length === 0 ? this.lastRelevantToolCallId : undefined;
 		if (!anchor) return undefined;
 		if (digest === this.previousDigest) return undefined;
 		if (ordered.length === 0 && !this.hadVisibleFiles) return undefined;
+		const totalFiles = ordered.length;
+		const totalAdditions = ordered.reduce((total, file) => total + (file.additions ?? 0), 0);
+		const totalDeletions = ordered.reduce((total, file) => total + (file.deletions ?? 0), 0);
+		const persistedFiles = ordered.slice(0, MAX_PERSISTED_ARTIFACTS);
 		const receipt: PresentationArtifactState = {
 			version: 2,
 			receiptId: randomUUID(),
@@ -577,7 +594,14 @@ export class ArtifactJournal {
 			revision: ++this.revision,
 			...(this.previousReceiptId ? { supersedes: this.previousReceiptId } : {}),
 			anchorToolCallId: anchor,
-			files: ordered,
+			files: persistedFiles,
+			...(persistedFiles.length < totalFiles ? {
+				totalFiles,
+				omittedFiles: totalFiles - persistedFiles.length,
+				totalAdditions,
+				totalDeletions,
+				truncated: true as const,
+			} : {}),
 			successfulWrites: this.successful.size,
 			failedWrites: this.failed.size,
 			gitReconciled,
@@ -585,6 +609,14 @@ export class ArtifactJournal {
 			startedAt: this.startedAt,
 			revisedAt: Date.now(),
 		};
+		while (receipt.files.length > 1 && Buffer.byteLength(JSON.stringify(receipt), "utf8") > MAX_PERSISTED_ARTIFACT_BYTES) {
+			receipt.files.pop();
+			receipt.totalFiles = totalFiles;
+			receipt.omittedFiles = totalFiles - receipt.files.length;
+			receipt.totalAdditions = totalAdditions;
+			receipt.totalDeletions = totalDeletions;
+			receipt.truncated = true;
+		}
 		this.previousDigest = digest;
 		this.previousReceiptId = receipt.receiptId;
 		this.hadVisibleFiles = ordered.length > 0;

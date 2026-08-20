@@ -39,6 +39,11 @@ function modelRef(model: { provider?: unknown; id?: unknown } | undefined): stri
 	return `${model.provider}/${model.id}`;
 }
 
+function transcriptEntries(ctx: ExtensionContext): unknown[] {
+	const manager = ctx.sessionManager as typeof ctx.sessionManager & { buildContextEntries?: () => unknown[] };
+	return manager.buildContextEntries?.() ?? manager.getBranch();
+}
+
 export default function presentation(pi: ExtensionAPI): void {
 	const bootstrap = loadPresentationConfig(getAgentDir());
 	let config: PresentationConfig = bootstrap.config;
@@ -292,7 +297,7 @@ export default function presentation(pi: ExtensionAPI): void {
 			ctx.ui.notify(`Presentation compatibility disabled: ${compatibility.host.reason}`, "warning");
 		}
 		hydrateDeduper(ctx);
-		compatibility.hydrate(ctx.sessionManager.getBranch(), ctx.cwd);
+		compatibility.hydrate(transcriptEntries(ctx), ctx.cwd);
 		await journal.begin(ctx.cwd);
 	});
 
@@ -300,7 +305,7 @@ export default function presentation(pi: ExtensionAPI): void {
 		latestContext = ctx;
 		compatibility.assistantReset();
 		hydrateDeduper(ctx);
-		compatibility.hydrate(ctx.sessionManager.getBranch(), ctx.cwd);
+		compatibility.hydrate(transcriptEntries(ctx), ctx.cwd);
 		await journal.begin(ctx.cwd);
 	});
 

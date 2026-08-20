@@ -18,10 +18,12 @@ import {
 	analyzeContext,
 	CATEGORY_LABELS,
 	formatToken,
+	safeContextUsage,
 	topEntries,
 	type CategoryKey,
 	type ClassifiableMessage,
 	type ContextBreakdown,
+	type SafeContextUsage,
 	type EntryEstimate,
 } from "../lib/tokens.ts";
 
@@ -39,22 +41,30 @@ const ORDER: CategoryKey[] = [
 	"unclassified",
 ];
 
-function buildBreakdown(ctx: ExtensionCommandContext): ContextBreakdown {
+type InspectorBreakdown = ContextBreakdown & { safeUsage?: SafeContextUsage };
+
+function buildBreakdown(ctx: ExtensionCommandContext): InspectorBreakdown {
 	const usage = ctx.getContextUsage();
 	const systemPrompt = ctx.getSystemPrompt?.() ?? "";
 	const sessionCtx = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId());
 	const messages = (sessionCtx.messages ?? []) as ClassifiableMessage[];
 
-	return analyzeContext({
+	const breakdown = analyzeContext({
 		systemPrompt,
 		messages,
 		totalTokens: usage?.tokens ?? null,
 		contextWindow: usage?.contextWindow ?? null,
 		percent: usage?.percent ?? null,
 	});
+	const safeUsage = safeContextUsage(
+		usage?.tokens ?? null,
+		usage?.contextWindow ?? null,
+		typeof ctx.model?.maxTokens === "number" ? ctx.model.maxTokens : undefined,
+	);
+	return { ...breakdown, ...(safeUsage ? { safeUsage } : {}) };
 }
 
-function summaryLines(breakdown: ContextBreakdown, topN: number): string[] {
+function summaryLines(breakdown: InspectorBreakdown, topN: number): string[] {
 	const lines: string[] = [];
 	const total =
 		breakdown.totalTokens != null ? breakdown.totalTokens.toLocaleString("en-US") : "unknown";
@@ -64,6 +74,10 @@ function summaryLines(breakdown: ContextBreakdown, topN: number): string[] {
 		breakdown.percent != null ? `${breakdown.percent.toFixed(1)}%` : "n/a";
 
 	lines.push(`Context ${total} / ${window} · ${pct}`);
+	if (breakdown.safeUsage) {
+		lines.push(`Safe input ${total} / ${breakdown.safeUsage.safeInputLimit.toLocaleString("en-US")} · ${breakdown.safeUsage.percent.toFixed(1)}%`);
+		lines.push(`Safe remaining ${breakdown.safeUsage.remainingTokens.toLocaleString("en-US")} tokens (model max output + 16,384 reserve)`);
+	}
 	if (breakdown.totalTokens == null) {
 		lines.push("(Total unknown until next model response; categories are estimates)");
 	}
@@ -112,7 +126,7 @@ function detailLines(entries: EntryEstimate[], topN: number): string[] {
 	return lines;
 }
 
-function textSummary(breakdown: ContextBreakdown, topN: number): string {
+function textSummary(breakdown: InspectorBreakdown, topN: number): string {
 	return [...summaryLines(breakdown, topN), "", ...detailLines(breakdown.entries, Math.min(5, topN))].join("\n");
 }
 

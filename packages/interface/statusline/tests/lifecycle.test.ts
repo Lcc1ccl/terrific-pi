@@ -133,6 +133,18 @@ async function settledRun(app: ReturnType<typeof harness>, ctx: any): Promise<vo
 }
 
 describe("statusline migration lifecycle", () => {
+	it("falls back to Pi context usage when no positive safe-input budget exists", async () => {
+		const { cwd } = config({ widgets: ["context"], iconMode: "plain", contextMode: "used" });
+		const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
+		const ctx = app.makeCtx(cwd) as any;
+		ctx.model.maxTokens = 131_072;
+		ctx.getContextUsage = () => ({ tokens: 1, contextWindow: 131_072, percent: 0.001 });
+		await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+		const rendered = app.mountFooter()?.render(120).join("\n") ?? "";
+		assert.match(rendered, /context 0% used/);
+		assert.doesNotMatch(rendered, /100%/);
+	});
+
 	it("moves LINE0 and LINE1 into the editor only while Appearance owns it", async () => {
 		const { cwd } = config({
 			widgets: ["path", "model", "mode", "fast", "state"],

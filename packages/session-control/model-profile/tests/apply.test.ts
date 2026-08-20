@@ -76,7 +76,7 @@ describe("applyProfile", () => {
 		if (result.ok) {
 			assert.equal(result.settingsRestored, true);
 			assert.equal(applyResultLevel(result), "info");
-			assert.match(formatApplySuccess(result), /Restored original settings/);
+			assert.match(formatApplySuccess(result), /Restored prior model defaults/);
 		}
 		assert.deepEqual(settings, original);
 	});
@@ -93,6 +93,17 @@ describe("applyProfile", () => {
 		}));
 		assert.equal(result.ok, false);
 		assert.equal(setModelCalls, 0);
+	});
+
+	it("describes field-level restoration when the restorer fails without details", async () => {
+		const result = await applyProfile(profile, "session", deps({
+			getThinkingLevel: () => "high",
+			restoreSettingsFile: () => ({ ok: false }),
+		}));
+		assert.equal(result.ok, true);
+		if (!result.ok) return;
+		assert.match(result.settingsError ?? "", /prior model defaults/i);
+		assert.doesNotMatch(result.settingsError ?? "", /original settings\.json state/i);
 	});
 
 	it("waits for Pi's queued thinking write before restoring settings", async () => {

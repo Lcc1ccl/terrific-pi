@@ -6,7 +6,7 @@ For long registries and many providers: keep 3–5 named profiles and switch the
 
 | Scope | Status | Behavior |
 |-------|--------|----------|
-| session | ✅ | Switch session model/thinking, then **restore** the exact prior `settings.json` contents after Pi finishes its queued write |
+| session | ✅ | Switch session model/thinking, then restore the prior provider/model/thinking defaults while preserving concurrent updates to unrelated `settings.json` fields |
 | global | ✅ | session apply + keep/update `settings.json` defaults |
 | startup picker | ✅ | cold-start + `/new` short list when `modelProfile.startup: true` |
 
@@ -80,6 +80,8 @@ Quick apply keeps the short-list profile picker and `session` / `global` scope c
 
 If you need sticky defaults, prefer `/profile` over official model cycling.
 
+Session-only restore compares the three model default fields immediately before writing. Concurrent sibling-field updates are preserved, and target-field changes still visible at restore time are rejected with a warning. Pi's public API persists model switches before restore, so a competing target-field write that Pi itself overwrites first is no longer observable; this is not a transaction across the full switch.
+
 ## Official picker tip
 
 When you switch via **official** `/model`, `Ctrl+L`, `Ctrl+P` cycle, or thinking keys, pi updates `settings.json` defaults. This extension shows a **warning notify**, e.g.:
@@ -99,7 +101,7 @@ Switches done through `/profile` / `alt+N` / startup picker **do not** show that
 | List order | **Keep global default** on cold start / **Keep current session** on `/new` (first) → configured profiles → **Turn off future startup picker** → **`0 · Browse all models…`** (last) |
 | Turn off future startup picker | Persist `startup: false`, remove the toggle from the current list, and keep the current picker open so this session can still choose a model |
 | Keep current · cold start | Keep Pi's activated global default model/thinking |
-| Keep current · `/new` | Restore the previous session model/thinking and the original `settings.json` contents |
+| Keep current · `/new` | Restore the previous session model/thinking and the prior three model defaults without overwriting concurrent sibling settings |
 | Navigation | Up/down wraps at both ends; `0` opens Browse, `1`–`9` immediately select the matching profile id |
 | Browse all models | Provider → fuzzy-searchable model list by partial ID/ref/name (`5.6`, `sol`, etc.) → supported thinking level → session/global scope |
 

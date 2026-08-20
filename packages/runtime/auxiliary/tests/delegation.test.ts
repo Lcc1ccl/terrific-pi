@@ -91,7 +91,12 @@ describe("research output", () => {
 		const medium = `${"x".repeat(2501)}\nhttps://a.test\nhttps://b.test\nhttps://c.test`;
 		assert.equal(validateResearchOutput(medium), medium);
 		assert.throws(() => validateResearchOutput(`${"x".repeat(6001)}\nhttps://a.test\nhttps://b.test\nhttps://c.test`), /6,000/);
-		assert.throws(() => validateResearchOutput(Array.from({ length: 9 }, (_, index) => `https://${index}.test`).join("\n")), /at most eight source URLs/);
+		const tooManySources = Array.from({ length: 9 }, (_, index) => `Source ${index}: https://${index}.test`).join("\n");
+		const normalized = validateResearchOutput(tooManySources);
+		assert.equal((normalized.match(/https?:\/\//g) ?? []).length, 8);
+		assert.match(normalized, /\[\.\.\.\]/);
+		const boundary = `${"x".repeat(5_850)}\n${Array.from({ length: 20 }, (_, index) => `http://${index}.t`).join("\n")}`.slice(0, 6_000);
+		assert.ok(Array.from(validateResearchOutput(boundary)).length <= 6_000);
 		assert.throws(() => validateResearchOutput("https://same.test\nhttps://same.test.\nhttps://same.test,"), /three source URLs/);
 		assert.throws(() => validateResearchOutput("https://same.test\nhttps://same.test。\nhttps://same.test，"), /three source URLs/);
 	});

@@ -1,7 +1,27 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import type { Message, Model } from "@earendil-works/pi-ai";
-import { createIsolatedBtwSession } from "../lib/btw-session.ts";
+import { createIsolatedBtwSession, raceWithSignal } from "../lib/btw-session.ts";
+
+it("stops awaiting an operation that ignores cancellation", async () => {
+	const controller = new AbortController();
+	const pending = raceWithSignal(new Promise<never>(() => {}), controller.signal);
+	controller.abort(new Error("deadline"));
+	await assert.rejects(pending, /deadline/);
+});
+
+it("disposes a value that resolves after cancellation", async () => {
+	const controller = new AbortController();
+	let resolve!: (value: string) => void;
+	let disposed = "";
+	const operation = new Promise<string>((done) => { resolve = done; });
+	const pending = raceWithSignal(operation, controller.signal, (value) => { disposed = value; });
+	controller.abort(new Error("deadline"));
+	await assert.rejects(pending, /deadline/);
+	resolve("late session");
+	await new Promise<void>((done) => setImmediate(done));
+	assert.equal(disposed, "late session");
+});
 
 it("creates an in-memory role-preserving no-tool session", async () => {
 	const model = {

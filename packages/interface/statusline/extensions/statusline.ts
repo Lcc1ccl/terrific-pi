@@ -49,6 +49,12 @@ import {
 	shouldTrackToolActivity,
 } from "../lib/widgets.ts";
 
+function safeContextPercent(tokens: number, contextWindow: number, maxOutputTokens: number): number | undefined {
+	if (![tokens, contextWindow, maxOutputTokens].every(Number.isFinite)) return undefined;
+	const safeInputLimit = contextWindow - Math.max(0, maxOutputTokens) - 16_384;
+	return safeInputLimit > 0 ? tokens / safeInputLimit * 100 : undefined;
+}
+
 function parseNumstat(output: string): BranchChangeStats {
 	let additions = 0;
 	let deletions = 0;
@@ -549,6 +555,9 @@ export default function statusline(pi: ExtensionAPI) {
 			});
 			const currentSnapshot = (): StatusSnapshot => {
 				const context = ctx.getContextUsage();
+				const safePercent = context?.tokens !== null && context?.tokens !== undefined && typeof ctx.model?.maxTokens === "number"
+					? safeContextPercent(context.tokens, context.contextWindow, ctx.model.maxTokens)
+					: undefined;
 				const thinking = ctx.model?.reasoning ? pi.getThinkingLevel() : "off";
 				const extensionStatuses = footerData.getExtensionStatuses();
 				const modeStatus = extensionStatuses.get(MODE_STATUS_KEY);
@@ -568,6 +577,7 @@ export default function statusline(pi: ExtensionAPI) {
 							tokens: context.tokens,
 							contextWindow: context.contextWindow,
 							percent: context.percent,
+							...(safePercent !== undefined ? { safePercent } : {}),
 						}
 						: undefined,
 					branch: footerData.getGitBranch(),

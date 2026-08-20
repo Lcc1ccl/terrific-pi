@@ -50,6 +50,7 @@ The legacy `btw` block still controls the maximum context snapshot. If the globa
 ## Behavior
 
 - Cancel aborts only the isolated request.
+- Each auxiliary candidate uses one wall-clock deadline covering authentication, runtime/session creation, prompting, and cleanup. Timeout or cancellation stops waiting even when an underlying provider ignores abort; a session that resolves late is disposed.
 - The snapshot preserves message roles, removes images and excluded messages, and is bounded before the call.
 - The overlay shows the actual `provider/model` used.
 - Each attempt emits a payload-free `terrific-pi:auxiliary-usage-v1` event through the auxiliary bridge.

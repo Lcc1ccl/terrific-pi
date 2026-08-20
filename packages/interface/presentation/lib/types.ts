@@ -59,6 +59,12 @@ export interface PresentationArtifactState {
 	supersedes?: string;
 	anchorToolCallId: string;
 	files: FileArtifact[];
+	/** Full net file count when rows are capped for bounded session storage. */
+	totalFiles?: number;
+	omittedFiles?: number;
+	totalAdditions?: number;
+	totalDeletions?: number;
+	truncated?: true;
 	successfulWrites: number;
 	failedWrites: number;
 	gitReconciled: boolean;

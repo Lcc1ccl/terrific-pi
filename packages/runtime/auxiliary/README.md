@@ -88,13 +88,13 @@ The six public Auxiliary routes remain unchanged. The generic runtime still vali
 ```text
 /aux                         open the TUI manager (or print status outside TUI)
 /aux config                  edit runtime, usage reports, routes, and Git finalize policy
-/aux status                  effective routes, usage-report setting, branch usage, and recent errors
+/aux status                  effective routes, automatic title/compression trigger diagnostics, branch usage, and recent errors
 /aux summarize <text>
 ```
 
 `aux_summarize` accepts either explicit text or `source=last_tool_result`. Long input uses at most eight chunks with at most two concurrent calls; any chunk failure cancels the whole summary.
 
-`web_research` always requests the fixed `researcher` agent with fresh context, no inherited skills, and blocked mutation/subagent tools. Its result must fit 6,000 characters and include 3-8 distinct source URLs. Contract-invalid primary output is recorded and advances to the configured fallback.
+`web_research` always requests the fixed `researcher` agent with fresh context, no inherited skills, and blocked mutation/subagent tools. Its result must fit 6,000 characters and include at least three distinct source URLs. The request asks for 3-8 sources; additional distinct URLs in an otherwise completed result are replaced with `[...]` instead of discarding the research or spending a fallback call.
 
 `git_finalize`:
 
@@ -111,7 +111,9 @@ It never stages files, creates an upstream, force pushes, pushes tags, or rebase
 
 ## Usage And Visibility
 
-Each attempt appends `terrific-pi:auxiliary-usage-v1` to the current session branch. Entries contain model/task/status/usage metadata only, never prompts, responses, diffs, URLs, tool arguments, or error stacks.
+`/aux status` also explains the latest session-local decision for automatic compression and title generation, including waiting, skipped, triggered, completed, or failed states. These diagnostics are in memory only and do not create usage entries.
+
+Each real attempt appends `terrific-pi:auxiliary-usage-v1` to the current session branch. Entries contain model/task/status/usage metadata only, never prompts, responses, diffs, URLs, tool arguments, or error stacks.
 
 When `auxiliary.usageReports` is enabled, each attempt produces an `Aux call` notification and `agent_settled` produces one `Aux turn` aggregate for the current main turn. Command-scoped `/btw` and `/aux summarize` attempts carry a metadata-only scope id and produce their own `Aux command` aggregate, so completion timing cannot move them between main turns. The toggle is off by default. These reports are independent from the main model's statusline tokens and cost.
 

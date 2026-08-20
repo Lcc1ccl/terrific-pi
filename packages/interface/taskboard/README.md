@@ -30,13 +30,13 @@ Snapshots support:
 
 - `running`, `waiting`, `blocked`, and `completed`
 - deterministic completion from a verified terminal `git_finalize` receipt: only when every prior step is done and the sole active final step is ready to commit
-- at most one newly completed step per `process_update` call, matched by normalized step text; batch completion is rejected before state changes
+- batch completion is accepted and atomically persists the final truthful snapshot
 - one to five outcome-oriented steps
 - a concise update, blocker, verification, and up to five artifacts
 - branch-aware restoration through `process-view-state-v1` custom entries
 - extension-owned step timing plus model, token, cache, and cost telemetry without adding model-facing fields
 
-Tool calls execute sequentially. Invalid snapshots throw without changing memory, session state, or the Widget. The call itself is hidden, and validation errors remain available to the model while rendering silently in the TUI. While the HUD owns the current snapshot, its successful collapsed result is suppressed; it reappears after a newer milestone replaces it, or after the completed HUD settles away. Expanded successful details are never suppressed. Use `Shift+Alt+O` to toggle only the Taskboard live panel; Pi's `app.tools.expand` binding remains independent.
+Tool calls execute sequentially. Batch progress is accepted as one final snapshot, so an append failure still leaves memory and session state unchanged. Other invalid snapshots throw without changing memory, session state, or the Widget. The call itself is hidden, and validation errors remain available to the model while rendering silently in the TUI. While the HUD owns the current snapshot, its successful collapsed result is suppressed; it reappears after a newer milestone replaces it, or after the completed HUD settles away. Expanded successful details are never suppressed. Use `Shift+Alt+O` to toggle only the Taskboard live panel; Pi's `app.tools.expand` binding remains independent.
 
 ## HUD
 

@@ -1,6 +1,7 @@
 import { basename, isAbsolute, relative, resolve, sep, win32 } from "node:path";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
+import { MAX_PERSISTED_ARTIFACTS, MAX_PERSISTED_ARTIFACT_BYTES } from "../artifacts.ts";
 import { sanitizeSystemText } from "../system-events.ts";
 import type { FileArtifact, PresentationArtifactState } from "../types.ts";
 import type { CompatibilityTheme } from "./user-message.ts";
@@ -109,6 +110,11 @@ function isArtifactState(value: unknown): value is PresentationArtifactState {
 		|| !Number.isInteger(value.revision)
 		|| typeof value.anchorToolCallId !== "string"
 		|| !Array.isArray(value.files)
+		|| (value.totalFiles !== undefined && (typeof value.totalFiles !== "number" || !Number.isInteger(value.totalFiles) || value.totalFiles < value.files.length))
+		|| (value.omittedFiles !== undefined && (typeof value.omittedFiles !== "number" || !Number.isInteger(value.omittedFiles) || value.omittedFiles < 0))
+		|| (value.totalAdditions !== undefined && (typeof value.totalAdditions !== "number" || !Number.isInteger(value.totalAdditions) || value.totalAdditions < 0))
+		|| (value.totalDeletions !== undefined && (typeof value.totalDeletions !== "number" || !Number.isInteger(value.totalDeletions) || value.totalDeletions < 0))
+		|| (value.truncated !== undefined && value.truncated !== true)
 		|| typeof value.successfulWrites !== "number"
 		|| typeof value.failedWrites !== "number"
 		|| typeof value.gitReconciled !== "boolean"
@@ -119,6 +125,59 @@ function isArtifactState(value: unknown): value is PresentationArtifactState {
 		&& (file.operation === "added" || file.operation === "modified" || file.operation === "deleted" || file.operation === "unknown")
 		&& Array.isArray(file.sources)
 		&& file.sources.every((source) => typeof source === "string"));
+}
+
+/** Bound historical v2 entries in memory without rewriting session history. */
+export function boundArtifactState(state: PresentationArtifactState): PresentationArtifactState {
+	const totalFiles = state.totalFiles ?? state.files.length;
+	const totalAdditions = state.totalAdditions ?? state.files.reduce((total, file) => total + (file.additions ?? 0), 0);
+	const totalDeletions = state.totalDeletions ?? state.files.reduce((total, file) => total + (file.deletions ?? 0), 0);
+	const files: FileArtifact[] = state.files.slice(0, MAX_PERSISTED_ARTIFACTS).map((file) => ({
+		path: sanitizeSystemText(file.path, 240) || "file",
+		operation: file.operation,
+		...(typeof file.additions === "number" && Number.isFinite(file.additions) && file.additions >= 0 ? { additions: Math.floor(file.additions) } : {}),
+		...(typeof file.deletions === "number" && Number.isFinite(file.deletions) && file.deletions >= 0 ? { deletions: Math.floor(file.deletions) } : {}),
+		sources: file.sources.slice(0, 8).map((source) => sanitizeSystemText(source, 40)).filter(Boolean),
+		...(file.preExisting === true ? { preExisting: true } : {}),
+	}));
+	const includeTotals = state.totalFiles !== undefined
+		|| state.omittedFiles !== undefined
+		|| state.totalAdditions !== undefined
+		|| state.totalDeletions !== undefined
+		|| state.truncated === true
+		|| totalFiles > files.length;
+	const supersedes = sanitizeSystemText(state.supersedes, 240);
+	const bounded: PresentationArtifactState = {
+		version: 2,
+		receiptId: sanitizeSystemText(state.receiptId, 240) || "receipt",
+		requestId: sanitizeSystemText(state.requestId, 240) || "request",
+		revision: state.revision,
+		...(supersedes ? { supersedes } : {}),
+		anchorToolCallId: sanitizeSystemText(state.anchorToolCallId, 240) || "tool",
+		files,
+		...(includeTotals ? {
+			totalFiles,
+			omittedFiles: Math.max(0, totalFiles - files.length),
+			totalAdditions,
+			totalDeletions,
+			...(state.truncated === true || totalFiles > files.length ? { truncated: true as const } : {}),
+		} : {}),
+		successfulWrites: state.successfulWrites,
+		failedWrites: state.failedWrites,
+		gitReconciled: state.gitReconciled,
+		...(state.reverted === true ? { reverted: true as const } : {}),
+		startedAt: state.startedAt,
+		revisedAt: state.revisedAt,
+	};
+	while (bounded.files.length > 0 && Buffer.byteLength(JSON.stringify(bounded), "utf8") > MAX_PERSISTED_ARTIFACT_BYTES) {
+		bounded.files.pop();
+		bounded.totalFiles = totalFiles;
+		bounded.omittedFiles = Math.max(0, totalFiles - bounded.files.length);
+		bounded.totalAdditions = totalAdditions;
+		bounded.totalDeletions = totalDeletions;
+		bounded.truncated = true;
+	}
+	return bounded;
 }
 
 function textOutput(result: ToolResultLike | undefined): string {
@@ -256,16 +315,19 @@ function artifactSummary(state: PresentationArtifactState, theme: CompatibilityT
 	if (state.reverted) {
 		return `${color(theme, "warning", "◆")} ${strong(theme, "Files")} · unchanged · net changes reverted`;
 	}
-	const additions = state.files.reduce((total, file) => total + (file.additions ?? 0), 0);
-	const deletions = state.files.reduce((total, file) => total + (file.deletions ?? 0), 0);
+	const totalFiles = state.totalFiles ?? state.files.length;
+	const additions = state.totalAdditions ?? state.files.reduce((total, file) => total + (file.additions ?? 0), 0);
+	const deletions = state.totalDeletions ?? state.files.reduce((total, file) => total + (file.deletions ?? 0), 0);
 	const shown = state.files.slice(0, 2).map((file) => artifactOperation(file, theme));
-	const more = state.files.length - shown.length;
-	return `${color(theme, "success", "◆")} ${strong(theme, "Files")} ${state.files.length} changed${artifactDiff({ additions, deletions } as FileArtifact, theme)}${shown.length ? `${color(theme, "muted", " · ")}${shown.join(color(theme, "muted", " · "))}` : ""}${more > 0 ? color(theme, "muted", ` · +${more} more`) : ""}`;
+	const more = totalFiles - shown.length;
+	return `${color(theme, "success", "◆")} ${strong(theme, "Files")} ${totalFiles} changed${artifactDiff({ additions, deletions } as FileArtifact, theme)}${shown.length ? `${color(theme, "muted", " · ")}${shown.join(color(theme, "muted", " · "))}` : ""}${more > 0 ? color(theme, "muted", ` · +${more} more`) : ""}`;
 }
 
 function artifactDetails(state: PresentationArtifactState, theme: CompatibilityTheme | undefined): string[] {
 	if (state.reverted) return [color(theme, "warning", "Files unchanged · net changes reverted")];
-	return state.files.map((file) => artifactOperation(file, theme));
+	const lines = state.files.map((file) => artifactOperation(file, theme));
+	if (state.omittedFiles) lines.push(color(theme, "muted", `… ${state.omittedFiles} more files omitted from session storage`));
+	return lines;
 }
 
 function terminal(state: ToolState): boolean {
@@ -724,10 +786,22 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 		},
 		hydrate(entries, cwd) {
 			resetState();
+			const pendingArtifacts = new Map<string, PresentationArtifactState>();
 			for (const entryValue of entries) {
 				if (!isRecord(entryValue)) continue;
 				if (entryValue.type === "custom" && entryValue.customType === "presentation-artifact-state-v2") {
-					if (isArtifactState(entryValue.data)) applyArtifact(entryValue.data);
+					if (isArtifactState(entryValue.data)) {
+						const artifact = boundArtifactState(entryValue.data);
+						const previous = pendingArtifacts.get(artifact.requestId);
+						if (!previous || artifact.revision > previous.revision) {
+							if (previous && previous.anchorToolCallId !== artifact.anchorToolCallId) {
+								supersededArtifactAnchors.add(previous.anchorToolCallId);
+							}
+							pendingArtifacts.set(artifact.requestId, artifact);
+						} else if (previous.anchorToolCallId !== artifact.anchorToolCallId) {
+							supersededArtifactAnchors.add(artifact.anchorToolCallId);
+						}
+					}
 					continue;
 				}
 				if (entryValue.type !== "message" || !isRecord(entryValue.message)) continue;
@@ -783,6 +857,9 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 					state.isError = message.isError === true;
 					states.set(state.id, state);
 				}
+			}
+			for (const artifact of pendingArtifacts.values()) {
+				if (states.has(artifact.anchorToolCallId)) applyArtifact(artifact);
 			}
 			activeEpisode = undefined;
 		},

@@ -229,6 +229,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 	);
 	const warned = new Set<string>();
 	const lastErrors = new Map<string, string>();
+	const triggerDiagnostics = new Map<"compression" | "title_generation", string>();
 	const eventUnsubscribes: Array<() => void> = [];
 	let usageReports = false;
 	let turnUsage: AuxiliaryUsageEntryV1[] = [];
@@ -657,6 +658,16 @@ export default function auxiliary(pi: ExtensionAPI) {
 					const fallbacks = route.fallbackModels.length ? ` · fallback ${route.fallbackModels.join(", ")}` : "";
 					lines.push(`${task}: ${routing} · ${route.model} · ${route.thinking} · ${route.timeoutMs}ms${fallbacks}${selected ? ` · ${selected.contextWindow.toLocaleString()} ctx` : " · unavailable"}`);
 				}
+				lines.push(`trigger compression: ${triggerDiagnostics.get("compression") ?? "awaiting Pi compact hook"}`);
+				const titleTrigger = triggerDiagnostics.get("title_generation")
+					?? (titleAttempted
+						? "already attempted on this branch"
+						: pi.getSessionName()
+							? "session already named"
+							: extractTitleSeed(branch)
+								? config.enabled ? "eligible on next settled turn" : "auxiliary disabled"
+								: "waiting for first completed exchange");
+				lines.push(`trigger title_generation: ${titleTrigger}`);
 				lines.push(`git finalize: confirm ${config.git.confirm ? "on" : "off"} · headless ${config.git.allowHeadless ? "on" : "off"} · push ${config.git.allowPush ? "on" : "off"}`);
 				const usage = aggregateAuxiliaryUsage(branch);
 				if (usage.calls === 0) lines.push("usage: no auxiliary calls");
@@ -706,6 +717,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 		latestContext = ctx;
 		turnUsage = [];
 		scopedUsage.clear();
+		triggerDiagnostics.clear();
 		load(ctx);
 		syncSeenUsageIds(ctx);
 		titleAttempted = titleWasAttempted(ctx);
@@ -717,6 +729,7 @@ export default function auxiliary(pi: ExtensionAPI) {
 		latestContext = ctx;
 		turnUsage = [];
 		scopedUsage.clear();
+		triggerDiagnostics.clear();
 		load(ctx);
 		syncSeenUsageIds(ctx);
 		titleAttempted = targetTitleAttempted;
@@ -742,7 +755,12 @@ export default function auxiliary(pi: ExtensionAPI) {
 
 	pi.on("session_before_compact", async (event, ctx) => {
 		const config = load(ctx);
-		if (!config.enabled) return;
+		if (!config.enabled) {
+			triggerDiagnostics.set("compression", "skipped · auxiliary disabled");
+			return;
+		}
+		const reason = `${event.reason}${event.willRetry ? " · retry yes" : " · retry no"}`;
+		triggerDiagnostics.set("compression", `triggered · ${reason}`);
 		try {
 			const compaction = await runtimeFor(ctx).compact({
 				preparation: event.preparation,
@@ -750,9 +768,12 @@ export default function auxiliary(pi: ExtensionAPI) {
 				signal: event.signal,
 			}, resolveTaskRoute(config, "compression"));
 			lastErrors.delete("compression");
+			triggerDiagnostics.set("compression", `completed · ${reason}`);
 			return { compaction };
 		} catch (error) {
+			const code = error instanceof AuxiliaryError ? error.code : "provider_error";
 			if (error instanceof AuxiliaryError) lastErrors.set("compression", error.code);
+			triggerDiagnostics.set("compression", `failed · ${code}`);
 			return;
 		}
 	});
@@ -762,20 +783,24 @@ export default function auxiliary(pi: ExtensionAPI) {
 		const settledUsage = turnUsage;
 		turnUsage = [];
 		if (titleAttempted || pi.getSessionName()) {
+			triggerDiagnostics.set("title_generation", titleAttempted ? "already attempted on this branch" : "session already named");
 			reportUsage(ctx, settledUsage);
 			return;
 		}
 		const seed = extractTitleSeed(ctx.sessionManager.getBranch());
 		if (!seed) {
+			triggerDiagnostics.set("title_generation", "waiting for first completed exchange");
 			reportUsage(ctx, settledUsage);
 			return;
 		}
 		const config = load(ctx);
 		if (!config.enabled) {
+			triggerDiagnostics.set("title_generation", "auxiliary disabled");
 			reportUsage(ctx, settledUsage);
 			return;
 		}
 		titleAttempted = true;
+		triggerDiagnostics.set("title_generation", "triggered · first eligible settled turn");
 		settledTitleUsage = settledUsage;
 		const generation = titleGeneration;
 		const controller = new AbortController();
@@ -806,10 +831,12 @@ export default function auxiliary(pi: ExtensionAPI) {
 				}, route);
 				if (generation !== titleGeneration || controller.signal.aborted || latestContext !== ctx || pi.getSessionName()) return;
 				pi.setSessionName(result.text);
+				triggerDiagnostics.set("title_generation", "completed");
 				lastErrors.delete("title_generation");
 			} catch (error) {
 				if (generation === titleGeneration && error instanceof AuxiliaryError && error.code !== "aborted") {
 					lastErrors.set("title_generation", error.code);
+					triggerDiagnostics.set("title_generation", `failed · ${error.code}`);
 				}
 			} finally {
 				if (settledTitleUsage === settledUsage) settledTitleUsage = undefined;

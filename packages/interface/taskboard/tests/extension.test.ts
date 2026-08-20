@@ -266,7 +266,7 @@ describe("taskboard registration and tool", () => {
 		assert.equal(harness.tool.executionMode, "sequential");
 		assert.equal(harness.tool.renderShell, "self");
 		assert.ok(harness.tool.promptGuidelines.every((line: string) => line.includes("process_update")));
-		assert.ok(harness.tool.promptGuidelines.some((line: string) => /one step.*done/i.test(line)));
+		assert.ok(harness.tool.promptGuidelines.some((line: string) => /batch completion.*accepted atomically/i.test(line)));
 		assert.ok(harness.command);
 		assert.equal(harness.processAlias, undefined);
 		assert.deepEqual(harness.command.getArgumentCompletions("").map((item: { value: string }) => item.value), [
@@ -373,36 +373,15 @@ describe("taskboard registration and tool", () => {
 		assert.match(harness.selectCalls.at(-1)?.title ?? "", /no active task/i);
 	});
 
-	it("rejects batch completion without persisting it or revealing the validation error after state advances", async () => {
+	it("accepts batch completion and persists only the final state", async () => {
 		const harness = createHarness();
 		await execute(harness);
 		const entryCount = harness.entries.length;
-		let errorMessage = "";
-		await assert.rejects(
-			() => execute(harness, completedInput()),
-			(error: unknown) => {
-				errorMessage = error instanceof Error ? error.message : String(error);
-				return /one step.*done/i.test(errorMessage);
-			},
-		);
-		assert.equal(harness.entries.length, entryCount);
-		assert.deepEqual(latestSnapshot(harness.entries)?.steps.map((step) => step.status), ["done", "active", "pending"]);
-
-		const renderedError = harness.tool.renderResult(
-			{ content: [{ type: "text", text: errorMessage }] },
-			{ expanded: false },
-			theme,
-			{ isError: true, args: completedInput() },
-		);
-		assert.deepEqual(renderedError.render(120), []);
-		await execute(harness, finalStepInput());
-		const rerenderedError = harness.tool.renderResult(
-			{ content: [{ type: "text", text: errorMessage }] },
-			{ expanded: false },
-			theme,
-			{ isError: true, args: completedInput() },
-		).render(120);
-		assert.deepEqual(rerenderedError, []);
+		const result = await execute(harness, completedInput());
+		assert.equal(harness.entries.length, entryCount + 1);
+		assert.deepEqual(latestSnapshot(harness.entries)?.steps.map((step) => step.status), ["done", "done", "done"]);
+		assert.equal(latestSnapshot(harness.entries)?.status, "completed");
+		assert.equal(result.details.status, "completed");
 	});
 
 	it("keeps in-memory state unchanged when appendEntry fails", async () => {

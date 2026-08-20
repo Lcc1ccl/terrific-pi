@@ -10,7 +10,7 @@ Injects `service_tier: "priority"` into Responses / Codex Responses requests. Fo
 /fast          toggle
 /fast on       enable
 /fast off      disable
-/fast status   show preference, effective state, current API/model, and config path
+/fast status   show preferred, eligible, and last-request payload injection state
 ```
 
 ## Behavior
@@ -18,6 +18,8 @@ Injects `service_tier: "priority"` into Responses / Codex Responses requests. Fo
 | Concern | Rule |
 |---------|------|
 | Preference | Global, persisted in `~/.pi/agent/terrific.json` as `fast.enabled` |
+| Eligible | Current model id is GPT and API is openai-family Responses; independent from the saved preference |
+| Injected | The extension actually mutated the most recently observed main provider payload; this does not prove upstream acceptance or billing |
 | Active (badge) | Preference ON **and** model id is GPT **and** API is openai-family Responses |
 | Non-GPT model (e.g. grok/claude/codex) | Auto-yield: no injection, badge hidden; preference kept |
 | Non-openai or unknown API | Auto-yield |
@@ -49,6 +51,7 @@ Notes:
 - Not a thinking-level control (`Shift+Tab` / `/thinking` is separate)
 - Priority pricing is roughly 2× standard (gpt-5.5 ~2.5× in pi-ai accounting)
 - Injects into the outbound request body only; third-party proxies must forward `service_tier` for real Priority processing
+- `/fast status` reports Preferred, current Eligible, and Injected for the last observed main provider request. Before any request, Injected is `not observed`.
 - Status badge reflects **active** state (preference ∩ GPT id ∩ openai-family API), not raw preference alone
 
 ## Config

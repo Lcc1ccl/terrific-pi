@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createToolRenderController } from "../lib/compat/tool-render.ts";
+import { boundArtifactState, createToolRenderController } from "../lib/compat/tool-render.ts";
 
 const theme = {
 	fg(_color: string, text: string) { return text; },
@@ -85,11 +85,102 @@ test("branch hydration suppresses superseded artifact anchors after resume", () 
 	};
 	try {
 		hydrate(controller, [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", id: "edit-1", name: "edit", arguments: { path: "src/app.ts" } },
+						{ type: "toolCall", id: "edit-2", name: "edit", arguments: { path: "src/app.ts" } },
+					],
+				},
+			},
 			{ type: "custom", customType: "presentation-artifact-state-v2", data: firstState },
 			{ type: "custom", customType: "presentation-artifact-state-v2", data: secondState },
 		]);
 		assert.deepEqual(controller.render(tool("edit-1"), 120, () => ["native first"]), []);
 		assert.match(controller.render(tool("edit-2"), 120, () => ["native second"]).join("\n"), /Files 1 changed/);
+	} finally {
+		controller.dispose();
+	}
+});
+
+test("an orphaned latest artifact revision does not resurrect an older anchor", () => {
+	const controller = createToolRenderController({ isEnabled: () => true, getTheme: () => theme, now: () => 1_000 });
+	const firstState = {
+		version: 2 as const,
+		receiptId: "receipt-old",
+		requestId: "request-orphan",
+		revision: 1,
+		anchorToolCallId: "edit-old",
+		files: [{ path: "old.ts", operation: "modified" as const, sources: ["edit"] }],
+		successfulWrites: 1,
+		failedWrites: 0,
+		gitReconciled: true,
+		startedAt: 1,
+		revisedAt: 2,
+	};
+	try {
+		hydrate(controller, [
+			{
+				type: "message",
+				message: { role: "assistant", content: [{ type: "toolCall", id: "edit-old", name: "edit", arguments: { path: "old.ts" } }] },
+			},
+			{ type: "custom", customType: "presentation-artifact-state-v2", data: firstState },
+			{ type: "custom", customType: "presentation-artifact-state-v2", data: {
+				...firstState,
+				receiptId: "receipt-latest",
+				revision: 2,
+				supersedes: "receipt-old",
+				anchorToolCallId: "edit-missing",
+				files: [{ path: "latest.ts", operation: "modified", sources: ["edit"] }],
+				revisedAt: 3,
+			} },
+		]);
+		const rendered = controller.render(historyTool("edit-old", "edit", { path: "old.ts" }, "request-orphan"), 120, () => ["native"]).join("\n");
+		assert.doesNotMatch(rendered, /Files/);
+	} finally {
+		controller.dispose();
+	}
+});
+
+test("hydration bounds oversized legacy receipts while retaining the full count", () => {
+	const controller = createToolRenderController({ isEnabled: () => true, getTheme: () => theme, now: () => 1_000 });
+	try {
+		const legacy = {
+			version: 2 as const, receiptId: "legacy-many", requestId: "request-many", revision: 1,
+			anchorToolCallId: "edit-many",
+			files: Array.from({ length: 105 }, (_, index) => ({ path: `file-${index}.txt`, operation: "added" as const, sources: ["git"] })),
+			successfulWrites: 1, failedWrites: 0, gitReconciled: true, startedAt: 1, revisedAt: 2,
+		};
+		const bounded = boundArtifactState(legacy);
+		assert.equal(bounded.files.length, 100);
+		assert.equal(bounded.totalFiles, 105);
+		const huge = boundArtifactState({
+			...legacy,
+			receiptId: "legacy-huge-row",
+			files: [{ path: "x".repeat(100_000), operation: "added", sources: ["s".repeat(100_000)] }],
+		});
+		assert.ok(Buffer.byteLength(JSON.stringify(huge), "utf8") <= 64 * 1024);
+		assert.ok((huge.files[0]?.path.length ?? 0) <= 240);
+		assert.ok((huge.files[0]?.sources[0]?.length ?? 0) <= 40);
+		const hugeMetadata = boundArtifactState({
+			...legacy,
+			receiptId: "r".repeat(100_000),
+			requestId: "q".repeat(100_000),
+			unknownMetadata: "u".repeat(100_000),
+		} as typeof legacy);
+		assert.ok(Buffer.byteLength(JSON.stringify(hugeMetadata), "utf8") <= 64 * 1024);
+		assert.ok(hugeMetadata.receiptId.length <= 240);
+		assert.ok(hugeMetadata.requestId.length <= 240);
+		assert.equal(Object.hasOwn(hugeMetadata, "unknownMetadata"), false);
+		hydrate(controller, [
+			{ type: "message", message: { role: "assistant", content: [{ type: "toolCall", id: "edit-many", name: "edit", arguments: { path: "src/app.ts" } }] } },
+			{ type: "custom", customType: "presentation-artifact-state-v2", data: legacy },
+		]);
+		const rendered = controller.render(historyTool("edit-many", "edit", { path: "src/app.ts" }, "request-many"), 120, () => ["native"]).join("\n");
+		assert.match(rendered, /Files 105 changed/);
+		assert.match(rendered, /\+103 more/);
 	} finally {
 		controller.dispose();
 	}
