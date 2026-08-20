@@ -66,10 +66,12 @@ function harness(outputs: Array<AssistantMessage | Error>, models = [model("open
 	const attempts: AuxiliaryUsageEntryV1[] = [];
 	const active: string[] = [];
 	const calls: string[] = [];
+	const requestHeaders: Array<Record<string, string | null> | undefined> = [];
 	const fakeRuntime = {
 		registerProvider() {},
-		async completeSimple(selectedModel: Model<any>, _context: unknown, options: { signal?: AbortSignal }) {
+		async completeSimple(selectedModel: Model<any>, _context: unknown, options: { signal?: AbortSignal; headers?: Record<string, string | null> }) {
 			calls.push(`${selectedModel.provider}/${selectedModel.id}`);
+			requestHeaders.push(options.headers);
 			const next = outputs.shift();
 			if (next instanceof Error) throw next;
 			if (!next) throw new Error("missing fixture");
@@ -81,7 +83,7 @@ function harness(outputs: Array<AssistantMessage | Error>, models = [model("open
 	const registry = {
 		find(provider: string, id: string) { return models.find((item) => item.provider === provider && item.id === id); },
 		async getApiKeyAndHeaders(selected: Model<any>) {
-			return selected.id === "no-auth" ? { ok: false as const, error: "missing" } : { ok: true as const, apiKey: "ephemeral", headers: { "x-test": "1" }, env: {} };
+			return selected.id === "no-auth" ? { ok: false as const, error: "missing" } : { ok: true as const, apiKey: "ephemeral", headers: { "x-test": "1", "x-remove": null }, env: {} };
 		},
 		getRegisteredProviderIds() { return []; },
 		getRegisteredProviderConfig() { return undefined; },
@@ -93,7 +95,7 @@ function harness(outputs: Array<AssistantMessage | Error>, models = [model("open
 		onAttempt: (entry) => attempts.push(entry),
 		onActiveChange: (label) => active.push(label ?? ""),
 	});
-	return { runtime, attempts, active, calls };
+	return { runtime, attempts, active, calls, requestHeaders };
 }
 
 const request = {
@@ -120,10 +122,11 @@ async function within<T>(promise: Promise<T>, ms = 500): Promise<T> {
 
 describe("AuxiliaryRuntime", () => {
 	test("calls the configured model and records bounded usage metadata", async () => {
-		const { runtime, attempts, active } = harness([response("ok")]);
+		const { runtime, attempts, active, requestHeaders } = harness([response("ok")]);
 		const result = await runtime.call(request, route);
 		assert.equal(result.text, "ok");
 		assert.equal(result.model, "small");
+		assert.deepEqual(requestHeaders, [{ "x-test": "1", "x-remove": null }]);
 		assert.equal(attempts.length, 1);
 		assert.deepEqual(Object.keys(attempts[0]!).sort(), [
 			"durationMs", "executor", "fallbackIndex", "id", "model", "provider", "startedAt", "status", "task", "thinking", "usage", "version",
@@ -362,19 +365,23 @@ describe("AuxiliaryRuntime", () => {
 		});
 		faux.setResponses([fauxAssistantMessage("history summary"), fauxAssistantMessage("turn prefix summary")]);
 		const sidecar = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, allowModelNetwork: false });
+		let compactionHeaders: Record<string, string | null> | undefined;
 		sidecar.registerProvider("aux-compact", {
 			name: "Aux compact",
 			api: "aux-compact",
 			apiKey: "$AUX_TEST_KEY",
 			models: faux.models.map((item) => ({ ...item, name: item.name ?? item.id })),
-			streamSimple: faux.streamSimple,
+			streamSimple: (selectedModel, context, options) => {
+				compactionHeaders = options?.headers;
+				return faux.streamSimple(selectedModel, context, options);
+			},
 		});
 		const selected = sidecar.getModel("aux-compact", "small")!;
 		const attempts: AuxiliaryUsageEntryV1[] = [];
 		const runtime = new AuxiliaryRuntime({
 			registry: {
 				find: () => selected,
-				getApiKeyAndHeaders: async () => ({ ok: true as const, apiKey: "ephemeral" }),
+				getApiKeyAndHeaders: async () => ({ ok: true as const, apiKey: "ephemeral", headers: { "x-test": "1", "x-remove": null } }),
 				getRegisteredProviderIds: () => [],
 				getRegisteredProviderConfig: () => undefined,
 			},
@@ -400,6 +407,7 @@ describe("AuxiliaryRuntime", () => {
 		assert.deepEqual(result.details, { readFiles: ["read.ts"], modifiedFiles: ["edit.ts"] });
 		assert.equal(attempts.length, 1);
 		assert.equal(attempts[0]!.status, "ok");
+		assert.deepEqual(compactionHeaders, { "x-test": "1", "x-remove": null });
 		assert.equal(faux.state.callCount, 2);
 	});
 

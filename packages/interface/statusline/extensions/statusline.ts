@@ -103,7 +103,7 @@ type QuotaContext = {
 		isUsingOAuth(model: unknown): boolean;
 		getRegisteredProviderConfig?(providerName: string): unknown;
 		getApiKeyAndHeaders(model: unknown): Promise<
-			| { ok: true; apiKey?: string; headers?: Record<string, string> }
+			| { ok: true; apiKey?: string; headers?: Record<string, string | null> }
 			| { ok: false; error: string }
 		>;
 	};

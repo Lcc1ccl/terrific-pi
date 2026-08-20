@@ -84,9 +84,11 @@ async function createSidecarModelRuntime(
 	for (const providerId of registry.getRegisteredProviderIds()) {
 		const config = registry.getRegisteredProviderConfig(providerId);
 		if (!config) continue;
-		runtime.registerProvider(providerId, providerId === model.provider && auth.headers
+		const registered = providerId === model.provider && auth.headers
 			? { ...config, headers: { ...config.headers, ...auth.headers } }
-			: config);
+			: config;
+		// registerProvider() still declares string-only headers but preserves null suppression at runtime.
+		runtime.registerProvider(providerId, registered as Parameters<ModelRuntime["registerProvider"]>[1]);
 	}
 	return runtime;
 }
