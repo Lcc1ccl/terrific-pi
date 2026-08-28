@@ -15,10 +15,22 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import type { KeyId } from "@earendil-works/pi-tui";
+
 import type { TaskboardActivityMode, TaskboardViewMode } from "./types.ts";
 
 const MODES = new Set<TaskboardViewMode>(["compact", "full", "off"]);
 const ACTIVITY_MODES = new Set<TaskboardActivityMode>(["full", "task", "off"]);
+const KEY_MODIFIERS = new Set(["ctrl", "shift", "alt", "super"]);
+const KEY_BASES = new Set([
+	..."abcdefghijklmnopqrstuvwxyz0123456789",
+	"escape", "esc", "enter", "return", "tab", "space", "backspace", "delete", "insert", "clear",
+	"home", "end", "pageUp", "pageDown", "up", "down", "left", "right",
+	...Array.from({ length: 12 }, (_, index) => `f${index + 1}`),
+	..."`-= []\\;',./!@#$%^&*()_+|~{}:<>?".replace(" ", ""),
+]);
+const DEFAULT_TOGGLE_SHORTCUT: KeyId = "shift+alt+o";
+const DEFAULT_MAX_PANEL_LINES = 15;
 const BASENAME = "terrific.json";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -42,6 +54,72 @@ function loadTaskboardSection(agentDir: string): Record<string, unknown> | undef
 	return isRecord(root) ? taskboardConfig(root) : undefined;
 }
 
+export interface TaskboardConfig {
+	activityMode: TaskboardActivityMode;
+	maxPanelLines: number;
+	toggleShortcut: KeyId | undefined;
+	invalidToggleShortcut?: string;
+}
+
+function isKeyId(value: string): value is KeyId {
+	if (!value || value.trim() !== value) return false;
+	let base = value;
+	let modifierText = "";
+	if (value !== "+") {
+		if (value.endsWith("++")) {
+			base = "+";
+			modifierText = value.slice(0, -2);
+		} else {
+			const separator = value.lastIndexOf("+");
+			if (separator >= 0) {
+				base = value.slice(separator + 1);
+				modifierText = value.slice(0, separator);
+			}
+		}
+	}
+	if (!KEY_BASES.has(base)) return false;
+	if (!modifierText) return true;
+	const modifiers = modifierText.split("+");
+	return modifiers.every((modifier) => KEY_MODIFIERS.has(modifier))
+		&& new Set(modifiers).size === modifiers.length;
+}
+
+export function loadTaskboardConfig(
+	agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
+): TaskboardConfig {
+	const defaults: TaskboardConfig = {
+		activityMode: "full",
+		maxPanelLines: DEFAULT_MAX_PANEL_LINES,
+		toggleShortcut: DEFAULT_TOGGLE_SHORTCUT,
+	};
+	try {
+		const section = loadTaskboardSection(agentDir);
+		const activityMode = typeof section?.activityMode === "string"
+			&& ACTIVITY_MODES.has(section.activityMode as TaskboardActivityMode)
+			? section.activityMode as TaskboardActivityMode
+			: defaults.activityMode;
+		const maxPanelLines = Number.isInteger(section?.maxPanelLines)
+			&& Number(section?.maxPanelLines) >= 8
+			&& Number(section?.maxPanelLines) <= 20
+			? Number(section?.maxPanelLines)
+			: defaults.maxPanelLines;
+		const shortcut = section?.toggleShortcut;
+		if (shortcut === undefined) return { activityMode, maxPanelLines, toggleShortcut: DEFAULT_TOGGLE_SHORTCUT };
+		if (shortcut === "off") return { activityMode, maxPanelLines, toggleShortcut: undefined };
+		if (typeof shortcut === "string" && isKeyId(shortcut)) {
+			return { activityMode, maxPanelLines, toggleShortcut: shortcut };
+		}
+		return {
+			activityMode,
+			maxPanelLines,
+			toggleShortcut: DEFAULT_TOGGLE_SHORTCUT,
+			invalidToggleShortcut: String(shortcut).slice(0, 120),
+		};
+	} catch {
+		return defaults;
+	}
+}
+
 export function loadTaskboardDefault(
 	agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
 ): TaskboardViewMode {
@@ -56,14 +134,7 @@ export function loadTaskboardDefault(
 export function loadTaskboardActivityMode(
 	agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
 ): TaskboardActivityMode {
-	try {
-		const value = loadTaskboardSection(agentDir)?.activityMode;
-		return typeof value === "string" && ACTIVITY_MODES.has(value as TaskboardActivityMode)
-			? value as TaskboardActivityMode
-			: "full";
-	} catch {
-		return "full";
-	}
+	return loadTaskboardConfig(agentDir).activityMode;
 }
 
 export type TaskboardConfigWriteResult = { ok: true; path: string } | { ok: false; path: string; error: string };

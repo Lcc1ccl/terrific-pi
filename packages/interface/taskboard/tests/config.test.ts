@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 
-import { loadTaskboardActivityMode, loadTaskboardDefault, updateTaskboardConfig } from "../lib/config.ts";
+import {
+	loadTaskboardActivityMode,
+	loadTaskboardConfig,
+	loadTaskboardDefault,
+	updateTaskboardConfig,
+} from "../lib/config.ts";
 
 describe("taskboard global config", () => {
 	it("prefers taskboard config over legacy processView", () => {
@@ -61,6 +66,53 @@ describe("taskboard global config", () => {
 		assert.equal(loadTaskboardActivityMode(agentDir), "task");
 		writeFileSync(path, JSON.stringify({ taskboard: { activityMode: "unexpected" } }));
 		assert.equal(loadTaskboardActivityMode(agentDir), "full");
+	});
+
+	it("loads panel line budgets and strictly validates Pi KeyId shortcuts", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "taskboard-config-panel-"));
+		const path = join(agentDir, "terrific.json");
+		assert.deepEqual(loadTaskboardConfig(agentDir), {
+			activityMode: "full",
+			maxPanelLines: 15,
+			toggleShortcut: "shift+alt+o",
+		});
+
+		writeFileSync(path, JSON.stringify({ taskboard: { maxPanelLines: 8, toggleShortcut: "ctrl+shift+p" } }));
+		assert.deepEqual(loadTaskboardConfig(agentDir), {
+			activityMode: "full",
+			maxPanelLines: 8,
+			toggleShortcut: "ctrl+shift+p",
+		});
+
+		writeFileSync(path, JSON.stringify({ taskboard: { maxPanelLines: 20, toggleShortcut: "off" } }));
+		assert.deepEqual(loadTaskboardConfig(agentDir), {
+			activityMode: "full",
+			maxPanelLines: 20,
+			toggleShortcut: undefined,
+		});
+
+		writeFileSync(path, JSON.stringify({ taskboard: { maxPanelLines: 7, toggleShortcut: "ctrl+ctrl+x" } }));
+		assert.deepEqual(loadTaskboardConfig(agentDir), {
+			activityMode: "full",
+			maxPanelLines: 15,
+			toggleShortcut: "shift+alt+o",
+			invalidToggleShortcut: "ctrl+ctrl+x",
+		});
+	});
+
+	it("accepts the full documented KeyId base-key set and rejects malformed values", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "taskboard-config-keyid-"));
+		const path = join(agentDir, "terrific.json");
+		for (const shortcut of ["a", "f12", "pageUp", "+", "ctrl++", "super+alt+left", "ctrl+shift+alt+x"]) {
+			writeFileSync(path, JSON.stringify({ taskboard: { toggleShortcut: shortcut } }));
+			assert.equal(loadTaskboardConfig(agentDir).toggleShortcut, shortcut);
+		}
+		for (const shortcut of ["", "CTRL+x", "ctrl+", "ctrl+ctrl+x", "meta+x", "f13", "pageup", "ctrl+x+y"]) {
+			writeFileSync(path, JSON.stringify({ taskboard: { toggleShortcut: shortcut } }));
+			const loaded = loadTaskboardConfig(agentDir);
+			assert.equal(loaded.toggleShortcut, "shift+alt+o");
+			assert.equal(loaded.invalidToggleShortcut, shortcut);
+		}
 	});
 
 	it("refuses malformed config without overwriting it", () => {

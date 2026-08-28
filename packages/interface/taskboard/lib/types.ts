@@ -15,6 +15,8 @@ export type TaskboardViewMode = "compact" | "full" | "off";
 export type TaskboardActivityMode = "full" | "task" | "off";
 
 export interface ProcessStep {
+	/** Internal identity; omitted only by legacy persisted sessions. */
+	id?: string;
 	text: string;
 	status: StepStatus;
 }
@@ -47,6 +49,8 @@ export interface ProcessUsage {
 }
 
 export interface ProcessStepTelemetry {
+	/** Mirrors ProcessStep.id; omitted only by legacy persisted sessions. */
+	id?: string;
 	text: string;
 	activeMs: number;
 	activeSince?: number;
@@ -108,6 +112,7 @@ export interface RuntimeControlState {
 export interface TaskboardRenderState {
 	viewMode: TaskboardViewMode;
 	activityMode: TaskboardActivityMode;
+	maxPanelLines?: number;
 	snapshot?: ProcessSnapshot;
 	telemetry?: ProcessTelemetry;
 	activity: ActivitySnapshot;

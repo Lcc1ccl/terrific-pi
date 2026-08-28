@@ -153,6 +153,44 @@ describe("formatTaskboardLines", () => {
 		assertFits(lines, 60);
 	});
 
+	it("enforces semantic line budgets without letting telemetry hide facts", () => {
+		const crowdedSnapshot = snapshot({
+			status: "blocked",
+			steps: [
+				{ text: "Completed one", status: "done" },
+				{ text: "Completed two", status: "done" },
+				{ text: "Current work", status: "active" },
+				{ text: "Pending one", status: "pending" },
+				{ text: "Pending two", status: "pending" },
+			],
+			blocker: "Need a release decision",
+			verification: "Static checks passed",
+			update: "Implementation is ready",
+		});
+		for (const width of [40, 60, 80, 120]) {
+			for (const maxPanelLines of [8, 12, 15, 20]) {
+				const lines = formatTaskboardLines(state({
+					viewMode: "full",
+					maxPanelLines,
+					snapshot: crowdedSnapshot,
+				}), width, plainTheme);
+				assertFits(lines, width);
+				assert.ok(lines.length <= maxPanelLines, `${width}x${maxPanelLines} produced ${lines.length} lines`);
+				assert.match(lines.join("\n"), /Need: Need a release decision/);
+			}
+		}
+
+		const constrained = formatTaskboardLines(state({
+			viewMode: "full",
+			maxPanelLines: 12,
+			snapshot: crowdedSnapshot,
+		}), 80, plainTheme).join("\n");
+		assert.match(constrained, /Verification: Static checks passed/);
+		assert.match(constrained, /Update: Implementation is ready/);
+		assert.match(constrained, /\+\d+ hidden \([^)]*(done|pending)[^)]*\)/);
+		assert.doesNotMatch(constrained, /Runtime:.*Need:/s);
+	});
+
 	it("uses Taskboard expansion for a responsive live task and runtime panel", () => {
 		for (const width of [1, 2, 3, 8, 20, 40, 60, 72, 80, 100, 120]) {
 			const responsive = formatTaskboardLines(state({ expanded: true } as Partial<TaskboardRenderState>), width, plainTheme);

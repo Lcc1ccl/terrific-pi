@@ -192,9 +192,10 @@ function createHarness(options: HarnessOptions = {}) {
 			throw new Error("setWorkingMessage must not be called");
 		},
 	};
+	const mode = options.mode ?? "tui";
 	const ctx = {
-		mode: options.mode ?? "tui",
-		hasUI: (options.mode ?? "tui") === "tui",
+		mode,
+		hasUI: mode === "tui" || mode === "rpc",
 		cwd: "/workspace/project",
 		ui,
 		sessionManager: { getBranch: () => entries },
@@ -270,7 +271,7 @@ describe("taskboard registration and tool", () => {
 		assert.ok(harness.command);
 		assert.equal(harness.processAlias, undefined);
 		assert.deepEqual(harness.command.getArgumentCompletions("").map((item: { value: string }) => item.value), [
-			"compact", "full", "off", "clear", "default",
+			"compact", "full", "off", "inspect", "clear", "default",
 		]);
 		assert.deepEqual(harness.command.getArgumentCompletions("default ").map((item: { value: string }) => item.value), [
 			"default compact", "default full", "default off",
@@ -292,6 +293,37 @@ describe("taskboard registration and tool", () => {
 		await harness.shortcuts[0]!.options.handler(harness.ctx);
 		assert.equal(harness.ctx.ui.getToolsExpanded(), false);
 		assert.doesNotMatch(harness.currentWidget.render(110).join("\n"), /Tasks|Runtime/);
+	});
+
+	it("reloads configured shortcuts, supports off, and warns once for invalid KeyIds", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "taskboard-shortcut-config-"));
+		const path = join(agentDir, "terrific.json");
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		try {
+			writeFileSync(path, JSON.stringify({ taskboard: { toggleShortcut: "ctrl+shift+p" } }));
+			const first = createHarness();
+			assert.deepEqual(first.shortcuts.map((shortcut) => shortcut.shortcut), ["ctrl+shift+p"]);
+
+			writeFileSync(path, JSON.stringify({ taskboard: { toggleShortcut: "alt+f12" } }));
+			const reloaded = createHarness();
+			assert.deepEqual(reloaded.shortcuts.map((shortcut) => shortcut.shortcut), ["alt+f12"]);
+			assert.equal(reloaded.shortcuts.some((shortcut) => shortcut.shortcut === "ctrl+shift+p"), false);
+
+			writeFileSync(path, JSON.stringify({ taskboard: { toggleShortcut: "off" } }));
+			assert.deepEqual(createHarness().shortcuts, []);
+
+			writeFileSync(path, JSON.stringify({ taskboard: { toggleShortcut: "ctrl+ctrl+x" } }));
+			const invalid = createHarness();
+			assert.deepEqual(invalid.shortcuts.map((shortcut) => shortcut.shortcut), ["shift+alt+o"]);
+			await invalid.emit("session_start", { reason: "startup" });
+			await invalid.emit("before_agent_start", { prompt: "start" });
+			assert.equal(invalid.notifications.filter((item) => /invalid.*toggleShortcut/i.test(item.message)).length, 1);
+		} finally {
+			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+			rmSync(agentDir, { recursive: true, force: true });
+		}
 	});
 
 	it("keeps legacy session entry and context type strings for restoration", () => {
@@ -317,6 +349,21 @@ describe("taskboard registration and tool", () => {
 			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
 			rmSync(agentDir, { recursive: true, force: true });
 		}
+	});
+
+	it("returns semantic no-ops without appending or resetting telemetry", async () => {
+		const harness = createHarness();
+		const first = await execute(harness);
+		const entryCount = harness.entries.length;
+		const activeSince = first.details.telemetry.steps[1].activeSince;
+		const unchanged = await execute(harness);
+		assert.equal(unchanged.content[0].text, "Taskboard unchanged");
+		assert.equal(harness.entries.length, entryCount);
+		assert.equal(unchanged.details.telemetry.steps[1].activeSince, activeSince);
+
+		const changed = await execute(harness, { ...runningInput(), update: "A real milestone" });
+		assert.match(changed.content[0].text, /state updated/i);
+		assert.equal(harness.entries.length, entryCount + 1);
 	});
 
 	it("persists normalized details before committing UI state", async () => {
@@ -371,6 +418,21 @@ describe("taskboard registration and tool", () => {
 		assert.deepEqual(harness.widgetCalls, []);
 		await harness.command.handler("", harness.ctx);
 		assert.match(harness.selectCalls.at(-1)?.title ?? "", /no active task/i);
+	});
+
+	it("rejects illegal stable-step transitions atomically", async () => {
+		const harness = createHarness();
+		await execute(harness);
+		const before = structuredClone(harness.entries);
+		await assert.rejects(() => execute(harness, {
+			...runningInput(),
+			steps: [
+				{ text: "Inspect", status: "active" },
+				{ text: "Implement", status: "pending" },
+				{ text: "Verify", status: "pending" },
+			],
+		}), /done.*active/i);
+		assert.deepEqual(harness.entries, before);
 	});
 
 	it("accepts batch completion and persists only the final state", async () => {
@@ -657,6 +719,26 @@ describe("request, branch, and context lifecycle", () => {
 		assert.equal((await execute(print)).details.status, "running");
 	});
 
+	it("writes back stable IDs when restoring a legacy branch", async () => {
+		const snapshot = normalizeProcessUpdate({ ...runningInput(), status: "waiting" }, undefined, 1_000);
+		const telemetry = syncProcessTelemetry(undefined, undefined, snapshot, 1_000);
+		for (const step of snapshot.steps) delete step.id;
+		for (const step of telemetry.steps) delete step.id;
+		const legacy = {
+			version: 1,
+			viewMode: "compact",
+			snapshot,
+			telemetry,
+			cleared: false,
+		};
+		const harness = createHarness({ branch: [{ type: "custom", customType: TASKBOARD_ENTRY_TYPE, data: legacy }] });
+		await harness.emit("session_start", { reason: "resume" });
+		assert.equal(harness.entries.length, 2);
+		const migrated = harness.entries.at(-1)?.data;
+		assert.ok(migrated.snapshot.steps.every((step: { id?: string }) => step.id));
+		assert.deepEqual(migrated.telemetry.steps.map((step: { id?: string }) => step.id), migrated.snapshot.steps.map((step: { id?: string }) => step.id));
+	});
+
 	it("pauses a stale running timer when restoring an idle session", async () => {
 		const snapshot = normalizeProcessUpdate(runningInput(), undefined, 1_000);
 		const stored = createPersistedState(
@@ -920,6 +1002,65 @@ describe("commands and passive telemetry", () => {
 		await harness.command.handler("", harness.ctx);
 		assert.match(harness.notifications.at(-1)?.message ?? "", /no active task/i);
 		assert.deepEqual(harness.selectCalls, []);
+	});
+
+	it("inspects every fact and step telemetry without changing persisted state", async () => {
+		const input: ProcessUpdateInput = {
+			...runningInput(),
+			status: "blocked",
+			blocker: "Need release approval",
+			verification: "Static checks passed",
+		};
+		const recordUsage = async (harness: ReturnType<typeof createHarness>) => {
+			await harness.emit("message_end", {
+				message: {
+					role: "assistant",
+					content: [],
+					provider: "openai",
+					model: "gpt-5.6-sol",
+					usage: {
+						input: 30_000,
+						output: 1_500,
+						cacheRead: 22_000,
+						cacheWrite: 400,
+						cost: { total: 0.25 },
+					},
+				},
+			});
+		};
+		const outputs: string[] = [];
+		for (const mode of ["tui", "rpc"] as const) {
+			const harness = createHarness({ mode });
+			await execute(harness, input);
+			await recordUsage(harness);
+			const before = structuredClone(harness.entries);
+			await harness.command.handler("inspect", harness.ctx);
+			assert.deepEqual(harness.entries, before);
+			const output = harness.notifications.at(-1)?.message ?? "";
+			outputs.push(output);
+			assert.match(output, /Blocked.*Implement process view/s);
+			assert.match(output, /Need: Need release approval/);
+			assert.match(output, /Verification: Static checks passed/);
+			assert.match(output, /● Implement.*1 turn.*↑30k.*↓1\.5k.*R22k.*W400.*\$0\.250.*openai\/gpt-5\.6-sol/);
+			assert.match(output, /Runtime:/);
+			assert.match(output, /Artifacts: process-view\.ts/);
+			assert.equal(harness.entries.at(-1)?.data.viewMode, "compact");
+		}
+
+		const print = createHarness({ mode: "print" });
+		await execute(print, input);
+		await recordUsage(print);
+		const lines: string[] = [];
+		const originalLog = console.log;
+		console.log = (...args: unknown[]) => { lines.push(args.join(" ")); };
+		try {
+			await print.command.handler("inspect", print.ctx);
+		} finally {
+			console.log = originalLog;
+		}
+		outputs.push(lines.join("\n"));
+		assert.equal(print.entries.length, 1);
+		assert.equal(new Set(outputs).size, 1);
 	});
 
 	it("persists mode changes and rejects unknown args", async () => {

@@ -8,7 +8,7 @@ This document is the current capability map for the core `terrific-pi` distribut
 |---|---|---|---|
 | Interface | statusline | `/statusline`, automatic footer | Sole status-widget owner; model/editor metadata, usage, settled-run metrics/notification, context, Git, runtime, and footer layout |
 | Interface | appearance | `/appearance`, startup | Header and editor surfaces only |
-| Interface | taskboard | `/taskboard`, `process_update` | Structured task milestones, waiting/blocked state, and task HUD |
+| Interface | taskboard | `/taskboard`, `/taskboard inspect`, `process_update` | Structured task milestones, stable step telemetry, monotonic state, and a budgeted task HUD |
 | Interface | presentation | `/presentation`, automatic renderers | OMP/classic assistant, user, and tool transcript projection; system entries and file receipts |
 | Session control | mode | `/mode` | ask/plan/edit/auto tool policy |
 | Session control | fast | `/fast` | GPT/OpenAI Responses priority-tier preference and effective state |
@@ -42,7 +42,7 @@ Dedicated status keys are not duplicated into generic progress. Presentation's O
 | `settings.json` | root package entry and Pi model defaults |
 | `models.json` | custom providers/models and provider-sync output |
 
-All section writers preserve unknown sibling sections, which permits the separately installed Automation package to own `docsflow` without a shared runtime library.
+All section writers preserve unknown sibling sections, which permits the separately installed Automation package to own `docsflow` without a shared runtime library. Taskboard's `maxPanelLines` and `toggleShortcut` remain global `terrific.json` settings; `/reload` applies shortcut changes.
 
 ## Optional Integrations
 
