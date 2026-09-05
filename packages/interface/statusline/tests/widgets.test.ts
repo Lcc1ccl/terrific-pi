@@ -61,21 +61,33 @@ describe("buildWidgetSegments", () => {
 			segments.filter((segment) => segment.id !== "path").map((segment) => segment.text),
 			[
 				"demo",
-				"⑂ main",
+				" main",
 				"+12 -3",
 				"Ready",
 				"task 1/2",
 				"gpt-5 high",
 				"",
-				"🕒 12s / 1m45s",
-				"🪟 [███░░░░░] 40%",
-				"🎯 66.7%",
-				"🔼 1.5K · 🔽 800",
+				" 12s / 1m45s",
+				" [███░░░░░] 40%",
+				" 66.7%",
+				" 1.5K ·  800",
 				"$0.42",
 			],
 		);
 		const path = segments.find((segment) => segment.id === "path");
-		assert.equal(path?.text, "📁 /home/user/proj");
+		assert.equal(path?.text, " /home/user/proj");
+	});
+
+	it("falls back to the configured Nerd default when iconMode is absent", () => {
+		const segments = buildWidgetSegments(baseSnapshot, {
+			...DEFAULT_CONFIG,
+			lines: line1(["path", "tokens"]),
+			iconMode: undefined as never,
+		});
+		assert.deepEqual(segments.map((segment) => segment.text), [
+			" /home/user/proj",
+			" 1.5K ·  800",
+		]);
 	});
 
 	it("builds default-oriented segments with new p0 widgets", () => {
@@ -83,7 +95,7 @@ describe("buildWidgetSegments", () => {
 		const texts = segments.map((segment) => segment.text);
 		assert.ok(texts.some((text) => text.includes("demo")));
 		assert.ok(texts.some((text) => text.includes("$0.42")));
-		assert.ok(texts.some((text) => text.includes("🎯 ") && text.includes("%")));
+		assert.ok(texts.some((text) => text.includes(" ") && text.includes("%")));
 		assert.ok(texts.some((text) => text.includes("ctx") || text.includes("%")));
 		assert.ok(texts.includes("Ready"));
 	});
@@ -163,7 +175,7 @@ describe("buildWidgetSegments", () => {
 		});
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
-			["🔼 1.5K · 🔽 800"],
+			[" 1.5K ·  800"],
 		);
 	});
 
@@ -228,8 +240,8 @@ describe("buildWidgetSegments", () => {
 			{ ...baseSnapshot, branch: "master" },
 			{ ...DEFAULT_CONFIG, lines: line1(["branch"]) },
 		);
-		assert.deepEqual(main.map((segment) => segment.text), ["⑂ main"]);
-		assert.deepEqual(master.map((segment) => segment.text), ["⑂ master"]);
+		assert.deepEqual(main.map((segment) => segment.text), [" main"]);
+		assert.deepEqual(master.map((segment) => segment.text), [" master"]);
 	});
 
 	it("shows an unavailable marker when context usage is missing or unknown after compaction", () => {
@@ -242,7 +254,7 @@ describe("buildWidgetSegments", () => {
 					{ ...baseSnapshot, context },
 					{ ...DEFAULT_CONFIG, lines: line1([widget]) },
 				);
-				assert.deepEqual(segments.map((segment) => segment.text), ["🪟 ?"]);
+				assert.deepEqual(segments.map((segment) => segment.text), [" ?"]);
 			}
 		}
 	});
@@ -262,7 +274,7 @@ describe("buildWidgetSegments", () => {
 		});
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
-			["🕒 12s / 1m45s", "Ready"],
+			[" 12s / 1m45s", "Ready"],
 		);
 	});
 
@@ -303,9 +315,9 @@ describe("buildWidgetSegments", () => {
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
 			[
-				"📊 5h [░░░░░░] 7%",
+				"󰓎 5h [░░░░░░] 7%",
 				"2 context files · 3 skills · 4 tools",
-				"✓ Read x6",
+				" Read x6",
 			],
 		);
 		assert.equal(segments[1]?.accent, "dim");

@@ -15,7 +15,7 @@ describe("formatWidgetsPreview", () => {
 		const preview = formatWidgetsPreview(lines({ line0: ["model"], line2: ["path", "cache"], line4: ["state"] }));
 		assert.match(preview, /model high/);
 		assert.match(preview, /proj|~/);
-		assert.match(preview, /🎯 \d+\.\d+%/);
+		assert.match(preview, / \d+\.\d+%/);
 		assert.match(preview, /Ready/);
 	});
 

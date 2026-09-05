@@ -57,6 +57,7 @@ function completedInput(): ProcessUpdateInput {
 
 interface HarnessOptions {
 	mode?: "tui" | "print" | "rpc" | "json";
+	platform?: NodeJS.Platform;
 	branch?: unknown[];
 	throwWidget?: boolean;
 	toolsExpanded?: boolean;
@@ -220,7 +221,7 @@ function createHarness(options: HarnessOptions = {}) {
 			entries.push({ type: "custom", customType, data });
 		},
 	};
-	taskboard(pi as never);
+	taskboard(pi as never, options.platform ?? "linux");
 
 	return {
 		ctx,
@@ -275,8 +276,18 @@ describe("taskboard registration and tool", () => {
 		assert.deepEqual(harness.command.getArgumentCompletions("default ").map((item: { value: string }) => item.value), [
 			"default compact", "default full", "default off",
 		]);
-		assert.equal(harness.shortcuts[0]?.shortcut, "shift+alt+o");
+		assert.deepEqual(harness.shortcuts.map(({ shortcut }) => shortcut), ["shift+alt+o"]);
 		assert.match(harness.shortcuts[0]?.options.description ?? "", /Taskboard/i);
+	});
+
+	it("adds a Ctrl+Shift+B macOS alias without removing Shift+Alt+O", async () => {
+		const harness = createHarness({ platform: "darwin" });
+		assert.deepEqual(harness.shortcuts.map(({ shortcut }) => shortcut), ["shift+alt+o", "ctrl+shift+b"]);
+		await execute(harness);
+
+		const alias = harness.shortcuts.find(({ shortcut }) => shortcut === "ctrl+shift+b");
+		await alias!.options.handler(harness.ctx);
+		assert.match(harness.currentWidget.render(110).join("\n"), /Taskboard.*Tasks.*Runtime/s);
 	});
 
 	it("toggles only the Taskboard live panel with Shift+Alt+O", async () => {

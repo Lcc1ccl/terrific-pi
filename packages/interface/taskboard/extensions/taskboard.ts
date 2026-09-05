@@ -144,7 +144,7 @@ function partialFromGit(snapshot: ProcessSnapshot, receipt: GitFinalizeReceipt, 
 	};
 }
 
-export default function taskboard(pi: ExtensionAPI) {
+export default function taskboard(pi: ExtensionAPI, platform: NodeJS.Platform = process.platform) {
 	let state: PersistedTaskboardState = createPersistedState(undefined, "compact");
 	let activityMode: TaskboardActivityMode = "full";
 	let control: RuntimeControlState = { requestStarted: false };
@@ -508,13 +508,20 @@ export default function taskboard(pi: ExtensionAPI) {
 		},
 	};
 	pi.registerCommand("taskboard", taskboardCommand);
-	pi.registerShortcut("shift+alt+o", {
-		description: "Toggle Taskboard live panel",
-		handler: (ctx) => {
-			panelExpanded = !panelExpanded;
-			refreshWidget(ctx);
-		},
-	});
+	for (const shortcut of [
+		"shift+alt+o" as const,
+		...(platform === "darwin" ? ["ctrl+shift+b" as const] : []),
+	]) {
+		pi.registerShortcut(shortcut, {
+			description: shortcut === "ctrl+shift+b"
+				? "Toggle Taskboard live panel (macOS)"
+				: "Toggle Taskboard live panel",
+			handler: (ctx) => {
+				panelExpanded = !panelExpanded;
+				refreshWidget(ctx);
+			},
+		});
+	}
 
 	pi.on("session_start", async (_event, ctx) => restore(ctx));
 

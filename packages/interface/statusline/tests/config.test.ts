@@ -75,6 +75,7 @@ describe("mergeStatuslineConfig", () => {
 		});
 		assert.equal(DEFAULT_CONFIG.contextMode, "used");
 		assert.equal(DEFAULT_CONFIG.contextBarWidth, 8);
+		assert.equal(DEFAULT_CONFIG.iconMode, "nerd");
 	});
 
 	it("keeps defaults for empty input without sharing line arrays", () => {
@@ -145,7 +146,9 @@ describe("mergeStatuslineConfig", () => {
 		}
 		assert.equal(mergeStatuslineConfig({ contextBarWidth: 8.9 }).contextBarWidth, 8);
 		assert.equal(mergeStatuslineConfig({ separator: "│" }).separator, "dot");
-		assert.equal(mergeStatuslineConfig({ iconMode: "unknown" }).iconMode, "emoji");
+		assert.equal(mergeStatuslineConfig({ iconMode: "unknown" }).iconMode, "nerd");
+		assert.equal(mergeStatuslineConfig({ iconMode: "emoji" }).iconMode, "emoji");
+		assert.equal(mergeStatuslineConfig({ iconMode: "nerd" }).iconMode, "nerd");
 	});
 
 	it("registers independent run metric widgets and enables only TTFT by default", () => {
@@ -235,7 +238,7 @@ describe("loadStatuslineConfigResult", () => {
 		assert.deepEqual(loaded.lines.line2, ["path", "cost"]);
 		assert.equal(loaded.minimal, true);
 		assert.equal(loaded.contextMode, DEFAULT_CONFIG.contextMode);
-		assert.equal(loaded.iconMode, "emoji");
+		assert.equal(loaded.iconMode, "nerd");
 		assert.equal(loaded.separator, "dot");
 		assert.equal(loaded.spacing, 1);
 	});

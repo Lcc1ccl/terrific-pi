@@ -48,10 +48,10 @@ See `examples/config.json`.
 |-------|---------|
 | `startup` | Show short-list picker on cold start and `/new` |
 | `startupScope` | Preferred scope order on startup (`session` safer) |
-| `openHotkey` | Open interactive picker (default `ctrl+alt+l`) |
+| `openHotkey` | Open interactive picker (default `ctrl+alt+l`; macOS also registers `ctrl+shift+l`) |
 | `profiles[]` | Numeric `id` (1…), `alias`, `provider`, `model`, `thinking`; optional `hotkey` |
 | `alias` | Command key for `/profile <alias>` and the name shown in list/status |
-| default hotkey | id `N` (1–9) → `alt+N` unless `hotkey` is set |
+| default hotkey | id `N` (1–9) → `alt+N`; macOS also registers `ctrl+N` |
 | omitted `alias` | id `1` falls back to `default`; aliases do not affect startup order |
 | delete renumber | TUI delete compacts remaining ids to `1…n` and shifts project overrides accordingly |
 | hotkey order | **Manage profiles → Hotkey order** shows every profile; Up/Down selects, Left/Right reorders, Enter saves and rewrites positions as `id=1…n` + `alt+1…9` |
@@ -70,11 +70,13 @@ See `examples/config.json`.
 
 Quick apply keeps the short-list profile picker and `session` / `global` scope choice as the first manager action. **Create profile** can either capture the live session or browse an available model and choose its supported thinking level before saving; it does not activate the new profile. The picker shows `Up/Down` navigate, `Enter` select/activate, and `Esc` action tips: `Esc` cancels from the profile list, while `Esc` on scope returns to the profile list. The manager's effective summary reports the global/project source for every profile. `alt+N` always **session** apply (works with draft text). The extension pre-registers `alt+1` through `alt+9` and reads their target from the latest `terrific.json`, so newly created default-numbered profiles and Hotkey order changes work immediately in the current session. A newly entered non-default custom binding still requires **`/reload`** because Pi exposes no shortcut unregister/refresh API after the TUI snapshots extension shortcuts.
 
+On macOS, Pi's portable key syntax still calls the physical Option key `alt`; `opt+…` is not a valid `KeyId`. Because a terminal may translate `Option+1` into `¡` instead of reporting an Alt modifier, model-profile additionally registers `Ctrl+1` through `Ctrl+9` for the numbered defaults and `Ctrl+Shift+L` for the default picker binding. The original `alt` shortcuts remain registered. Custom bindings are not rewritten; use a `ctrl` binding or configure the terminal to report Option as Alt/Esc+.
+
 ## Session vs global vs official /model
 
 | Path | Session model | `settings.json` defaults |
 |------|---------------|---------------------------|
-| `/profile …` / `alt+N` (session) | changes | **restored** after switch |
+| `/profile …` / numbered hotkey (session) | changes | **restored** after switch |
 | `/profile … global` | changes | **updated** |
 | Official `/model`, `Ctrl+P`, `Ctrl+L` | changes | **updated** (pi core; not wrapped) |
 
@@ -88,7 +90,7 @@ When you switch via **official** `/model`, `Ctrl+L`, `Ctrl+P` cycle, or thinking
 Switched via official picker: settings defaults updated to openai/gpt-5.6-luna (pi core). Use /profile for session-only.
 ```
 
-Switches done through `/profile` / `alt+N` / startup picker **do not** show that tip (session path restores defaults; global path is intentional).
+Switches done through `/profile`, a numbered profile hotkey, or the startup picker **do not** show that tip (session path restores defaults; global path is intentional).
 
 ## Startup matrix
 

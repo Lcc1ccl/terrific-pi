@@ -211,8 +211,8 @@ describe("responsive fitting", () => {
 			buildWidgetSegments(snapshot, value), value, TEST_THEME, 26, plainVisibleWidth,
 		);
 		assert.deepEqual(fitted.map((segment) => segment.id), ["path", "model"]);
-		assert.match(fitted[0]?.text ?? "", /^📁 …/);
-		assert.ok(plainVisibleWidth(fitted[0]?.text ?? "") < plainVisibleWidth("📁 /home/user/a/very/long/project/directory/statusline-optimization"));
+		assert.match(fitted[0]?.text ?? "", /^ …/);
+		assert.ok(plainVisibleWidth(fitted[0]?.text ?? "") < plainVisibleWidth(" /home/user/a/very/long/project/directory/statusline-optimization"));
 	});
 
 	it("preserves grapheme clusters when left-ellipsizing paths", () => {
@@ -245,7 +245,7 @@ describe("responsive fitting", () => {
 		renderStatusLine(buildWidgetSegments(hudSnapshot, value), value, theme, 200, (text) => text);
 		assert.ok(calls.some(([color, text]) => color === "accent" && text === "gpt-5"));
 		assert.ok(calls.some(([color, text]) => color === "thinkingHigh" && text === " high"));
-		assert.ok(calls.some(([color, text]) => color === "accent" && text.includes("📁")));
+		assert.ok(calls.some(([color, text]) => color === "accent" && text.includes("")));
 		assert.ok(calls.some(([color, text]) => color === "accent" && text === "/home/user/"));
 		assert.ok(calls.some(([color, text]) => color === "accent" && text === "proj"));
 		assert.ok(calls.some(([color, text]) => color === "mdHeading" && text.includes("main")));

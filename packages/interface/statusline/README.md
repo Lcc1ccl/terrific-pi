@@ -35,13 +35,16 @@ Built for pi's `setFooter` extension API plus Appearance's versioned editor brid
 
 ## Default lines
 
-The package default assigns model metadata to `LINE0` and the ordinary status row to `LINE1`. Optional widgets remain disabled.
+The package default uses three surfaces: project context on `LINE0`, run state on `LINE1`, and context/usage on `LINE2`. `runTtft` is enabled but remains hidden until a settled run provides data.
+
+Nerd Font glyphs are the default while `emoji`, `plain`, `ascii`, and `auto` remain independent choices.
 
 With Appearance enabled:
 
 ```text
-editor top-left:     model high · EDIT · 
-editor bottom-right: 📁 ~/proj · session · 🔼 1.5K · 🔽 800 · 🎯 66.7% · $0.42 · 🪟 [██████░░░░] 60% · ⑂ main · +12 -3 · 🕒 12s / 1m45s · Ready
+editor top-left:     EDIT · session ·  ~/proj ·  main · +12 -3
+editor bottom-right: Ready · task · model high ·  ·  12s / 1m45s
+footer:               [██████░░] 60% ·  66.7% ·  1.5K ·  800 · $0.42
 ```
 
 `mode` and `fast` are configured by default but render only while active. Without an active Appearance editor owner, nonempty `LINE0` through `LINE4` render as footer rows in order so configured information is not lost. `/statusline` remains the configuration owner in both cases.
@@ -79,32 +82,22 @@ Optional config file:
 
 `spacing` is the number of terminal space cells placed on each side of the widget separator. Default: `1`; minimum: `0`; maximum: `4`.
 
-`contextBarWidth` is an integer terminal-cell width. Default: `10`; minimum: `4`; maximum: `40`.
+`contextBarWidth` is an integer terminal-cell width. Default: `8`; minimum: `4`; maximum: `40`.
+
+The complete default configuration is:
 
 ```json
 {
   "lines": {
-    "line0": ["model", "mode", "fast"],
-    "line1": [
-      "path",
-      "session",
-      "tokens",
-      "cache",
-      "cost",
-      "contextBar",
-      "branch",
-      "branchDiff",
-      "progress",
-      "duration",
-      "state"
-    ],
-    "line2": [],
+    "line0": ["mode", "session", "path", "branch", "branchDiff"],
+    "line1": ["state", "progress", "model", "fast", "duration", "runTtft"],
+    "line2": ["contextBar", "cache", "tokens", "cost"],
     "line3": [],
     "line4": []
   },
-  "iconMode": "emoji",
-  "contextMode": "remaining",
-  "contextBarWidth": 10,
+  "iconMode": "nerd",
+  "contextMode": "used",
+  "contextBarWidth": 8,
   "minimal": false,
   "separator": "dot",
   "spacing": 1,

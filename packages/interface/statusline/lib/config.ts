@@ -115,7 +115,7 @@ export const DEFAULT_WIDGET_ORDER: WidgetLines = {
 export const DEFAULT_CONFIG: StatuslineConfig = {
 	lines: cloneWidgetLines(DEFAULT_LINES),
 	widgetOrder: cloneWidgetLines(DEFAULT_WIDGET_ORDER),
-	iconMode: "emoji",
+	iconMode: "nerd",
 	contextMode: "used",
 	contextBarWidth: 8,
 	minimal: false,

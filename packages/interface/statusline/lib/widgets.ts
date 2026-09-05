@@ -196,7 +196,7 @@ export function formatWidgetsPreviewLines(
 export function buildWidgetSegments(snapshot: StatusSnapshot, config: StatuslineConfig): WidgetSegment[] {
 	const segments: WidgetSegment[] = [];
 	const minimal = config.minimal;
-	const iconMode = config.iconMode ?? "emoji";
+	const iconMode = config.iconMode ?? DEFAULT_CONFIG.iconMode;
 
 	for (const id of enabledWidgets(config)) {
 		const priority = WIDGET_PRIORITY[id] ?? 50;

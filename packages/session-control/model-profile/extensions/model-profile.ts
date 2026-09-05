@@ -210,7 +210,7 @@ function selectScopeOption(
 	return selectTuiOption(ctx, title, options, { cancelAction: "back" });
 }
 
-export default function (pi: ExtensionAPI) {
+export default function (pi: ExtensionAPI, platform: NodeJS.Platform = process.platform) {
 	const registeredHotkeys = new Set<string>();
 	/** Serialize applies so snapshot/restore cannot interleave. */
 	let applyQueue: Promise<void> = Promise.resolve();
@@ -434,41 +434,53 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
-	async function dispatchHotkey(ctx: ExtensionContext, hotkey: string): Promise<void> {
+	async function dispatchHotkey(
+		ctx: ExtensionContext,
+		hotkey: string,
+		fallbacks: readonly string[] = [],
+	): Promise<void> {
 		const { config: latest, warnings } = load(ctx);
 		for (const warning of warnings) report(ctx, warning, "warning");
-		if (latest.openHotkey === hotkey) {
-			await interactivePick(ctx);
-			return;
+		for (const candidate of [hotkey, ...fallbacks]) {
+			if (latest.openHotkey === candidate) {
+				await interactivePick(ctx);
+				return;
+			}
+			const target = findProfileByHotkey(latest.profiles, candidate);
+			if (target) {
+				await runApply(ctx, target, "session");
+				return;
+			}
 		}
-		const target = findProfileByHotkey(latest.profiles, hotkey);
-		if (!target) {
-			report(ctx, `Hotkey ${hotkey} is no longer bound in terrific.json`, "warning");
-			return;
-		}
-		await runApply(ctx, target, "session");
+		report(ctx, `Hotkey ${hotkey} is no longer bound in terrific.json`, "warning");
+	}
+
+	function registerHotkey(hotkey: string, description: string, fallbacks: readonly string[] = []): void {
+		if (registeredHotkeys.has(hotkey)) return;
+		registeredHotkeys.add(hotkey);
+		pi.registerShortcut(hotkey as Parameters<ExtensionAPI["registerShortcut"]>[0], {
+			description,
+			handler: async (shortcutCtx) => dispatchHotkey(shortcutCtx, hotkey, fallbacks),
+		});
 	}
 
 	async function ensureHotkeys(ctx: ExtensionContext): Promise<void> {
 		const { config } = load(ctx);
 
 		const openHotkey = config.openHotkey;
-		if (openHotkey && !registeredHotkeys.has(openHotkey)) {
-			registeredHotkeys.add(openHotkey);
-			pi.registerShortcut(openHotkey as Parameters<ExtensionAPI["registerShortcut"]>[0], {
-				description: "model-profile: open picker",
-				handler: async (shortcutCtx) => dispatchHotkey(shortcutCtx, openHotkey),
-			});
+		if (openHotkey) {
+			registerHotkey(openHotkey, "model-profile: open picker");
+			if (platform === "darwin" && openHotkey === "ctrl+alt+l") {
+				registerHotkey("ctrl+shift+l", "model-profile: open picker (macOS)", [openHotkey]);
+			}
 		}
 
 		for (let digit = 1; digit <= 9; digit += 1) {
 			const hotkey = `alt+${digit}`;
-			if (registeredHotkeys.has(hotkey)) continue;
-			registeredHotkeys.add(hotkey);
-			pi.registerShortcut(hotkey as Parameters<ExtensionAPI["registerShortcut"]>[0], {
-				description: `model-profile: profile ${digit}`,
-				handler: async (shortcutCtx) => dispatchHotkey(shortcutCtx, hotkey),
-			});
+			registerHotkey(hotkey, `model-profile: profile ${digit}`);
+			if (platform === "darwin") {
+				registerHotkey(`ctrl+${digit}`, `model-profile: profile ${digit} (macOS)`, [hotkey]);
+			}
 		}
 
 		for (const profile of config.profiles) {
@@ -484,11 +496,7 @@ export default function (pi: ExtensionAPI) {
 				}
 				continue;
 			}
-			registeredHotkeys.add(hotkey);
-			pi.registerShortcut(hotkey as Parameters<ExtensionAPI["registerShortcut"]>[0], {
-				description: `model-profile: ${profile.id}`,
-				handler: async (shortcutCtx) => dispatchHotkey(shortcutCtx, hotkey),
-			});
+			registerHotkey(hotkey, `model-profile: ${profile.id}`);
 		}
 	}
 
@@ -530,14 +538,20 @@ export default function (pi: ExtensionAPI) {
 						"  /profile startup [on|off]     cold-start /new short-list picker",
 						"  /profile <id|alias>           session apply (e.g. 1 or default)",
 						"  /profile <id|alias> session|global",
-						"  alt+N                         jump to profile N (session-only)",
-						"  openHotkey (default ctrl+alt+l) opens the picker",
+						platform === "darwin"
+							? "  ctrl+N                       jump to profile N on macOS (alt+N remains registered)"
+							: "  alt+N                        jump to profile N (session-only)",
+						platform === "darwin"
+							? "  ctrl+shift+l                 opens the picker on macOS when openHotkey uses its default"
+							: "  openHotkey (default ctrl+alt+l) opens the picker",
 						"",
 						"Session apply restores settings.json defaults after switch (pi setModel persists otherwise).",
 						"Global apply keeps the new defaults.",
 						"Official /model and Ctrl+P still update global defaults — use /profile for session-only.",
 						"Config: ~/.pi/agent/terrific.json → modelProfile.",
-						"Profile targets and the default alt+1..9 bindings update immediately from terrific.json; custom bindings require /reload.",
+						platform === "darwin"
+							? "Profile targets update immediately; macOS Ctrl+1..9 aliases avoid terminal Option-key text mappings; custom bindings require /reload."
+							: "Profile targets and the default alt+1..9 bindings update immediately from terrific.json; custom bindings require /reload.",
 					].join("\n"),
 				);
 				return;

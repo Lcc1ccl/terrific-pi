@@ -5,7 +5,7 @@ Structured task milestones and task-scoped HUD for [pi](https://pi.dev).
 Taskboard keeps multi-step work inspectable while `presentation` owns collapsed tool history:
 
 - a compact editor-above HUD for the goal, task progress, current-step time, and blocker
-- a live task panel toggled independently with `Shift+Alt+O`
+- a live task panel toggled independently with `Ctrl+Shift+B` or `Shift+Alt+O` on macOS, and `Shift+Alt+O` elsewhere
 - expandable `process_update` history without repeating the snapshot currently visible in the HUD
 
 ## Install
@@ -36,7 +36,7 @@ Snapshots support:
 - branch-aware restoration through `process-view-state-v1` custom entries
 - extension-owned step timing plus model, token, cache, and cost telemetry without adding model-facing fields
 
-Tool calls execute sequentially. Invalid snapshots throw without changing memory, session state, or the Widget. The call itself is hidden, and validation errors remain available to the model while rendering silently in the TUI. While the HUD owns the current snapshot, its successful collapsed result is suppressed; it reappears after a newer milestone replaces it, or after the completed HUD settles away. Expanded successful details are never suppressed. Use `Shift+Alt+O` to toggle only the Taskboard live panel; Pi's `app.tools.expand` binding remains independent.
+Tool calls execute sequentially. Invalid snapshots throw without changing memory, session state, or the Widget. The call itself is hidden, and validation errors remain available to the model while rendering silently in the TUI. While the HUD owns the current snapshot, its successful collapsed result is suppressed; it reappears after a newer milestone replaces it, or after the completed HUD settles away. Expanded successful details are never suppressed. Use `Ctrl+Shift+B` or `Shift+Alt+O` on macOS to toggle only the Taskboard live panel; Pi's `app.tools.expand` binding remains independent.
 
 ## HUD
 
@@ -67,14 +67,14 @@ When activity is visible, only `read`, `edit`, `write`, `grep`, `find`, and `ls`
 
 ```text
 /taskboard              TUI manager: summary, view mode, global default, live-panel expansion, confirmed clear
-/taskboard compact      compact by default; Shift+Alt+O toggles the live panel
+/taskboard compact      compact by default; Ctrl+Shift+B (macOS) or Shift+Alt+O toggles the live panel
 /taskboard full         pin the live task/runtime panel open
 /taskboard off          hide the HUD while retaining state and receipts
 /taskboard clear        TUI confirmation, then write a tombstone and clear the current task
 /taskboard default <mode>  save compact|full|off for new session branches
 ```
 
-Outside TUI mode, bare `/taskboard` prints the current summary and `/taskboard clear` refuses without TUI confirmation. View mode is stored per session branch. `taskboard.defaultViewMode` in `~/.pi/agent/terrific.json` supplies the initial mode only when a branch has no saved Taskboard state; `/taskboard default <mode>` writes that global default. The extension registers `Shift+Alt+O` to toggle only the live panel. Pi's default `Ctrl+O` remains bound to `app.tools.expand` and does not affect the Taskboard live panel.
+Outside TUI mode, bare `/taskboard` prints the current summary and `/taskboard clear` refuses without TUI confirmation. View mode is stored per session branch. `taskboard.defaultViewMode` in `~/.pi/agent/terrific.json` supplies the initial mode only when a branch has no saved Taskboard state; `/taskboard default <mode>` writes that global default. The extension registers `Shift+Alt+O` everywhere and adds `Ctrl+Shift+B` on macOS to avoid terminal Option-key text mappings. Pi's default `Ctrl+O` remains bound to `app.tools.expand` and does not affect the Taskboard live panel.
 
 ## Compatibility Window
 
