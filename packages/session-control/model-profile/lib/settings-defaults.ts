@@ -149,9 +149,10 @@ export function snapshotSettingsFile(agentDir: string): SettingsFileSnapshot {
 	}
 }
 
-/** Restore a snapshot created by snapshotSettingsFile after Pi persists a session switch. */
+/** Compare-and-restore prior model defaults after Pi persists a session switch. */
 export function restoreSettingsFile(
 	snapshot: Extract<SettingsFileSnapshot, { ok: true }>,
+	expected: SettingsDefaults,
 ): WriteSettingsResult {
 	const path = snapshot.path;
 	try {
@@ -167,15 +168,39 @@ export function restoreSettingsFile(
 	const lock = acquireLock(path);
 	if (!lock.ok) return { ok: false, path, error: lock.error };
 	try {
-		if (!snapshot.exists) {
-			try {
-				unlinkSync(path);
-			} catch (error) {
-				if (errorCode(error) !== "ENOENT") throw error;
-			}
-			return { ok: true, path };
+		let current: Record<string, unknown>;
+		try {
+			const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+			if (!isRecord(parsed)) throw new Error("settings.json root is not an object");
+			current = parsed;
+		} catch (error) {
+			return { ok: false, path, error: `Cannot safely restore settings defaults: ${error instanceof Error ? error.message : String(error)}` };
 		}
-		writeFileAtomically(path, snapshot.content, snapshot.mode, "settings");
+		let original: Record<string, unknown> = {};
+		if (snapshot.exists) {
+			try {
+				const parsed: unknown = JSON.parse(snapshot.content);
+				if (!isRecord(parsed)) throw new Error("snapshot root is not an object");
+				original = parsed;
+			} catch {
+				return { ok: false, path, error: "Cannot safely restore defaults from a malformed settings.json snapshot" };
+			}
+		}
+		const originalPair = [original.defaultProvider, original.defaultModel];
+		const currentPair = [current.defaultProvider, current.defaultModel];
+		const expectedPair = [expected.defaultProvider, expected.defaultModel];
+		const pairMatches = (left: unknown[], right: unknown[]) => left[0] === right[0] && left[1] === right[1];
+		const thinkingMatches = current.defaultThinkingLevel === expected.defaultThinkingLevel
+			|| current.defaultThinkingLevel === original.defaultThinkingLevel;
+		if ((!pairMatches(currentPair, expectedPair) && !pairMatches(currentPair, originalPair)) || !thinkingMatches) {
+			return { ok: false, path, error: "settings.json model defaults changed concurrently; current values were preserved" };
+		}
+		for (const key of ["defaultProvider", "defaultModel", "defaultThinkingLevel"] as const) {
+			if (Object.hasOwn(original, key)) current[key] = original[key];
+			else delete current[key];
+		}
+		const mode = existsSync(path) ? statSync(path).mode & 0o777 : snapshot.exists ? snapshot.mode : 0o600;
+		writeFileAtomically(path, `${JSON.stringify(current, null, 2)}\n`, mode, "settings");
 		return { ok: true, path };
 	} catch (error) {
 		return {

@@ -5,7 +5,8 @@ Structured task milestones and task-scoped HUD for [pi](https://pi.dev).
 Taskboard keeps multi-step work inspectable while `presentation` owns collapsed tool history:
 
 - a compact editor-above HUD for the goal, task progress, current-step time, and blocker
-- a live task panel toggled independently with `Ctrl+Shift+B` or `Shift+Alt+O` on macOS, and `Shift+Alt+O` elsewhere
+- a live task panel toggled independently with a configurable shortcut (`Ctrl+Shift+B` and `Shift+Alt+O` on macOS; `Shift+Alt+O` elsewhere)
+- a one-shot, read-only `/taskboard inspect` summary
 - expandable `process_update` history without repeating the snapshot currently visible in the HUD
 
 ## Install
@@ -30,19 +31,26 @@ Snapshots support:
 
 - `running`, `waiting`, `blocked`, and `completed`
 - deterministic completion from a verified terminal `git_finalize` receipt: only when every prior step is done and the sole active final step is ready to commit
-- at most one newly completed step per `process_update` call, matched by normalized step text; batch completion is rejected before state changes
+- batch completion is accepted and atomically persists the final truthful snapshot
 - one to five outcome-oriented steps
 - a concise update, blocker, verification, and up to five artifacts
-- branch-aware restoration through `process-view-state-v1` custom entries
+- branch-aware restoration through `process-view-state-v1` custom entries, including automatic ID migration for legacy entries
+- internal stable step identities that keep timing and usage attached across unambiguous rename, reorder, insert, and delete updates
+- monotonic completion: a stable `done` step cannot return to `pending` or `active`, while `failed` steps can retry
+- semantic no-op detection that returns `Taskboard unchanged` without writing an entry or resetting telemetry
 - extension-owned step timing plus model, token, cache, and cost telemetry without adding model-facing fields
 
-Tool calls execute sequentially. Invalid snapshots throw without changing memory, session state, or the Widget. The call itself is hidden, and validation errors remain available to the model while rendering silently in the TUI. While the HUD owns the current snapshot, its successful collapsed result is suppressed; it reappears after a newer milestone replaces it, or after the completed HUD settles away. Expanded successful details are never suppressed. Use `Ctrl+Shift+B` or `Shift+Alt+O` on macOS to toggle only the Taskboard live panel; Pi's `app.tools.expand` binding remains independent.
+Tool calls execute sequentially. Identity reconciliation, state transitions, and snapshot semantics are fully validated before session or in-memory state changes. Batch progress is accepted as one final snapshot, so an append failure or invalid transition leaves memory, timers, session state, and the Widget unchanged. Repeating an identical normalized snapshot does not append a custom entry or refresh telemetry. The call itself is hidden, and validation errors remain available to the model while rendering silently in the TUI. While the HUD owns the current snapshot, its successful collapsed result is suppressed; it reappears after a newer milestone replaces it, or after the completed HUD settles away. Expanded successful details are never suppressed. The configured Taskboard shortcut toggles only the live panel; Pi's `app.tools.expand` binding remains independent.
 
 ## HUD
 
 The Widget key is `terrific-pi:taskboard` and uses Pi theme tokens. Its compact first line keeps the goal, labeled current-step position, current task, and current-step active time together. The latest blocker, update, or verification may use one additional line.
 
-`taskboard.activityMode` controls runtime activity independently from task state. Existing `processView` config is read only when `taskboard` is absent; the next `/taskboard default <mode>` migrates it atomically:
+`taskboard.activityMode` controls runtime activity independently from task state. `taskboard.maxPanelLines` sets the full-panel budget from 8 through 20 (default `15`). Over-budget panels preserve the title/progress, current or failed steps, blocker, verification, and latest update before ordinary pending/done steps or runtime details; hidden rows receive a classified summary.
+
+`taskboard.toggleShortcut` accepts a Pi `KeyId` (default `shift+alt+o`) or `off`. On macOS, the default additionally registers `ctrl+shift+b`, avoiding terminals that translate Option combinations into text; Pi configuration still spells the physical Option modifier as `alt`. Custom bindings are not rewritten. Invalid values fall back to the default and warn once. Run `/reload` after changing this value so Pi tears down the previous extension shortcut and registers the new one.
+
+Existing `processView` config is read only when `taskboard` is absent; the next `/taskboard default <mode>` migrates it atomically:
 
 - `full` (default): show aggregate runtime activity in compact task views and detailed sanitized activity in expanded task views. Compact mode intentionally shows counts/outcomes rather than duplicating native tool-row labels.
 - `task`: hide passive and collapsed runtime activity; expanded task panels still show it for inspection. Use it only when another stable activity surface is enabled.
@@ -59,7 +67,7 @@ When the Taskboard live panel is expanded, compact mode switches to a detailed v
 
 LLM turn wall-clock (current turn / session) stays in statusline `duration`; Taskboard only shows task/step active time and usage totals.
 
-The panel is responsive, bounded to 15 lines, and `/taskboard full` pins it open. Step time pauses while Waiting, Blocked, or Interrupted and resumes if the same step becomes active again.
+The panel is responsive and bounded by `taskboard.maxPanelLines`; `/taskboard full` pins it open. Step time pauses while Waiting, Blocked, or Interrupted and resumes if the same stable step becomes active again.
 
 When activity is visible, only `read`, `edit`, `write`, `grep`, `find`, and `ls` may show a sanitized path. Paths outside the workspace show only their basename. `bash` never shows its command, and unknown tools never serialize arguments or results.
 
@@ -70,11 +78,12 @@ When activity is visible, only `read`, `edit`, `write`, `grep`, `find`, and `ls`
 /taskboard compact      compact by default; Ctrl+Shift+B (macOS) or Shift+Alt+O toggles the live panel
 /taskboard full         pin the live task/runtime panel open
 /taskboard off          hide the HUD while retaining state and receipts
+/taskboard inspect      print every step, fact field, artifact label, and telemetry once without changing state
 /taskboard clear        TUI confirmation, then write a tombstone and clear the current task
 /taskboard default <mode>  save compact|full|off for new session branches
 ```
 
-Outside TUI mode, bare `/taskboard` prints the current summary and `/taskboard clear` refuses without TUI confirmation. View mode is stored per session branch. `taskboard.defaultViewMode` in `~/.pi/agent/terrific.json` supplies the initial mode only when a branch has no saved Taskboard state; `/taskboard default <mode>` writes that global default. The extension registers `Shift+Alt+O` everywhere and adds `Ctrl+Shift+B` on macOS to avoid terminal Option-key text mappings. Pi's default `Ctrl+O` remains bound to `app.tools.expand` and does not affect the Taskboard live panel.
+Outside TUI mode, bare `/taskboard` reports the current summary and `/taskboard clear` refuses without TUI confirmation. `/taskboard inspect` emits the same plain-text detail in TUI, RPC, and print modes without changing the saved view mode or appending task state. View mode is stored per session branch. `taskboard.defaultViewMode` in `~/.pi/agent/terrific.json` supplies the initial mode only when a branch has no saved Taskboard state; `/taskboard default <mode>` writes that global default. `taskboard.toggleShortcut` controls the live-panel shortcut. Pi's default `Ctrl+O` remains bound to `app.tools.expand` and does not affect the Taskboard live panel.
 
 ## Compatibility Window
 
@@ -88,6 +97,7 @@ Use `/taskboard` and the `taskboard` config/status keys for all new integrations
 
 ## Lifecycle
 
+- Legacy snapshots without internal step IDs are migrated and written back once on restore; IDs remain absent from model parameters, HUD text, and context reminders.
 - A new user request writes a tombstone before starting, so old Waiting or Blocked state cannot reappear if the new request never calls `process_update`.
 - Unfinished state from the previous request or a compaction is injected into the next provider context once, as a bounded hidden `process-view-context` message.
 - The reminder contains only title, status, steps, and blocker. It is not written to the session and may not appear as a separate item in `/context` accounting.

@@ -8,6 +8,7 @@ import {
 	type Context,
 	type Message,
 	type Model,
+	type ProviderHeaders,
 	type SimpleStreamOptions,
 	type Usage,
 } from "@earendil-works/pi-ai";
@@ -47,7 +48,7 @@ export class AuxiliaryError extends Error {
 interface RegistryLike {
 	find(provider: string, modelId: string): Model<Api> | undefined;
 	getApiKeyAndHeaders(model: Model<Api>): Promise<
-		| { ok: true; apiKey?: string; headers?: Record<string, string>; env?: Record<string, string> }
+		| { ok: true; apiKey?: string; headers?: ProviderHeaders; env?: Record<string, string> }
 		| { ok: false; error: string }
 	>;
 	getRegisteredProviderIds(): readonly string[];
@@ -351,7 +352,8 @@ export class AuxiliaryRuntime {
 						request.preparation,
 						{ ...selected, maxTokens: Math.min(selected.maxTokens, route.maxOutputTokens) },
 						auth.apiKey,
-						auth.headers,
+						// compact() still declares string-only headers but forwards ProviderHeaders unchanged.
+						auth.headers as Record<string, string> | undefined,
 						request.customInstructions,
 						signal,
 						thinking,

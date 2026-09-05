@@ -84,6 +84,14 @@ function createHarness(
 	};
 }
 
+test("presentation hydration prefers Pi's compaction-aware entries", async () => {
+	const harness = createHarness();
+	let calls = 0;
+	(harness.ctx.sessionManager as any).buildContextEntries = () => { calls += 1; return []; };
+	await harness.emit("session_start", { reason: "resume" });
+	assert.equal(calls, 1);
+});
+
 test("presentation appends UI-only system events without owning built-in execution tools", async () => {
 	const agentDir = mkdtempSync(join(tmpdir(), "presentation-extension-"));
 	const previous = process.env.PI_CODING_AGENT_DIR;

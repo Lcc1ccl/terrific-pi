@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
 	ArtifactJournal,
+	MAX_PERSISTED_ARTIFACT_BYTES,
 	captureGitSnapshot,
 	diffLineStats,
 	reconcileGitSnapshots,
@@ -461,6 +462,52 @@ test("Git tracks a workspace symlink without following its external target", asy
 		assert.deepEqual(receipt?.files.map(({ path, operation }) => ({ path, operation })), [
 			{ path: "external-link", operation: "added" },
 		]);
+	} finally {
+		rmSync(workspace, { recursive: true, force: true });
+	}
+});
+
+test("artifact receipts cap persisted rows and retain the full file count", async () => {
+	const workspace = mkdtempSync(join(tmpdir(), "presentation-artifact-cap-"));
+	try {
+		const journal = new ArtifactJournal();
+		await journal.begin(workspace, { files: new Map() }, "request-cap");
+		const files = new Map(Array.from({ length: 105 }, (_, index) => {
+			const path = `generated/file-${String(index).padStart(3, "0")}.txt`;
+			return [path, { path, operation: "added" as const, contentChanged: true }];
+		}));
+		const receipt = await journal.snapshot(
+			1,
+			[{ toolCallId: "bash-1", toolName: "bash" }],
+			{ files },
+		);
+		assert.equal(receipt?.files.length, 100);
+		assert.equal(receipt?.totalFiles, 105);
+		assert.equal(receipt?.omittedFiles, 5);
+		assert.equal(receipt?.truncated, true);
+		assert.ok(Buffer.byteLength(JSON.stringify(receipt), "utf8") <= MAX_PERSISTED_ARTIFACT_BYTES);
+	} finally {
+		rmSync(workspace, { recursive: true, force: true });
+	}
+});
+
+test("known read-only and control tools never receive a file-change receipt", async () => {
+	const workspace = mkdtempSync(join(tmpdir(), "presentation-read-anchor-"));
+	try {
+		const files = new Map([["generated.txt", {
+			path: "generated.txt",
+			operation: "added" as const,
+			contentChanged: true,
+		}]]);
+		for (const toolName of ["read", "question", "questionnaire", "intercom", "subagent_supervisor", "subagent_wait"]) {
+			const journal = new ArtifactJournal();
+			await journal.begin(workspace, { files: new Map() }, `request-${toolName}`);
+			assert.equal(await journal.snapshot(
+				1,
+				[{ toolCallId: `${toolName}-1`, toolName }],
+				{ files },
+			), undefined, toolName);
+		}
 	} finally {
 		rmSync(workspace, { recursive: true, force: true });
 	}

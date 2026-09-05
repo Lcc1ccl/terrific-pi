@@ -167,6 +167,8 @@ export function validateResearchOutput(value: string): string {
 	const urls = new Set((output.match(/https?:\/\/[^\s<>()\[\]{}"']+/g) ?? [])
 		.map((url) => url.replace(/[.,;:!?。，；：！？]+$/, "")));
 	if (urls.size < 3) throw new Error("Research output must include at least three source URLs");
-	if (urls.size > 8) throw new Error("Research output must include at most eight source URLs");
-	return output;
+	if (urls.size <= 8) return output;
+	const allowed = new Set([...urls].slice(0, 8));
+	return output.replace(/https?:\/\/[^\s<>()\[\]{}"']+/g, (url) =>
+		allowed.has(url.replace(/[.,;:!?。，；：！？]+$/, "")) ? url : "[...]");
 }

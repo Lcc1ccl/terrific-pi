@@ -1,19 +1,25 @@
+export interface FastRequestStatus {
+	api?: string;
+	modelId?: string;
+	eligible: boolean;
+	injected: boolean;
+}
+
 export function formatFastStatus(
 	preferred: boolean,
 	api: string | undefined,
 	configPath: string,
-	modelId?: string,
+	modelId: string | undefined,
+	eligible: boolean,
+	lastRequest?: FastRequestStatus,
 ): string {
-	const apiOk = typeof api === "string"
-		&& ["openai-responses", "openai-codex-responses", "azure-openai-responses"].includes(api);
-	const id = typeof modelId === "string" ? modelId.trim().toLowerCase() : "";
-	const gptOk = id === "gpt" || id.startsWith("gpt-") || id.startsWith("gpt.");
-	const active = preferred && apiOk && gptOk;
 	return [
-		`Preference: ${preferred ? "on" : "off"}`,
-		`Effective: ${active ? "active" : "inactive"}`,
+		`Preferred: ${preferred ? "on" : "off"}`,
+		`Eligible: ${eligible ? "yes" : "no"}`,
+		`Injected (last provider request): ${lastRequest ? lastRequest.injected ? "yes" : "no" : "not observed"}`,
 		`Current API: ${api ?? "unknown"}`,
 		`Current model: ${modelId ?? "unknown"}`,
+		...(lastRequest ? [`Last request: ${lastRequest.api ?? "unknown"} / ${lastRequest.modelId ?? "unknown"} · eligible ${lastRequest.eligible ? "yes" : "no"}`] : []),
 		`Requires: GPT model id (gpt / gpt-* / gpt.*) on openai-family Responses`,
 		`Config: ${configPath}`,
 	].join("\n");

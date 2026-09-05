@@ -25,7 +25,7 @@ The default `omp` style changes transcript projection only:
 
 The `classic` style preserves the earlier presentation behavior: framed user messages, single-line compact Bash/tool states, and combined read/search/list exploration summaries. Switching styles is dynamic and does not rewrite session history.
 
-Successful file changes remain one request-scoped net receipt projected onto the final contributing native tool row. Exact registered Skill reads keep their `Skill(name)` identity. Legacy projection entries remain hidden so restored sessions do not duplicate native history.
+Successful file changes remain one request-scoped net receipt projected onto the final contributing native tool row. Durable v2 receipts retain full-set counts and diff totals but persist at most 100 file rows and 64 KiB; omitted rows are reported explicitly. Known read-only and control tools never receive file-change receipts; unknown custom tools remain eligible because Pi exposes no mutation metadata. Orphan historical anchors are ignored, and resume/tree hydration follows Pi's compaction-aware transcript entries. Exact registered Skill reads keep their `Skill(name)` identity. Legacy projection entries remain hidden so restored sessions do not duplicate native history.
 
 Compatibility patches are all-or-nothing for `AssistantMessageComponent.prototype.render`, `UserMessageComponent.prototype.render`, and `ToolExecutionComponent.prototype.render`. Any Pi version with the required component constructors and methods is accepted; missing exports or methods fall back to native output with one warning. Patch ownership remains reference-counted and compare-and-swap on unload.
 

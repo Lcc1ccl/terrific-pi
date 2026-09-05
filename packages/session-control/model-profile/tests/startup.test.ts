@@ -12,6 +12,7 @@ import {
 	CURRENT_SESSION_ENTRY,
 	formatKeepCurrentLabel,
 	formatKeepDefaultLabel,
+	formatManualApplyMessage,
 	rememberPendingNewSelection,
 	takePendingNewSelection,
 	readPreviousSessionSelection,
@@ -79,6 +80,21 @@ describe("startup Keep labels", () => {
 			formatKeepDefaultLabel({ provider: "openai", id: "gpt-5.6-sol" }, "max"),
 			"Keep global default · openai/gpt-5.6-sol · max",
 		);
+	});
+});
+
+describe("manual apply message", () => {
+	it("describes field-level session settings restoration", () => {
+		const message = formatManualApplyMessage({
+			action: "applied",
+			source: "manual",
+			model: { provider: "openai", id: "gpt-5.6-sol" },
+			thinking: "high",
+			scope: "session",
+			settingsRestored: true,
+		});
+		assert.match(message, /Restored prior model defaults/);
+		assert.doesNotMatch(message, /Restored original settings\.json/);
 	});
 });
 
@@ -501,6 +517,24 @@ describe("runStartupPicker", () => {
 			defaultModel: "gpt-5.6-sol",
 			defaultThinkingLevel: "medium",
 		});
+	});
+
+	it("describes field-level restoration when /new Keep cannot restore defaults", async () => {
+		const previous = { provider: "anthropic", id: "claude-session" };
+		const result = await runStartupPicker({
+			reason: "new",
+			hasUI: true,
+			config,
+			deps: deps({ restoreSettingsFile: () => ({ ok: false }) }),
+			currentModel: previous,
+			currentThinking: "high",
+			getAvailable: () => [],
+			ui: { select: async () => formatKeepCurrentLabel(previous, "high") },
+		});
+		assert.equal(result.action, "applied");
+		if (result.action !== "applied" || result.source === "profile") return;
+		assert.match(result.settingsError ?? "", /prior model defaults/i);
+		assert.doesNotMatch(result.settingsError ?? "", /original settings\.json state/i);
 	});
 
 	it("does not set a model for /new Keep when settings cannot be safely snapshotted", async () => {

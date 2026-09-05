@@ -6,6 +6,25 @@ import { it } from "node:test";
 
 import contextExtension from "../extensions/context.ts";
 
+it("reports safe input headroom after reserving the model output budget", async () => {
+	let command: any;
+	contextExtension({ registerCommand(_name: string, value: unknown) { command = value; } } as never);
+	const notifications: string[] = [];
+	await command.handler("summary", {
+		cwd: "/tmp/context-safe-headroom",
+		hasUI: true,
+		mode: "rpc",
+		isProjectTrusted: () => false,
+		model: { maxTokens: 128_000 },
+		getContextUsage: () => ({ tokens: 340_000, contextWindow: 500_000, percent: 68 }),
+		getSystemPrompt: () => "system",
+		sessionManager: { getEntries: () => [], getLeafId: () => undefined },
+		ui: { notify(message: string) { notifications.push(message); } },
+	});
+	assert.match(notifications[0] ?? "", /Safe input 340,000 \/ 355,616 · 95\.6%/);
+	assert.match(notifications[0] ?? "", /Safe remaining 15,616/);
+});
+
 it("runs confirmed compaction only from the dedicated x action", async () => {
 	let command: any;
 	let compactCalls = 0;

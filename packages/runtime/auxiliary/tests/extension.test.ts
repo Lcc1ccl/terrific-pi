@@ -668,6 +668,8 @@ describe("auxiliary command interaction", () => {
 			else process.env.PI_CODING_AGENT_DIR = previous;
 		}
 		const message = notifications.at(-1) ?? "";
+		assert.match(message, /trigger compression: awaiting Pi compact hook/);
+		assert.match(message, /trigger title_generation: waiting for first completed exchange/);
 		assert.match(message, /text_summary: aux/);
 		assert.match(message, /git finalize: confirm on .*headless off .*push on/);
 		assert.match(message, /usage: 3 calls .*12 tokens .*\$0\.25 .*unknown cost/);

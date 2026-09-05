@@ -205,7 +205,7 @@ export function formatManualApplyMessage(
 		}
 	} else {
 		if (result.settingsRestored) {
-			lines.push("Restored original settings.json (session-only).");
+			lines.push("Restored prior model defaults in settings.json (session-only).");
 		}
 		if (result.settingsError) {
 			lines.push(result.settingsError);
@@ -314,7 +314,11 @@ async function applyManual(
 	const thinking = deps.getThinkingLevel();
 
 	if (scope === "session") {
-		const restored = await restoreSessionSettings(deps, sessionSettings!.snapshot);
+		const restored = await restoreSessionSettings(deps, sessionSettings!.snapshot, {
+			defaultProvider: ref.provider,
+			defaultModel: ref.id,
+			defaultThinkingLevel: thinking,
+		});
 		if (!restored.ok) {
 			return {
 				action: "applied",
@@ -324,7 +328,7 @@ async function applyManual(
 				scope: "session",
 				settingsRestored: false,
 				settingsError:
-					restored.error ?? "Failed to restore the original settings.json state after session switch",
+					restored.error ?? "Failed to restore the prior model defaults in settings.json after session switch",
 			};
 		}
 		return {

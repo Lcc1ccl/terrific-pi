@@ -6,8 +6,8 @@ import {
 import { Container } from "@earendil-works/pi-tui";
 
 import { ActivityTracker } from "../lib/activity.ts";
-import { loadTaskboardActivityMode, loadTaskboardDefault, updateTaskboardConfig } from "../lib/config.ts";
-import { TaskboardWidget, renderToolResult } from "../lib/render.ts";
+import { loadTaskboardConfig, loadTaskboardDefault, updateTaskboardConfig } from "../lib/config.ts";
+import { TaskboardWidget, formatTaskboardInspectionLines, renderToolResult } from "../lib/render.ts";
 import { selectMenu } from "../lib/select-menu.ts";
 import {
 	buildContextReminder,
@@ -20,6 +20,7 @@ import {
 	recordAssistantUsage,
 	restoreProcessState,
 	sanitizeProcessText,
+	semanticProcessEqual,
 	settleSnapshot,
 	syncProcessTelemetry,
 } from "../lib/state.ts";
@@ -43,7 +44,7 @@ const PROCESS_UPDATE_SCHEMA_ERROR_PREFIX = "Validation failed for tool \"process
 const PROMPT_GUIDELINES = [
 	"Use process_update for work with at least three meaningful user-visible steps; skip it for simple answers or one-step work.",
 	"Call process_update only when the task starts, a step changes, work blocks, or the task completes; never use it to narrate private reasoning.",
-	"In process_update, move at most one step to done per call; never batch-complete steps.",
+	"In process_update, report the current truthful snapshot; batch completion is accepted atomically.",
 	"Keep process_update to at most five outcome-oriented steps and mark completed only after requested verification is actually run.",
 	"In process_update, use status waiting when paused for a subagent or external process; use blocked when user input is required.",
 	"When the presentation file ledger is active, do not repeat ordinary file artifacts in process_update; keep tests, screenshots, URLs, commits, and reports when useful.",
@@ -73,6 +74,11 @@ function taskboardSummary(state: PersistedTaskboardState): string {
 		? `${done}/${snapshot.steps.length}`
 		: `Step ${current + 1}/${snapshot.steps.length}`;
 	return `Taskboard: ${state.viewMode} · ${snapshot.status} · ${progress} · ${snapshot.title}`;
+}
+
+function taskboardInspection(state: PersistedTaskboardState): string {
+	if (!state.snapshot) return taskboardSummary(state);
+	return formatTaskboardInspectionLines(state.snapshot, state.telemetry).join("\n");
 }
 
 const COMMIT_HASH = /^[0-9a-f]{7,64}$/i;
@@ -145,8 +151,10 @@ function partialFromGit(snapshot: ProcessSnapshot, receipt: GitFinalizeReceipt, 
 }
 
 export default function taskboard(pi: ExtensionAPI, platform: NodeJS.Platform = process.platform) {
+	const initialConfig = loadTaskboardConfig(getAgentDir());
 	let state: PersistedTaskboardState = createPersistedState(undefined, "compact");
-	let activityMode: TaskboardActivityMode = "full";
+	let activityMode: TaskboardActivityMode = initialConfig.activityMode;
+	let maxPanelLines = initialConfig.maxPanelLines;
 	let control: RuntimeControlState = { requestStarted: false };
 	const activity = new ActivityTracker();
 	let widgetMounted = false;
@@ -157,10 +165,12 @@ export default function taskboard(pi: ExtensionAPI, platform: NodeJS.Platform = 
 	let telemetryDirty = false;
 	let uiFailureNotified = false;
 	let corruptStateNotified = false;
+	let invalidShortcutNotified = false;
 
 	const renderState = (): TaskboardRenderState => ({
 		viewMode: state.viewMode,
 		activityMode,
+		maxPanelLines,
 		...(state.snapshot ? { snapshot: state.snapshot } : {}),
 		...(state.telemetry ? { telemetry: state.telemetry } : {}),
 		activity: activity.getSnapshot(),
@@ -194,7 +204,21 @@ export default function taskboard(pi: ExtensionAPI, platform: NodeJS.Platform = 
 	};
 
 	const reloadFileConfig = () => {
-		activityMode = loadTaskboardActivityMode(getAgentDir());
+		const config = loadTaskboardConfig(getAgentDir());
+		activityMode = config.activityMode;
+		maxPanelLines = config.maxPanelLines;
+	};
+
+	const notifyInvalidShortcut = (ctx: ExtensionContext) => {
+		if (!initialConfig.invalidToggleShortcut || invalidShortcutNotified) return;
+		invalidShortcutNotified = true;
+		const fallback = platform === "darwin"
+			? "shift+alt+o (or ctrl+shift+b on macOS)"
+			: "shift+alt+o";
+		ctx.ui.notify(
+			`Invalid taskboard.toggleShortcut "${initialConfig.invalidToggleShortcut}"; using ${fallback}`,
+			"warning",
+		);
 	};
 
 	const syncDurationTick = () => {
@@ -296,6 +320,9 @@ export default function taskboard(pi: ExtensionAPI, platform: NodeJS.Platform = 
 		telemetryDirty = false;
 		panelExpanded = false;
 		uiFailureNotified = false;
+		if (!restored.corrupted && restored.migrated && state.snapshot?.status !== "running") {
+			appendSystemState(state, ctx);
+		}
 		if (!restored.corrupted && state.snapshot?.status === "running") {
 			const running = state.snapshot;
 			const waiting = settleSnapshot(running);
@@ -319,6 +346,7 @@ export default function taskboard(pi: ExtensionAPI, platform: NodeJS.Platform = 
 			}
 		}
 		refreshWidget(ctx);
+		notifyInvalidShortcut(ctx);
 	};
 
 	const isProcessUpdateValidationFailure = (
@@ -341,6 +369,15 @@ export default function taskboard(pi: ExtensionAPI, platform: NodeJS.Platform = 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const now = Date.now();
 			const snapshot = normalizeProcessUpdate(params, state.snapshot, now);
+			if (semanticProcessEqual(state.snapshot, snapshot)) {
+				return {
+					content: [{ type: "text", text: "Taskboard unchanged" }],
+					details: {
+						...state.snapshot!,
+						...(state.telemetry ? { telemetry: state.telemetry } : {}),
+					},
+				};
+			}
 			const telemetry = syncProcessTelemetry(
 				state.snapshot,
 				state.telemetry ?? (state.snapshot ? undefined : pendingTelemetry),
@@ -462,12 +499,12 @@ export default function taskboard(pi: ExtensionAPI, platform: NodeJS.Platform = 
 	};
 
 	const taskboardCommand = {
-		description: "Manage Taskboard or use compact | full | off | clear | default <mode>",
+		description: "Manage Taskboard or use compact | full | off | inspect | clear | default <mode>",
 		getArgumentCompletions(prefix: string) {
 			const query = prefix.trimStart().toLowerCase();
 			const options = query.startsWith("default")
 				? ["default compact", "default full", "default off"]
-				: ["compact", "full", "off", "clear", "default"];
+				: ["compact", "full", "off", "inspect", "clear", "default"];
 			return options
 				.filter((value) => value.startsWith(query))
 				.map((value) => ({ value, label: value }));
@@ -476,7 +513,7 @@ export default function taskboard(pi: ExtensionAPI, platform: NodeJS.Platform = 
 			reloadFileConfig();
 			const parts = args.trim().toLowerCase().split(/\s+/).filter(Boolean);
 			const action = parts[0];
-			const usage = "Usage: /taskboard [compact|full|off|clear|default <compact|full|off>]";
+			const usage = "Usage: /taskboard [compact|full|off|inspect|clear|default <compact|full|off>]";
 			if (!action) {
 				if (ctx.mode === "tui") await runTaskboardManager(ctx);
 				else ctx.ui.notify(`${taskboardSummary(state)} · global default ${loadTaskboardDefault(getAgentDir())}`, "info");
@@ -496,6 +533,12 @@ export default function taskboard(pi: ExtensionAPI, platform: NodeJS.Platform = 
 				ctx.ui.notify(usage, "warning");
 				return;
 			}
+			if (action === "inspect") {
+				const inspection = taskboardInspection(state);
+				if (ctx.mode === "print") console.log(inspection);
+				else ctx.ui.notify(inspection, "info");
+				return;
+			}
 			if (action === "clear") {
 				await confirmClearTaskboard(ctx);
 				return;
@@ -508,19 +551,24 @@ export default function taskboard(pi: ExtensionAPI, platform: NodeJS.Platform = 
 		},
 	};
 	pi.registerCommand("taskboard", taskboardCommand);
-	for (const shortcut of [
-		"shift+alt+o" as const,
-		...(platform === "darwin" ? ["ctrl+shift+b" as const] : []),
-	]) {
-		pi.registerShortcut(shortcut, {
-			description: shortcut === "ctrl+shift+b"
-				? "Toggle Taskboard live panel (macOS)"
-				: "Toggle Taskboard live panel",
-			handler: (ctx) => {
-				panelExpanded = !panelExpanded;
-				refreshWidget(ctx);
-			},
-		});
+	if (initialConfig.toggleShortcut) {
+		const shortcuts = [
+			initialConfig.toggleShortcut,
+			...(platform === "darwin" && initialConfig.toggleShortcut === "shift+alt+o"
+				? ["ctrl+shift+b" as const]
+				: []),
+		];
+		for (const shortcut of shortcuts) {
+			pi.registerShortcut(shortcut, {
+				description: shortcut === "ctrl+shift+b"
+					? "Toggle Taskboard live panel (macOS)"
+					: "Toggle Taskboard live panel",
+				handler: (ctx) => {
+					panelExpanded = !panelExpanded;
+					refreshWidget(ctx);
+				},
+			});
+		}
 	}
 
 	pi.on("session_start", async (_event, ctx) => restore(ctx));

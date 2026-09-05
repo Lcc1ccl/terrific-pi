@@ -81,6 +81,30 @@ export interface ContextBreakdown {
 	estimatedSum: number;
 }
 
+export interface SafeContextUsage {
+	safeInputLimit: number;
+	remainingTokens: number;
+	percent: number;
+}
+
+/** Reserve the model's maximum output plus Pi's default response margin. */
+export function safeContextUsage(
+	tokens: number | null,
+	contextWindow: number | null,
+	maxOutputTokens: number | undefined,
+	reserveTokens = 16_384,
+): SafeContextUsage | undefined {
+	if (tokens === null || contextWindow === null || maxOutputTokens === undefined) return undefined;
+	if (!Number.isFinite(tokens) || !Number.isFinite(contextWindow) || !Number.isFinite(maxOutputTokens) || !Number.isFinite(reserveTokens)) return undefined;
+	const safeInputLimit = contextWindow - Math.max(0, maxOutputTokens) - Math.max(0, reserveTokens);
+	if (safeInputLimit <= 0) return undefined;
+	return {
+		safeInputLimit,
+		remainingTokens: Math.max(0, safeInputLimit - tokens),
+		percent: Math.round((tokens / safeInputLimit) * 1_000) / 10,
+	};
+}
+
 const CJK_CHARACTER = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]/u;
 
 /** Rough text token estimate: CJK ~1 char, code/JSON ~3 chars, other text ~4 chars. */

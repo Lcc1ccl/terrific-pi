@@ -18,6 +18,7 @@ import {
 	normalizeProcessUpdate,
 	recordAssistantUsage,
 	restoreProcessState,
+	semanticProcessEqual,
 	settleSnapshot,
 	stepElapsedMs,
 	syncProcessTelemetry,
@@ -163,32 +164,27 @@ describe("normalizeProcessUpdate", () => {
 		}, ready, NOW + 1).status, "completed");
 	});
 
-	it("matches done steps by text and permits at most one new completion", () => {
+	it("matches done steps by text and accepts truthful batch completion", () => {
 		const doneSteps = runningInput().steps.map((step) => ({ ...step, status: "done" as const }));
-		assert.throws(
-			() => normalizeProcessUpdate({
-				...runningInput(),
-				status: "completed",
-				steps: doneSteps,
-				verification: "All checks passed",
-			}, undefined, NOW),
-			/one step.*done/i,
-		);
+		assert.equal(normalizeProcessUpdate({
+			...runningInput(),
+			status: "completed",
+			steps: doneSteps,
+			verification: "All checks passed",
+		}, undefined, NOW).status, "completed");
 
 		const previous = snapshot();
-		assert.throws(
-			() => normalizeProcessUpdate({
-				...runningInput(),
-				status: "waiting",
-				steps: [
-					{ text: "Inspect current state", status: "active" },
-					{ text: "Apply changes", status: "done" },
-					{ text: "Run checks", status: "done" },
-				],
-				update: "Two steps claimed",
-			}, previous, NOW + 1),
-			/one step.*done/i,
-		);
+		const batch = normalizeProcessUpdate({
+			...runningInput(),
+			status: "waiting",
+			steps: [
+				{ text: "Inspect current state", status: "done" },
+				{ text: "Apply changes", status: "active" },
+				{ text: "Run checks", status: "done" },
+			],
+			update: "Later step completed in the same milestone",
+		}, previous, NOW + 1);
+		assert.deepEqual(batch.steps.map((step) => step.status), ["done", "active", "done"]);
 
 		const reordered = normalizeProcessUpdate({
 			...runningInput(),
@@ -199,6 +195,126 @@ describe("normalizeProcessUpdate", () => {
 			],
 		}, previous, NOW + 1);
 		assert.deepEqual(reordered.steps.map((step) => step.status), ["active", "done", "pending"]);
+	});
+
+	it("assigns stable internal IDs across rename, reorder, insert, and delete", () => {
+		const first = snapshot();
+		assert.equal(new Set(first.steps.map((step) => step.id)).size, first.steps.length);
+		assert.ok(first.steps.every((step) => typeof step.id === "string" && step.id.length > 0));
+
+		const renamed = normalizeProcessUpdate({
+			...runningInput(),
+			steps: runningInput().steps.map((step, index) => index === 1 ? { ...step, text: "Apply safe changes" } : step),
+		}, first, NOW + 1);
+		assert.equal(renamed.steps[1]?.id, first.steps[1]?.id);
+
+		const reordered = normalizeProcessUpdate({
+			...runningInput(),
+			steps: [runningInput().steps[1]!, runningInput().steps[0]!, runningInput().steps[2]!],
+		}, first, NOW + 2);
+		assert.deepEqual(reordered.steps.map((step) => step.id), [first.steps[1]?.id, first.steps[0]?.id, first.steps[2]?.id]);
+
+		const inserted = normalizeProcessUpdate({
+			...runningInput(),
+			steps: [
+				runningInput().steps[0]!,
+				{ text: "Review changes", status: "pending" },
+				runningInput().steps[1]!,
+				runningInput().steps[2]!,
+			],
+		}, first, NOW + 3);
+		assert.notEqual(inserted.steps[1]?.id, first.steps[1]?.id);
+		assert.equal(inserted.steps[2]?.id, first.steps[1]?.id);
+
+		const deleted = normalizeProcessUpdate({
+			...runningInput(),
+			steps: [runningInput().steps[0]!, runningInput().steps[1]!],
+		}, first, NOW + 4);
+		assert.deepEqual(deleted.steps.map((step) => step.id), [first.steps[0]?.id, first.steps[1]?.id]);
+	});
+
+	it("starts ambiguous duplicate and rename-plus-reorder steps with new identities", () => {
+		const duplicate = normalizeProcessUpdate({
+			...runningInput(),
+			steps: [
+				{ text: "Duplicate", status: "done" },
+				{ text: "Duplicate", status: "pending" },
+				{ text: "Work", status: "active" },
+			],
+		}, undefined, NOW);
+		const ambiguous = normalizeProcessUpdate({
+			...runningInput(),
+			steps: [
+				{ text: "Duplicate", status: "pending" },
+				{ text: "Duplicate", status: "done" },
+				{ text: "Work", status: "active" },
+			],
+		}, duplicate, NOW + 1);
+		assert.notEqual(ambiguous.steps[0]?.id, duplicate.steps[0]?.id);
+		assert.notEqual(ambiguous.steps[1]?.id, duplicate.steps[1]?.id);
+		assert.equal(ambiguous.steps[2]?.id, duplicate.steps[2]?.id);
+
+		const previous = snapshot();
+		const changed = normalizeProcessUpdate({
+			...runningInput(),
+			steps: [
+				{ text: "Apply safely", status: "active" },
+				{ text: "Run checks", status: "pending" },
+				{ text: "Inspect safely", status: "done" },
+			],
+		}, previous, NOW + 2);
+		assert.notEqual(changed.steps[0]?.id, previous.steps[1]?.id);
+		assert.equal(changed.steps[1]?.id, previous.steps[2]?.id);
+		assert.notEqual(changed.steps[2]?.id, previous.steps[0]?.id);
+	});
+
+	it("rejects regressions for stable done steps and terminal completed tasks", () => {
+		const previous = snapshot();
+		assert.throws(() => normalizeProcessUpdate({
+			...runningInput(),
+			steps: [
+				{ text: "Inspect current state", status: "active" },
+				{ text: "Apply changes", status: "pending" },
+				{ text: "Run checks", status: "pending" },
+			],
+		}, previous, NOW + 1), /done.*active/i);
+
+		const completed = normalizeProcessUpdate({
+			...runningInput(),
+			status: "completed",
+			steps: runningInput().steps.map((step) => ({ ...step, status: "done" as const })),
+			verification: "All checks passed",
+		}, previous, NOW + 2);
+		assert.throws(() => normalizeProcessUpdate(runningInput(), completed, NOW + 3), /completed.*terminal/i);
+	});
+
+	it("allows failed steps to retry and then complete", () => {
+		const failed = normalizeProcessUpdate({
+			...runningInput(),
+			status: "waiting",
+			steps: runningInput().steps.map((step, index) => index === 1 ? { ...step, status: "failed" as const } : step),
+			update: "Fix required",
+		}, undefined, NOW);
+		const retried = normalizeProcessUpdate(runningInput(), failed, NOW + 1);
+		const completed = normalizeProcessUpdate({
+			...runningInput(),
+			status: "completed",
+			steps: runningInput().steps.map((step) => ({ ...step, status: "done" as const })),
+			verification: "All checks passed",
+		}, retried, NOW + 2);
+		assert.equal(retried.steps[1]?.id, failed.steps[1]?.id);
+		assert.equal(completed.steps[1]?.id, failed.steps[1]?.id);
+	});
+
+	it("compares normalized facts without timestamps or internal IDs", () => {
+		const first = snapshot();
+		const same = normalizeProcessUpdate(runningInput(), first, NOW + 1);
+		assert.equal(semanticProcessEqual(first, same), true);
+		assert.equal(semanticProcessEqual(first, { ...same, update: "A real milestone" }), false);
+		assert.equal(semanticProcessEqual(first, {
+			...same,
+			artifacts: [...same.artifacts, { kind: "test", label: "Checks" }],
+		}), false);
 	});
 
 	it("rejects empty normalized text and direct callers exceeding limits", () => {
@@ -215,6 +331,63 @@ describe("normalizeProcessUpdate", () => {
 });
 
 describe("process telemetry", () => {
+	it("preserves telemetry by stable identity and resets ambiguous steps", () => {
+		const firstSnapshot = snapshot();
+		let first = syncProcessTelemetry(undefined, undefined, firstSnapshot, NOW);
+		first = recordAssistantUsage(first, firstSnapshot, {
+			provider: "openai",
+			model: "gpt-5.6-sol",
+			usage: { input: 10, output: 5 },
+		});
+		const renamed = normalizeProcessUpdate({
+			...runningInput(),
+			steps: runningInput().steps.map((step, index) => index === 1 ? { ...step, text: "Apply safe changes" } : step),
+		}, firstSnapshot, NOW + 1);
+		const carried = syncProcessTelemetry(firstSnapshot, first, renamed, NOW + 1);
+		assert.equal(carried.steps[1]?.turns, 1);
+		assert.equal(carried.steps[1]?.id, renamed.steps[1]?.id);
+
+		const reordered = normalizeProcessUpdate({
+			...runningInput(),
+			steps: [runningInput().steps[1]!, runningInput().steps[0]!, runningInput().steps[2]!],
+		}, firstSnapshot, NOW + 2);
+		const reorderedTelemetry = syncProcessTelemetry(firstSnapshot, first, reordered, NOW + 2);
+		assert.equal(reorderedTelemetry.steps[0]?.turns, 1);
+		assert.equal(reorderedTelemetry.steps[1]?.turns, 0);
+
+		const inserted = normalizeProcessUpdate({
+			...runningInput(),
+			steps: [
+				runningInput().steps[0]!,
+				{ text: "Review changes", status: "pending" },
+				runningInput().steps[1]!,
+				runningInput().steps[2]!,
+			],
+		}, firstSnapshot, NOW + 3);
+		const insertedTelemetry = syncProcessTelemetry(firstSnapshot, first, inserted, NOW + 3);
+		assert.equal(insertedTelemetry.steps[1]?.turns, 0);
+		assert.equal(insertedTelemetry.steps[2]?.turns, 1);
+
+		const deleted = normalizeProcessUpdate({
+			...runningInput(),
+			steps: [runningInput().steps[0]!, runningInput().steps[1]!],
+		}, firstSnapshot, NOW + 4);
+		const deletedTelemetry = syncProcessTelemetry(firstSnapshot, first, deleted, NOW + 4);
+		assert.equal(deletedTelemetry.steps[1]?.turns, 1);
+
+		const ambiguousSnapshot = normalizeProcessUpdate({
+			...runningInput(),
+			steps: [
+				{ text: "Apply safely", status: "active" },
+				{ text: "Run checks", status: "pending" },
+				{ text: "Inspect safely", status: "done" },
+			],
+		}, firstSnapshot, NOW + 2);
+		const reset = syncProcessTelemetry(firstSnapshot, first, ambiguousSnapshot, NOW + 2);
+		assert.equal(reset.steps[0]?.turns, 0);
+		assert.equal(reset.steps[0]?.usage.input, 0);
+	});
+
 	it("tracks active step time across continuation, transitions, waiting, and resume", () => {
 		const firstSnapshot = snapshot();
 		const first = syncProcessTelemetry(undefined, undefined, firstSnapshot, NOW);
@@ -311,6 +484,25 @@ describe("branch state", () => {
 		assert.equal(restored.state.viewMode, "full");
 		assert.equal(restored.state.snapshot?.title, "Latest");
 		assert.equal(restored.state.telemetry?.steps[1]?.activeSince, NOW);
+	});
+
+	it("migrates legacy snapshots and telemetry without IDs", () => {
+		const legacySnapshot = snapshot();
+		const legacyTelemetry = syncProcessTelemetry(undefined, undefined, legacySnapshot, NOW);
+		for (const step of legacySnapshot.steps) delete step.id;
+		for (const step of legacyTelemetry.steps) delete step.id;
+		const restored = restoreProcessState([entry({
+			version: 1,
+			viewMode: "compact",
+			snapshot: legacySnapshot,
+			telemetry: legacyTelemetry,
+			cleared: false,
+		})]);
+		const ids = restored.state.snapshot?.steps.map((step) => step.id) ?? [];
+		assert.equal(restored.corrupted, false);
+		assert.equal(restored.migrated, true);
+		assert.equal(new Set(ids).size, legacySnapshot.steps.length);
+		assert.deepEqual(restored.state.telemetry?.steps.map((step) => step.id), ids);
 	});
 
 	it("uses the configured global default when the branch has no saved state", () => {

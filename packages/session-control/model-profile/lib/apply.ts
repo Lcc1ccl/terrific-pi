@@ -11,11 +11,12 @@ export interface ApplyDeps {
 	setModel: (model: ModelRef) => Promise<boolean>;
 	setThinkingLevel: (level: ThinkingLevel) => void;
 	getThinkingLevel: () => ThinkingLevel;
-	/** Capture the exact settings.json state before Pi persists a model switch. */
+	/** Capture settings.json before Pi persists a model switch. */
 	snapshotSettingsFile?: () => SettingsFileSnapshot;
-	/** Restore the exact state captured by snapshotSettingsFile. */
+	/** Compare-and-restore only prior model defaults, preserving concurrent sibling settings. */
 	restoreSettingsFile?: (
 		snapshot: Extract<SettingsFileSnapshot, { ok: true }>,
+		expected: SettingsDefaults,
 	) => { ok: boolean; error?: string };
 	writeSettingsDefaults?: (
 		defaults: SettingsDefaults,
@@ -42,11 +43,12 @@ export function prepareSessionSettings(deps: ApplyDeps): SessionSettingsPreparat
 export async function restoreSessionSettings(
 	deps: ApplyDeps,
 	snapshot: SessionSettingsSnapshot,
+	expected: SettingsDefaults,
 ): Promise<{ ok: boolean; error?: string }> {
 	// Pi exposes no settings flush API; its writes are queued on microtasks.
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	try {
-		const restored = deps.restoreSettingsFile?.(snapshot);
+		const restored = deps.restoreSettingsFile?.(snapshot, expected);
 		if (!restored) return { ok: false, error: "Session switched, but no settings restorer is configured." };
 		return restored.ok ? { ok: true } : { ok: false, error: restored.error };
 	} catch (error) {
@@ -98,7 +100,11 @@ export async function applyProfile(
 	const thinkingClamped = thinking !== profile.thinking;
 
 	if (scope === "session") {
-		const restored = await restoreSessionSettings(deps, sessionSettings!.snapshot);
+		const restored = await restoreSessionSettings(deps, sessionSettings!.snapshot, {
+			defaultProvider: profile.provider,
+			defaultModel: profile.model,
+			defaultThinkingLevel: thinking,
+		});
 		if (!restored.ok) {
 			return {
 				ok: true,
@@ -109,7 +115,7 @@ export async function applyProfile(
 				settingsRestored: false,
 				settingsError:
 					restored.error ??
-					"Session switched, but failed to restore the original settings.json state.",
+					"Session switched, but failed to restore the prior model defaults in settings.json.",
 			};
 		}
 
@@ -173,7 +179,7 @@ export function formatApplySuccess(result: Extract<ApplyResult, { ok: true }>): 
 		}
 	} else {
 		if (result.settingsRestored) {
-			lines.push("Restored original settings.json (session-only).");
+			lines.push("Restored prior model defaults in settings.json (session-only).");
 		}
 		if (result.settingsError) {
 			lines.push(result.settingsError);

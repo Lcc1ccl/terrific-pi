@@ -273,13 +273,14 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				break;
 			}
 			case "context": {
-				const body = formatContextText(snapshot.context?.percent, config.contextMode, minimal, iconMode)
+				const percent = snapshot.context?.safePercent ?? snapshot.context?.percent;
+				const body = formatContextText(percent, config.contextMode, minimal, iconMode)
 					?? formatContextUnavailable(minimal, iconMode);
 				pushContent(segments, id, "usage", body, priority);
 				break;
 			}
 			case "contextBar": {
-				const percent = snapshot.context?.percent;
+				const percent = snapshot.context?.safePercent ?? snapshot.context?.percent;
 				const body = formatContextBar(percent, config.contextBarWidth, config.contextMode, minimal, iconMode);
 				if (!body || percent === null || percent === undefined || Number.isNaN(percent)) {
 					pushContent(segments, id, "neutral", formatContextUnavailable(minimal, iconMode), priority);

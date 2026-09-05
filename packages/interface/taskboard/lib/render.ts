@@ -260,7 +260,36 @@ function detailedActivity(state: TaskboardRenderState): string | undefined {
 	return stage ? `Stage: ${stage}` : undefined;
 }
 
-function detailPanelLines(state: TaskboardRenderState, width: number, theme: ProcessTheme): string[] {
+interface PanelItem {
+	kind: "step" | "detail" | "runtime";
+	order: number;
+	priority: number;
+	text: string;
+	status?: ProcessStep["status"];
+}
+
+function hiddenPanelSummary(items: readonly PanelItem[]): string {
+	const counts = new Map<string, number>();
+	for (const item of items) {
+		const category = item.status ?? item.kind;
+		counts.set(category, (counts.get(category) ?? 0) + 1);
+	}
+	const order = ["active", "failed", "pending", "done", "detail", "runtime"];
+	const categories = order.flatMap((category) => {
+		const count = counts.get(category) ?? 0;
+		if (count === 0) return [];
+		const label = category === "detail" && count !== 1 ? "details" : category;
+		return [`${count} ${label}`];
+	});
+	return `+${items.length} hidden${categories.length > 0 ? ` (${categories.join(", ")})` : ""}`;
+}
+
+function detailPanelLines(
+	state: TaskboardRenderState,
+	width: number,
+	theme: ProcessTheme,
+	maxPanelLines: number,
+): string[] {
 	if (width < 1) return [];
 	const snapshot = state.snapshot!;
 	const meta = STATUS_META[snapshot.status];
@@ -269,27 +298,70 @@ function detailPanelLines(state: TaskboardRenderState, width: number, theme: Pro
 	const currentMetric = telemetryForStep(snapshot, state.telemetry, current);
 	const totalElapsed = formatElapsed(totalElapsedMs(state.telemetry, state.now));
 	const currentElapsed = formatElapsed(stepElapsedMs(currentMetric, state.now));
+	const items: PanelItem[] = [
+		{ kind: "detail", order: 10, priority: 6, text: ` Time: total ${totalElapsed} · current ${currentElapsed}` },
+		...(current ? [{ kind: "detail" as const, order: 11, priority: 6, text: ` Current: ${current.text}` }] : []),
+		...snapshot.steps.map((step, index) => ({
+			kind: "step" as const,
+			order: 20 + index,
+			priority: step === current || step.status === "active" || step.status === "failed"
+				? 2
+				: step.status === "pending" ? 4 : 5,
+			status: step.status,
+			text: alignColumns(
+				` ${stepSymbol(step)} ${step.text}`,
+				taskMetrics(state.telemetry?.steps[index], state.now, width),
+				Math.max(0, width - 2),
+			),
+		})),
+		...(snapshot.blocker ? [{ kind: "detail" as const, order: 30, priority: 1, text: ` Need: ${snapshot.blocker}` }] : []),
+		...(snapshot.verification ? [{ kind: "detail" as const, order: 31, priority: 3, text: ` Verification: ${snapshot.verification}` }] : []),
+		...(snapshot.update ? [{ kind: "detail" as const, order: 32, priority: 3, text: ` Update: ${snapshot.update}` }] : []),
+		...(snapshot.artifacts.length > 0 ? [{
+			kind: "detail" as const,
+			order: 33,
+			priority: 5,
+			text: ` Artifacts: ${snapshot.artifacts.map((artifact) => artifact.label).join(" · ")}`,
+		}] : []),
+		{ kind: "runtime", order: 40, priority: 6, text: ` ${runtimeLine(state.telemetry)}` },
+	];
+	const activity = state.activityMode === "off" ? undefined : detailedActivity(state);
+	if (activity) items.push({ kind: "runtime", order: 41, priority: 6, text: ` ${activity}` });
+
+	const boundedLines = Number.isInteger(maxPanelLines)
+		? Math.max(8, Math.min(20, Math.trunc(maxPanelLines)))
+		: 15;
+	const selected: PanelItem[] = [];
+	const lineCount = (values: readonly PanelItem[]) => {
+		const sections = Number(values.some((item) => item.kind === "step"))
+			+ Number(values.some((item) => item.kind === "runtime"));
+		return 3 + values.length + sections + Number(values.length < items.length);
+	};
+	for (const item of [...items].sort((left, right) => left.priority - right.priority || left.order - right.order)) {
+		const trial = [...selected, item];
+		if (lineCount(trial) <= boundedLines) selected.push(item);
+	}
+	selected.sort((left, right) => left.order - right.order);
+	const hidden = items.filter((item) => !selected.includes(item));
+
 	const lines = [boxBorder("top", width, theme)];
 	lines.push(boxRow(` ${theme.bold("Taskboard")} · ${meta.label} · ${progress} · ${snapshot.title}`, width, theme));
-	lines.push(boxRow(` Time: total ${totalElapsed} · current ${currentElapsed}`, width, theme));
-	if (current) {
-		lines.push(boxRow(` Current: ${current.text}`, width, theme));
+	let taskSection = false;
+	let runtimeSection = false;
+	for (const item of selected) {
+		if (item.kind === "step" && !taskSection) {
+			lines.push(boxBorder("section", width, theme, "Tasks"));
+			taskSection = true;
+		}
+		if (item.kind === "runtime" && !runtimeSection) {
+			lines.push(boxBorder("section", width, theme, "Runtime"));
+			runtimeSection = true;
+		}
+		lines.push(boxRow(item.text, width, theme));
 	}
-	lines.push(boxBorder("section", width, theme, "Tasks"));
-	for (let index = 0; index < snapshot.steps.length; index += 1) {
-		const step = snapshot.steps[index]!;
-		const left = ` ${stepSymbol(step)} ${step.text}`;
-		const right = taskMetrics(state.telemetry?.steps[index], state.now, width);
-		lines.push(boxRow(alignColumns(left, right, Math.max(0, width - 2)), width, theme));
-	}
-	lines.push(boxBorder("section", width, theme, "Runtime"));
-	lines.push(boxRow(` ${runtimeLine(state.telemetry)}`, width, theme));
-	const activity = state.activityMode === "off" ? undefined : detailedActivity(state);
-	if (activity) lines.push(boxRow(` ${activity}`, width, theme));
-	const latest = detailLine(snapshot);
-	if (latest) lines.push(boxRow(` ${latest}`, width, theme));
+	if (hidden.length > 0) lines.push(boxRow(` ${hiddenPanelSummary(hidden)}`, width, theme));
 	lines.push(boxBorder("bottom", width, theme));
-	return lines.slice(0, 15);
+	return lines;
 }
 
 export function formatTaskboardLines(
@@ -300,7 +372,7 @@ export function formatTaskboardLines(
 	if (state.viewMode === "off") return [];
 	if (!state.snapshot) return state.activityMode === "full" ? fit(passiveLines(state, theme), width) : [];
 	return state.viewMode === "full" || state.expanded
-		? detailPanelLines(state, width, theme)
+		? detailPanelLines(state, width, theme, state.maxPanelLines ?? 15)
 		: fit(compactLines(state, width, theme), width);
 }
 
@@ -318,6 +390,40 @@ export class TaskboardWidget implements Component {
 	}
 
 	invalidate(): void {}
+}
+
+function inspectionMetrics(metric: ProcessStepTelemetry | undefined, now: number): string {
+	if (!metric) return "telemetry unavailable";
+	const turns = `${metric.turns} turn${metric.turns === 1 ? "" : "s"}`;
+	return [
+		formatElapsed(stepElapsedMs(metric, now)),
+		turns,
+		formatTokenPair(metric.usage),
+		`R${formatTokens(metric.usage.cacheRead)} W${formatTokens(metric.usage.cacheWrite)}`,
+		`$${metric.usage.cost.toFixed(3)}`,
+		modelSummary(metric.models),
+	].join(" · ");
+}
+
+export function formatTaskboardInspectionLines(
+	snapshot: ProcessSnapshot,
+	telemetry: ProcessTelemetry | undefined,
+	now = Date.now(),
+): string[] {
+	const meta = STATUS_META[snapshot.status];
+	const lines = [`${meta.symbol} ${meta.label} · ${stepProgress(snapshot)} ${snapshot.title}`];
+	for (let index = 0; index < snapshot.steps.length; index += 1) {
+		const step = snapshot.steps[index]!;
+		lines.push(`${stepSymbol(step)} ${step.text} · ${inspectionMetrics(telemetry?.steps[index], now)}`);
+	}
+	if (snapshot.update) lines.push(`Update: ${snapshot.update}`);
+	if (snapshot.blocker) lines.push(`Need: ${snapshot.blocker}`);
+	if (snapshot.verification) lines.push(`Verification: ${snapshot.verification}`);
+	lines.push(runtimeLine(telemetry));
+	if (snapshot.artifacts.length > 0) {
+		lines.push(`Artifacts: ${snapshot.artifacts.map((artifact) => artifact.label).join(" · ")}`);
+	}
+	return lines;
 }
 
 export function formatToolResultLines(

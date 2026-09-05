@@ -22,7 +22,7 @@ export type ModelRegistryLike = {
 	isUsingOAuth(model: ModelLike): boolean;
 	getRegisteredProviderConfig?(providerName: string): unknown | undefined;
 	getApiKeyAndHeaders(model: ModelLike): Promise<
-		| { ok: true; apiKey?: string; headers?: Record<string, string> }
+		| { ok: true; apiKey?: string; headers?: Record<string, string | null> }
 		| { ok: false; error: string }
 	>;
 };
@@ -292,7 +292,7 @@ export function parseClaudeUsage(payload: unknown, model: ModelLike = {}): Quota
 }
 
 function authHeaders(
-	auth: { apiKey?: string; headers?: Record<string, string> },
+	auth: { apiKey?: string; headers?: Record<string, string | null> },
 	provider: QuotaProvider,
 ): Record<string, string> {
 	const headers: Record<string, string> = {
@@ -302,9 +302,10 @@ function authHeaders(
 	for (const [name, value] of Object.entries(auth.headers ?? {})) {
 		const normalized = name.toLowerCase();
 		if (
-			normalized === "authorization"
-			|| normalized === "anthropic-beta"
-			|| normalized === "chatgpt-account-id"
+			value !== null
+			&& (normalized === "authorization"
+				|| normalized === "anthropic-beta"
+				|| normalized === "chatgpt-account-id")
 		) {
 			headers[name] = value;
 		}
@@ -590,7 +591,7 @@ export class QuotaMonitor {
 
 	private async request(
 		provider: QuotaProvider,
-		auth: { ok: true; apiKey?: string; headers?: Record<string, string> },
+		auth: { ok: true; apiKey?: string; headers?: Record<string, string | null> },
 		signal: AbortSignal,
 	) {
 		const url = provider === "codex" ? CODEX_USAGE_URL : CLAUDE_USAGE_URL;

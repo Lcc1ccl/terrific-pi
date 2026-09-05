@@ -137,6 +137,8 @@ export interface ContextUsageView {
 	tokens: number | null;
 	contextWindow: number;
 	percent: number | null;
+	/** Conservative usage against context window minus model max output and 16,384 reserve. */
+	safePercent?: number;
 }
 
 export interface QuotaWindow {

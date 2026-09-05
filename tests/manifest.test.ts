@@ -25,7 +25,7 @@ function readJson(path: string): Record<string, any> {
 test("core root manifest exposes exactly the three approved domains", () => {
 	const manifest = readJson(join(ROOT, "package.json"));
 	assert.equal(manifest.name, "terrific-pi");
-	assert.equal(manifest.version, "0.2.1");
+	assert.equal(manifest.version, "0.2.2");
 	assert.deepEqual(manifest.pi?.extensions, EXTENSIONS);
 	assert.equal(manifest.pi?.skills, undefined);
 	assert.equal(manifest.pi?.subagents, undefined);

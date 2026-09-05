@@ -122,25 +122,83 @@ describe("writeSettingsDefaults", () => {
 		assert.equal(restored.defaults.defaultThinkingLevel, "low");
 	});
 
-	it("restores the exact original settings file, including an absent or malformed file", () => {
-		const missingDir = mkdtempSync(join(tmpdir(), "mp-settings-missing-"));
-		const missingSnapshot = snapshotSettingsFile(missingDir);
-		assert.equal(missingSnapshot.ok, true);
-		if (!missingSnapshot.ok) return;
-		assert.equal(missingSnapshot.exists, false);
-		writeFileSync(join(missingDir, "settings.json"), JSON.stringify({ defaultModel: "changed" }), "utf8");
-		assert.equal(restoreSettingsFile(missingSnapshot).ok, true);
-		assert.equal(readSettingsDefaults(missingDir), undefined);
+	it("restores only model defaults while preserving concurrent sibling updates", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "mp-settings-concurrent-"));
+		const path = join(agentDir, "settings.json");
+		writeFileSync(path, JSON.stringify({
+			defaultProvider: "openai",
+			defaultModel: "gpt-old",
+			defaultThinkingLevel: "medium",
+			theme: "dark",
+			packages: ["old"],
+		}), "utf8");
+		const snapshot = snapshotSettingsFile(agentDir);
+		assert.equal(snapshot.ok, true);
+		if (!snapshot.ok) return;
+		writeFileSync(path, JSON.stringify({
+			defaultProvider: "grok",
+			defaultModel: "grok-4.5",
+			defaultThinkingLevel: "high",
+			theme: "light",
+			packages: ["new"],
+		}), "utf8");
+		const result = restoreSettingsFile(snapshot, {
+			defaultProvider: "grok",
+			defaultModel: "grok-4.5",
+			defaultThinkingLevel: "high",
+		});
+		assert.equal(result.ok, true);
+		assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), {
+			defaultProvider: "openai",
+			defaultModel: "gpt-old",
+			defaultThinkingLevel: "medium",
+			theme: "light",
+			packages: ["new"],
+		});
+	});
 
-		const corruptDir = mkdtempSync(join(tmpdir(), "mp-settings-corrupt-"));
-		const corruptPath = join(corruptDir, "settings.json");
-		const original = "{ not valid json\n";
-		writeFileSync(corruptPath, original, "utf8");
-		const corruptSnapshot = snapshotSettingsFile(corruptDir);
-		assert.equal(corruptSnapshot.ok, true);
-		if (!corruptSnapshot.ok) return;
-		writeFileSync(corruptPath, JSON.stringify({ defaultModel: "changed" }), "utf8");
-		assert.equal(restoreSettingsFile(corruptSnapshot).ok, true);
-		assert.equal(readFileSync(corruptPath, "utf8"), original);
+	it("refuses to overwrite concurrent changes to the model defaults", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "mp-settings-conflict-"));
+		const path = join(agentDir, "settings.json");
+		writeFileSync(path, JSON.stringify({ defaultProvider: "openai", defaultModel: "old", defaultThinkingLevel: "medium" }), "utf8");
+		const snapshot = snapshotSettingsFile(agentDir);
+		assert.equal(snapshot.ok, true);
+		if (!snapshot.ok) return;
+		writeFileSync(path, JSON.stringify({ defaultProvider: "external", defaultModel: "new", defaultThinkingLevel: "low" }), "utf8");
+		const result = restoreSettingsFile(snapshot, {
+			defaultProvider: "grok",
+			defaultModel: "grok-4.5",
+			defaultThinkingLevel: "high",
+		});
+		assert.equal(result.ok, false);
+		assert.match(result.ok ? "" : result.error, /changed concurrently/i);
+		assert.equal((JSON.parse(readFileSync(path, "utf8")) as { defaultProvider: string }).defaultProvider, "external");
+	});
+
+	it("restores absent defaults without deleting concurrent sibling settings", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "mp-settings-missing-"));
+		const path = join(agentDir, "settings.json");
+		const snapshot = snapshotSettingsFile(agentDir);
+		assert.equal(snapshot.ok, true);
+		if (!snapshot.ok) return;
+		const expected = { defaultProvider: "grok", defaultModel: "grok-4.5", defaultThinkingLevel: "high" as const };
+		writeFileSync(path, JSON.stringify({ ...expected, theme: "light" }), "utf8");
+		assert.equal(restoreSettingsFile(snapshot, expected).ok, true);
+		assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), { theme: "light" });
+	});
+
+	it("fails closed when the original settings snapshot is malformed", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "mp-settings-corrupt-"));
+		const path = join(agentDir, "settings.json");
+		writeFileSync(path, "{ not valid json\n", "utf8");
+		const snapshot = snapshotSettingsFile(agentDir);
+		assert.equal(snapshot.ok, true);
+		if (!snapshot.ok) return;
+		const expected = { defaultProvider: "grok", defaultModel: "grok-4.5", defaultThinkingLevel: "high" as const };
+		writeFileSync(path, JSON.stringify(expected), "utf8");
+		const result = restoreSettingsFile(snapshot, expected);
+		assert.equal(result.ok, false);
+		assert.match(result.ok ? "" : result.error, /malformed/i);
+		assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), expected);
 	});
 });

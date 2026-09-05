@@ -16,7 +16,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { truncateMessagesForBtw } from "../lib/btw-context.ts";
 import { createBtwUsageEntry, resolveBtwCandidates, type BtwCandidate } from "../lib/btw-route.ts";
-import { createIsolatedBtwSession } from "../lib/btw-session.ts";
+import { createIsolatedBtwSession, raceWithSignal } from "../lib/btw-session.ts";
 import { loadConfig, resolveConfigPaths, updateBtwConfig } from "../lib/config.ts";
 import { formatBtwStatus, parseBtwCommandArgs, type BtwContextMode } from "../lib/command.ts";
 import { TextOverlay, type OverlayAction } from "../lib/overlay.ts";
@@ -36,13 +36,14 @@ type AskResult =
 
 let running = false;
 let activeSession: AgentSession | null = null;
+let activeRequestController: AbortController | null = null;
 
 async function disposeActiveSession(): Promise<void> {
 	const session = activeSession;
 	activeSession = null;
 	if (!session) return;
 	try {
-		if (session.isStreaming) await session.abort();
+		if (session.isStreaming) void session.abort().catch(() => {});
 	} finally {
 		session.dispose();
 	}
@@ -126,16 +127,20 @@ async function askQuestion(
 	return await ctx.ui.custom<AskResult>((tui, theme, _keybindings, done) => {
 		const loader = new BorderedLoader(tui, theme, `BTW · ${modelLabel(candidates[0]!.model)}…`);
 		let cancelled = false;
+		const requestController = new AbortController();
+		activeRequestController = requestController;
 		loader.onAbort = () => {
 			cancelled = true;
+			requestController.abort(new Error("BTW request cancelled"));
 			void activeSession?.abort().catch(() => {});
 		};
 
+		const requestCancelled = (): boolean => cancelled || requestController.signal.aborted;
 		const run = async (): Promise<AskResult> => {
 			let lastError = "BTW request failed";
 			try {
 				for (const candidate of candidates) {
-					if (cancelled) return { status: "cancelled" };
+					if (requestCancelled()) return { status: "cancelled" };
 					const label = modelLabel(candidate.model);
 					const model = { ...candidate.model, maxTokens: candidate.maxOutputTokens } as Model<Api>;
 					const snapshot = buildSnapshot(
@@ -148,8 +153,10 @@ async function askQuestion(
 					);
 					const startedAt = Date.now();
 					let session: AgentSession | undefined;
-					let timer: ReturnType<typeof setTimeout> | undefined;
-					let timedOut = false;
+					const timeoutSignal = candidate.timeoutMs > 0 ? AbortSignal.timeout(candidate.timeoutMs) : undefined;
+					const signal = timeoutSignal
+						? AbortSignal.any([requestController.signal, timeoutSignal])
+						: requestController.signal;
 					ctx.ui.setStatus(AUXILIARY_STATUS_KEY, `aux btw · ${model.id}`);
 					try {
 						session = await createIsolatedBtwSession({
@@ -158,25 +165,31 @@ async function askQuestion(
 							thinkingLevel: candidate.thinking,
 							messages: snapshot,
 							modelRegistry: ctx.modelRegistry,
+							signal,
 						});
 						activeSession = session;
-						if (cancelled) {
+						if (requestCancelled()) {
 							publishUsage(pi, scopeId, candidate, "aborted", startedAt, undefined, "aborted");
 							return { status: "cancelled" };
 						}
-						if (candidate.timeoutMs > 0) {
-							timer = setTimeout(() => {
-								timedOut = true;
-								void session?.abort().catch(() => {});
-							}, candidate.timeoutMs);
+						if (timeoutSignal?.aborted) {
+							publishUsage(pi, scopeId, candidate, "timeout", startedAt, undefined, "timeout");
+							lastError = `BTW request timed out for ${label}`;
+							continue;
 						}
-						await session.prompt(question, { source: "extension" });
+						const abortSession = () => { void session?.abort().catch(() => {}); };
+						signal.addEventListener("abort", abortSession, { once: true });
+						try {
+							await raceWithSignal(session.prompt(question, { source: "extension" }), signal);
+						} finally {
+							signal.removeEventListener("abort", abortSession);
+						}
 						const response = lastAssistant(session);
-						if (cancelled) {
+						if (requestCancelled()) {
 							publishUsage(pi, scopeId, candidate, "aborted", startedAt, response?.usage, "aborted");
 							return { status: "cancelled" };
 						}
-						if (timedOut) {
+						if (timeoutSignal?.aborted) {
 							publishUsage(pi, scopeId, candidate, "timeout", startedAt, response?.usage, "timeout");
 							lastError = `BTW request timed out for ${label}`;
 							continue;
@@ -195,11 +208,11 @@ async function askQuestion(
 							result.message.includes("no text") ? "empty_response" : "provider_error");
 					} catch (error) {
 						const message = error instanceof Error ? error.message : String(error);
-						if (cancelled) {
+						if (requestCancelled()) {
 							publishUsage(pi, scopeId, candidate, "aborted", startedAt, session ? lastAssistant(session)?.usage : undefined, "aborted");
 							return { status: "cancelled" };
 						}
-						if (timedOut) {
+						if (timeoutSignal?.aborted) {
 							publishUsage(pi, scopeId, candidate, "timeout", startedAt, session ? lastAssistant(session)?.usage : undefined, "timeout");
 							lastError = `BTW request timed out for ${label}`;
 						} else {
@@ -208,13 +221,13 @@ async function askQuestion(
 							lastError = authFailure ? `Authentication unavailable for ${label}` : `BTW request failed for ${label}`;
 						}
 					} finally {
-						if (timer) clearTimeout(timer);
 						if (session && activeSession === session) await disposeActiveSession();
 						else session?.dispose();
 					}
 				}
 				return { status: "error", message: lastError };
 			} finally {
+				if (activeRequestController === requestController) activeRequestController = null;
 				ctx.ui.setStatus(AUXILIARY_STATUS_KEY, undefined);
 			}
 		};
@@ -411,6 +424,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async () => {
+		activeRequestController?.abort(new Error("BTW session shutdown"));
+		activeRequestController = null;
 		await disposeActiveSession();
 		running = false;
 	});

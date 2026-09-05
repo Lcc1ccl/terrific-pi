@@ -258,7 +258,7 @@ describe("fast global preference", () => {
 	it("rereads external edits before the next provider request", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "fast-live-config-"));
 		saveFastEnabled(false, agentDir);
-		const { ctx, handlers, restoreEnv, statuses } = createExtensionHarness({ agentDir });
+		const { commands, ctx, handlers, notifications, restoreEnv, statuses } = createExtensionHarness({ agentDir });
 		try {
 			for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
 			assert.equal(statuses.get("fast"), undefined);
@@ -269,11 +269,18 @@ describe("fast global preference", () => {
 			for (const handler of handlers.get("before_provider_request") ?? []) handler({ payload: enabled }, ctx);
 			assert.equal(enabled.service_tier, "priority");
 			assert.equal(statuses.get("fast"), "");
+			await commands.get("fast")!.handler("status", ctx);
+			assert.match(notifications.at(-1)?.message ?? "", /Injected \(last provider request\): yes/);
 
 			saveFastEnabled(false, agentDir);
 			const disabled = { model: "gpt-5.6-sol" } as { model: string; service_tier?: string };
 			for (const handler of handlers.get("before_provider_request") ?? []) handler({ payload: disabled }, ctx);
 			assert.equal(disabled.service_tier, undefined);
+			assert.equal(statuses.get("fast"), undefined);
+			await commands.get("fast")!.handler("status", ctx);
+			assert.match(notifications.at(-1)?.message ?? "", /Preferred: off/);
+			assert.match(notifications.at(-1)?.message ?? "", /Eligible: yes/);
+			assert.match(notifications.at(-1)?.message ?? "", /Injected \(last provider request\): no/);
 		} finally {
 			restoreEnv();
 		}

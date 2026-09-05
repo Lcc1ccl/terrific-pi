@@ -51,7 +51,7 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 function registry(options: {
 	oauth?: boolean;
 	override?: boolean;
-	auth?: { ok: true; apiKey?: string; headers?: Record<string, string> } | { ok: false; error: string };
+	auth?: { ok: true; apiKey?: string; headers?: Record<string, string | null> } | { ok: false; error: string };
 }) {
 	return {
 		isUsingOAuth: () => options.oauth ?? true,
@@ -373,12 +373,14 @@ describe("QuotaMonitor", () => {
 				headers: {
 					Authorization: "Bearer oauth-token",
 					"anthropic-beta": "oauth-2025-04-20",
+					"chatgpt-account-id": null,
 					"X-Private-Provider-Header": "must-not-leak",
 				},
 			},
 		}), true);
 		assert.equal(sentHeaders?.Authorization, "Bearer oauth-token");
 		assert.equal(sentHeaders?.["anthropic-beta"], "oauth-2025-04-20");
+		assert.equal(sentHeaders?.["chatgpt-account-id"], undefined);
 		assert.equal(sentHeaders?.["X-Private-Provider-Header"], undefined);
 	});
 
