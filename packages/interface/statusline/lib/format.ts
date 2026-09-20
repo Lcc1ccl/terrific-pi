@@ -94,11 +94,19 @@ export function formatTokensCompact(value: number): string {
 	return `${scaled.toFixed(decimals).replace(/\.0+$|(?<=\.[0-9]*)0+$/g, "")}${suffix}`;
 }
 
+/** Units are secondary; numbers remain readable without extra hue. */
+function numericParts(text: string): SegmentPart[] {
+	return text.split(/([A-Za-z%]+| \/ )/).filter(Boolean).map((part) => ({
+		text: part,
+		tone: part === " / " ? "dim" : /^[A-Za-z%]+$/.test(part) ? "label" : "value",
+	}));
+}
+
 export function formatCost(value: number, _minimal = false): SegmentContent {
 	// Keep `$` always — minimal shortens other labels, not currency identity.
 	const amount = Math.max(0, value).toFixed(2);
 	return content([
-		{ text: "$", tone: "cost" },
+		{ text: "$", tone: "label" },
 		{ text: amount, tone: "cost" },
 	]);
 }
@@ -118,7 +126,7 @@ export function formatCache(
 	if (minimal) {
 		return content([
 			{ text: "CH ", tone: "label" },
-			{ text: value, tone: "value" },
+			...numericParts(value),
 		]);
 	}
 	const resolved = resolveIconMode(iconMode);
@@ -126,12 +134,12 @@ export function formatCache(
 	if (resolved === "plain") {
 		return content([
 			{ text: "cache ", tone: "label" },
-			{ text: value, tone: "value" },
+			...numericParts(value),
 		]);
 	}
 	return content([
 		{ text: `${glyphs.cache} `, tone: "icon" },
-		{ text: value, tone: "value" },
+		...numericParts(value),
 	]);
 }
 
@@ -191,7 +199,9 @@ export function formatContextBar(
 	const parts: SegmentPart[] = [
 		contextLabel(minimal, iconMode),
 		...formatBarParts(filledRatio, width),
-		{ text: label, tone: usageValueTone(used) },
+		...(usageValueTone(used) === "value"
+			? numericParts(label)
+			: [{ text: label, tone: usageValueTone(used) }]),
 	];
 	return content(parts);
 }
@@ -211,12 +221,12 @@ export function formatPathContent(cwd: string, iconMode: IconMode = "emoji"): Se
 	const split = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
 	const parts: SegmentPart[] = [];
 	const folder = resolveGlyphs(iconMode).folder;
-	if (resolveIconMode(iconMode) !== "plain" && folder) parts.push({ text: `${folder} `, tone: "active" });
+	if (resolveIconMode(iconMode) !== "plain" && folder) parts.push({ text: `${folder} `, tone: "icon" });
 	if (split >= 0 && split < path.length - 1) {
-		parts.push({ text: path.slice(0, split + 1), tone: "active" });
-		parts.push({ text: path.slice(split + 1), tone: "active" });
+		parts.push({ text: path.slice(0, split + 1), tone: "muted" });
+		parts.push({ text: path.slice(split + 1), tone: "active", bold: true });
 	} else {
-		parts.push({ text: path, tone: "active" });
+		parts.push({ text: path, tone: "active", bold: true });
 	}
 	return content(parts);
 }
@@ -249,11 +259,11 @@ export function formatTokenDirection(
 	return content(resolved === "plain"
 		? [
 			{ text: direction === "in" ? "in " : "out ", tone: "label" },
-			{ text: compact, tone: "value" },
+			...numericParts(compact),
 		]
 		: [
 			{ text: `${direction === "in" ? glyphs.input : glyphs.output} `, tone: "icon" },
-			{ text: compact, tone: "value" },
+			...numericParts(compact),
 		]);
 }
 
@@ -275,16 +285,16 @@ export function formatTokenPairMinimal(
 export function formatBranch(branch: string, iconMode: IconMode = "emoji"): SegmentContent {
 	const resolved = resolveIconMode(iconMode);
 	if (resolved === "plain") return content([{ text: branch, tone: "branch" }]);
-	return content([{ text: `${resolveGlyphs(iconMode).branch} ${branch}`, tone: "branch" }]);
+	return content([{ text: `${resolveGlyphs(iconMode).branch} `, tone: "icon" }, { text: branch, tone: "branch" }]);
 }
 
 export function formatBranchDiff(stats: { additions: number; deletions: number }): SegmentContent | undefined {
 	if (stats.additions === 0 && stats.deletions === 0) return undefined;
 	return content([
-		{ text: "+", tone: "success" },
+		{ text: "+", tone: "label" },
 		{ text: String(stats.additions), tone: "value" },
 		{ text: " ", tone: "dim" },
-		{ text: "-", tone: "error" },
+		{ text: "-", tone: "label" },
 		{ text: String(stats.deletions), tone: "value" },
 	]);
 }
@@ -296,7 +306,7 @@ export function formatFastBadge(value: string | undefined, iconMode: IconMode = 
 		return content([{ text: "fast", tone: "label" }]);
 	}
 	const text = resolved === "emoji" ? value : resolveGlyphs(iconMode).fast;
-	return content([{ text, tone: "warn" }]);
+	return content([{ text, tone: "label" }]);
 }
 
 export function formatQuotaWindowLabel(windowSeconds: number | undefined, fallback: string): string {
@@ -451,7 +461,7 @@ export function formatDurationContent(
 	if (minimal) {
 		return content([
 			{ text: "t ", tone: "label" },
-			{ text: pair, tone: "value" },
+			...numericParts(pair),
 		]);
 	}
 	const resolved = resolveIconMode(iconMode);
@@ -459,18 +469,18 @@ export function formatDurationContent(
 	if (resolved === "emoji") {
 		return content([
 			{ text: `${glyphs.duration} `, tone: "icon" },
-			{ text: pair, tone: "value" },
+			...numericParts(pair),
 		]);
 	}
 	if (resolved !== "plain") {
 		return content([
 			{ text: `${glyphs.duration} `, tone: "icon" },
-			{ text: pair, tone: "value" },
+			...numericParts(pair),
 		]);
 	}
 	return content([
 		{ text: "time ", tone: "label" },
-		{ text: pair, tone: "value" },
+		...numericParts(pair),
 	]);
 }
 
@@ -532,7 +542,7 @@ export function formatRunMetric(
 		case "runTtft":
 			return content([
 				{ text: `${label(glyphs.latency, "TTFT")} `, tone: "label" },
-				{ text: formatRunMetricDuration(view.ttftMs), tone: "value" },
+				...numericParts(formatRunMetricDuration(view.ttftMs)),
 			]);
 		case "runDuration":
 			return content([
@@ -616,9 +626,9 @@ export function formatModelContent(
 ): SegmentContent {
 	if (hasReasoning) {
 		return content([
-			{ text: modelId, tone: "model" },
+			{ text: modelId, tone: "model", bold: true },
 			{ text: ` ${thinkingLevel}`, tone: thinkingLevelTone(thinkingLevel) },
 		]);
 	}
-	return content([{ text: modelId, tone: "model" }]);
+	return content([{ text: modelId, tone: "model", bold: true }]);
 }

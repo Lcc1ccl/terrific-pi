@@ -65,7 +65,7 @@ describe("editor status projection", () => {
 		const built = buildWidgetSegments(hudSnapshot, value);
 		assert.equal(
 			renderEditorStatus(built, value, TEST_THEME, 80, (text) => text),
-			"in 12.5K · out 3.2K │ /home/user/proj │ gpt-5 high │ EDIT │ fast",
+			"in 12.5K  out 3.2K │ /home/user/proj │ gpt-5 high │ EDIT │ fast",
 		);
 		assert.equal(
 			renderEditorStatus(built, value, TEST_THEME, 12, truncateToWidth, visibleWidth),
@@ -85,7 +85,7 @@ describe("explicit footer lines", () => {
 		assert.deepEqual(
 			renderStatusLine(buildWidgetSegments(hudSnapshot, value), value, TEST_THEME, 120, (text) => text),
 			[
-				"  🪟 [░░░░░░░░] 4% · $0.42 · 🎯 23.5% · 🔼 12.5K · 🔽 3.2K",
+				"  🪟 [░░░░░░░░] 4% · $0.42 · 🎯 23.5% · 🔼 12.5K  🔽 3.2K",
 				"  📁 /home/user/proj · demo · ⑂ main · +12 -3",
 				"  task · Ready · 🕒 12s / 1m45s · ✓ core_tools x9",
 			],
@@ -137,11 +137,11 @@ describe("widget spacing", () => {
 		assert.equal(render(0), "  left·right");
 	});
 
-	it("keeps related token values dot-separated inside a bar-separated line", () => {
+	it("groups related token values with spaces inside a bar-separated line", () => {
 		const value = config(lines({ line1: ["tokens", "state"] }), { separator: "bar", iconMode: "plain" });
 		assert.deepEqual(
 			renderStatusLine(buildWidgetSegments(hudSnapshot, value), value, TEST_THEME, 200, (text) => text),
-			["  in 12.5K · out 3.2K │ Ready"],
+			["  in 12.5K  out 3.2K │ Ready"],
 		);
 	});
 });
@@ -245,11 +245,11 @@ describe("responsive fitting", () => {
 		renderStatusLine(buildWidgetSegments(hudSnapshot, value), value, theme, 200, (text) => text);
 		assert.ok(calls.some(([color, text]) => color === "accent" && text === "gpt-5"));
 		assert.ok(calls.some(([color, text]) => color === "thinkingHigh" && text === " high"));
-		assert.ok(calls.some(([color, text]) => color === "accent" && text.includes("")));
-		assert.ok(calls.some(([color, text]) => color === "accent" && text === "/home/user/"));
+		assert.ok(calls.some(([color, text]) => color === "muted" && text.includes("")));
+		assert.ok(calls.some(([color, text]) => color === "muted" && text === "/home/user/"));
 		assert.ok(calls.some(([color, text]) => color === "accent" && text === "proj"));
-		assert.ok(calls.some(([color, text]) => color === "mdHeading" && text.includes("main")));
-		assert.ok(calls.some(([color, text]) => color === "mdHeading" && text.includes("$")));
-		assert.ok(calls.some(([color, text]) => color === "dim" && text === "Ready"));
+		assert.ok(calls.some(([color, text]) => color === "text" && text === "main"));
+		assert.ok(calls.some(([color, text]) => color === "muted" && text === "$"));
+		assert.ok(calls.some(([color, text]) => color === "muted" && text === "Ready"));
 	});
 });

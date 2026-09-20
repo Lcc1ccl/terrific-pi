@@ -84,6 +84,8 @@ export type SegmentTone =
 export interface SegmentPart {
 	text: string;
 	tone?: SegmentTone;
+	/** Emphasis for identity anchors; applied through the host theme. */
+	bold?: boolean;
 }
 
 export type WidgetLines = Record<WidgetLineId, WidgetId[]>;

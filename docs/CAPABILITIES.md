@@ -35,6 +35,8 @@ Dedicated status keys are not duplicated into generic progress. Presentation's O
 
 ## Configuration
 
+Statusline uses the host theme for its visual hierarchy: the model and final path component are bold accent anchors, reasoning keeps its native thinking color, and the cost amount uses `mdHeading` (gold in Tokyo Night). Parent paths, icons, units, currency symbols, idle state, progress text, and Fast badges are secondary; branch names and ordinary values are neutral. Git diff signs remain visible without alarm colors. Block context bars and usage warning thresholds are unchanged. Non-minimal input/output totals form one space-separated group. This is a rendering-only policy: saved widget placement, Appearance ownership, and the editor bridge are unchanged; other themes retain their own hues.
+
 | File | Sections or data |
 |---|---|
 | `terrific.json` | appearance, auxiliary, btw, context, fast, mode, modelProfile, presentation, taskboard |

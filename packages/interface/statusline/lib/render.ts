@@ -33,6 +33,7 @@ export type HostThemeColor =
 
 export interface HostTheme {
 	fg(color: HostThemeColor, text: string): string;
+	bold?(text: string): string;
 }
 
 export function formatWidgetSeparator(
@@ -101,6 +102,7 @@ function hostThemeColor(accent: Accent, tone: SegmentTone = "value"): HostThemeC
 		case "model":
 			return "accent";
 		case "branch":
+			return "text";
 		case "cost":
 			return "mdHeading";
 		case "label":
@@ -123,7 +125,10 @@ function colorizeText(theme: HostTheme, accent: Accent, text: string, tone: Segm
 function colorizeSegment(theme: HostTheme, segment: WidgetSegment): string {
 	if (segment.parts && segment.parts.length > 0) {
 		return segment.parts
-			.map((part) => colorizeText(theme, segment.accent, part.text, part.tone ?? "value"))
+			.map((part) => {
+				const colored = colorizeText(theme, segment.accent, part.text, part.tone ?? "value");
+				return part.bold && theme.bold ? theme.bold(colored) : colored;
+			})
 			.join("");
 	}
 	return colorizeText(theme, segment.accent, segment.text);
@@ -161,11 +166,11 @@ function pathParts(path: string): SegmentPart[] {
 	const split = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
 	if (split >= 0 && split < path.length - 1) {
 		return [
-			{ text: path.slice(0, split + 1), tone: "active" },
-			{ text: path.slice(split + 1), tone: "active" },
+			{ text: path.slice(0, split + 1), tone: "muted" },
+			{ text: path.slice(split + 1), tone: "active", bold: true },
 		];
 	}
-	return [{ text: path, tone: "active" }];
+	return [{ text: path, tone: "active", bold: true }];
 }
 
 function leftEllipsize(text: string, width: number, measure: (text: string) => number): string {
@@ -193,7 +198,7 @@ function shrinkPathSegment(
 ): boolean {
 	if (segment.id !== "path" || measure(segment.text) <= width) return false;
 	const first = segment.parts?.[0];
-	const icon = first?.tone === "active" && first.text.endsWith(" ") ? first : undefined;
+	const icon = first?.tone === "icon" && first.text.endsWith(" ") ? first : undefined;
 	const prefix = icon?.text ?? "";
 	const body = icon ? segment.text.slice(prefix.length) : segment.text;
 	const clipped = leftEllipsize(body, Math.max(0, width - measure(prefix)), measure);
@@ -227,7 +232,7 @@ export function fitSegmentsToWidth(
 		if (segment.id !== "path" || lineWidth() <= maxWidth) continue;
 		const overflow = lineWidth() - maxWidth;
 		const first = segment.parts?.[0];
-		const prefixWidth = first?.tone === "active" && first.text.endsWith(" ") ? measure(first.text) : 0;
+		const prefixWidth = first?.tone === "icon" && first.text.endsWith(" ") ? measure(first.text) : 0;
 		const minimum = prefixWidth + measure("…");
 		shrinkPathSegment(segment, Math.max(minimum, measure(segment.text) - overflow), measure);
 	}

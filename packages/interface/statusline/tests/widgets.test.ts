@@ -70,7 +70,7 @@ describe("buildWidgetSegments", () => {
 				" 12s / 1m45s",
 				" [███░░░░░] 40%",
 				" 66.7%",
-				" 1.5K ·  800",
+				" 1.5K   800",
 				"$0.42",
 			],
 		);
@@ -86,7 +86,7 @@ describe("buildWidgetSegments", () => {
 		});
 		assert.deepEqual(segments.map((segment) => segment.text), [
 			" /home/user/proj",
-			" 1.5K ·  800",
+			" 1.5K   800",
 		]);
 	});
 
@@ -150,7 +150,7 @@ describe("buildWidgetSegments", () => {
 			legacySnapshot,
 			{ ...DEFAULT_CONFIG, lines: line1(["tokens", "cost"]), iconMode: "plain" },
 		);
-		assert.deepEqual(segments.map((segment) => segment.text), ["in 1.5K · out 800", "$0.42"]);
+		assert.deepEqual(segments.map((segment) => segment.text), ["in 1.5K  out 800", "$0.42"]);
 	});
 
 	it("renders fast independently and hides it when inactive", () => {
@@ -159,7 +159,7 @@ describe("buildWidgetSegments", () => {
 			lines: line1(["fast", "progress"]),
 		});
 		assert.deepEqual(active.map((segment) => segment.text), ["", "task 1/2"]);
-		assert.equal(active[0]?.parts?.[0]?.tone, "warn");
+		assert.equal(active[0]?.parts?.[0]?.tone, "label");
 
 		const inactive = buildWidgetSegments(
 			{ ...baseSnapshot, fast: undefined },
@@ -175,7 +175,7 @@ describe("buildWidgetSegments", () => {
 		});
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
-			[" 1.5K ·  800"],
+			[" 1.5K   800"],
 		);
 	});
 
@@ -187,22 +187,22 @@ describe("buildWidgetSegments", () => {
 		});
 		assert.deepEqual(
 			segments.map((segment) => segment.text),
-			["in 1.5K · out 800", "cache 66.7%", "fast", "main"],
+			["in 1.5K  out 800", "cache 66.7%", "fast", "main"],
 		);
 	});
 
-	it("uses OMP-like category tones without hard-coded colors", () => {
+	it("uses identity accents with secondary metadata and native thinking colors", () => {
 		const metadata = buildWidgetSegments(
 			{ ...baseSnapshot, branch: "feature" },
 			{ ...DEFAULT_CONFIG, lines: line1(["model", "path", "branch", "cost", "context"]) },
 		);
 		assert.equal(metadata.find((segment) => segment.id === "model")?.parts?.[0]?.tone, "model");
-		assert.ok(metadata.find((segment) => segment.id === "path")?.parts?.every((part) => part.tone === "active"));
-		assert.ok(metadata.find((segment) => segment.id === "branch")?.parts?.every((part) => part.tone === "branch"));
-		assert.ok(metadata.find((segment) => segment.id === "cost")?.parts?.every((part) => part.tone === "cost"));
+		assert.ok(metadata.find((segment) => segment.id === "path")?.parts?.at(-1)?.tone === "active");
+		assert.ok(metadata.find((segment) => segment.id === "branch")?.parts?.at(-1)?.tone === "branch");
+		assert.ok(metadata.find((segment) => segment.id === "cost")?.parts?.at(-1)?.tone === "cost");
 
 		for (const [runState, expectedTone] of [
-			["Ready", "dim"],
+			["Ready", "muted"],
 			["Working", "active"],
 			["Thinking", "thinkingHigh"],
 			["Waiting", "muted"],

@@ -249,7 +249,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				} else {
 					const input = formatTokenDirection("in", snapshot.tokens.input, iconMode);
 					const output = formatTokenDirection("out", snapshot.tokens.output, iconMode);
-					const separator = formatWidgetSeparator(config.spacing);
+					const separator = "  ";
 					const parts = [...input.parts, { text: separator, tone: "dim" as const }, ...output.parts];
 					pushContent(
 						segments,
@@ -315,7 +315,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 						id,
 						accent: "progress",
 						text: snapshot.progress,
-						parts: [{ text: snapshot.progress, tone: "active" }],
+						parts: [{ text: snapshot.progress, tone: "muted" }],
 						priority,
 					});
 				}
@@ -332,7 +332,7 @@ export function buildWidgetSegments(snapshot: StatusSnapshot, config: Statusline
 				break;
 			case "state": {
 				const tone = snapshot.runState === "Ready"
-					? "dim"
+					? "muted"
 					: snapshot.runState === "Thinking"
 						? thinkingLevelTone(snapshot.thinkingLevel)
 						: snapshot.runState === "Waiting"

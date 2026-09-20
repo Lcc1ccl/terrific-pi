@@ -39,7 +39,7 @@ describe("formatCost", () => {
 		assert.equal(formatCost(0).text, "$0.00");
 		assert.equal(formatCost(0.421).text, "$0.42");
 		assert.equal(formatCost(12.5, true).text, "$12.50");
-		assert.deepEqual(formatCost(0.42).parts.map((part) => part.tone), ["cost", "cost"]);
+		assert.deepEqual(formatCost(0.42).parts.map((part) => part.tone), ["label", "cost"]);
 	});
 });
 
@@ -143,7 +143,7 @@ describe("formatModelContent", () => {
 		assert.deepEqual(formatModelContent("gpt-5", "off", true), {
 			text: "gpt-5 off",
 			parts: [
-				{ text: "gpt-5", tone: "model" },
+				{ text: "gpt-5", tone: "model", bold: true },
 				{ text: " off", tone: "thinkingOff" },
 			],
 		});
@@ -159,8 +159,7 @@ describe("formatBranchDiff", () => {
 	it("splits signs and numbers", () => {
 		const body = formatBranchDiff({ additions: 12, deletions: 3 });
 		assert.equal(body?.text, "+12 -3");
-		assert.ok(body?.parts.some((part) => part.tone === "success"));
-		assert.ok(body?.parts.some((part) => part.tone === "error"));
+		assert.deepEqual(body?.parts.filter((part) => part.tone === "label").map((part) => part.text), ["+", "-"]);
 	});
 });
 
@@ -171,7 +170,7 @@ describe("formatBranch", () => {
 		assert.equal(formatBranch("main", "plain").text, "main");
 		assert.equal(formatBranch("feature", "emoji").text, "⑂ feature");
 		assert.equal(formatBranch("feature", "plain").text, "feature");
-		assert.ok(formatBranch("main", "emoji").parts.every((part) => part.tone === "branch"));
+		assert.ok(formatBranch("main", "emoji").parts.at(-1)?.tone === "branch");
 	});
 });
 
@@ -248,8 +247,8 @@ describe("formatToolActivity", () => {
 });
 
 describe("formatFastBadge", () => {
-	it("uses the warning tone for the emoji badge", () => {
-		assert.equal(formatFastBadge("", "emoji")?.parts[0]?.tone, "warn");
+	it("keeps the fast badge neutral", () => {
+		assert.equal(formatFastBadge("", "emoji")?.parts[0]?.tone, "label");
 		assert.equal(formatFastBadge("", "plain")?.parts[0]?.tone, "label");
 	});
 });
