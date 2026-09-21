@@ -159,7 +159,7 @@ describe("buildWidgetSegments", () => {
 			lines: line1(["fast", "progress"]),
 		});
 		assert.deepEqual(active.map((segment) => segment.text), ["", "task 1/2"]);
-		assert.equal(active[0]?.parts?.[0]?.tone, "label");
+		assert.equal(active[0]?.parts?.[0]?.tone, "warn");
 
 		const inactive = buildWidgetSegments(
 			{ ...baseSnapshot, fast: undefined },

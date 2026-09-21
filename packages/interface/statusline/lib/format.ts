@@ -306,7 +306,7 @@ export function formatFastBadge(value: string | undefined, iconMode: IconMode = 
 		return content([{ text: "fast", tone: "label" }]);
 	}
 	const text = resolved === "emoji" ? value : resolveGlyphs(iconMode).fast;
-	return content([{ text, tone: "label" }]);
+	return content([{ text, tone: "warn" }]);
 }
 
 export function formatQuotaWindowLabel(windowSeconds: number | undefined, fallback: string): string {

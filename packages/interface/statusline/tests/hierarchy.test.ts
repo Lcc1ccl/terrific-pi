@@ -22,7 +22,7 @@ it("keeps only identity anchors bold and separates cost from routine metadata", 
 	assert.ok(calls.some(([c, t]) => c === "muted" && t === "$"));
 	assert.ok(calls.some(([c, t]) => c === "mdHeading" && t === "0.42"));
 	assert.ok(calls.some(([c, t]) => c === "thinkingHigh" && t === " high"));
-	assert.ok(calls.some(([c, t]) => c === "muted" && t === ""));
+	assert.ok(calls.some(([c, t]) => c === "warning" && t === ""));
 	assert.ok(calls.some(([c, t]) => c === "muted" && t === "Ready"));
 	assert.ok(rows.every(row => visibleWidth(row) <= 200));
 });

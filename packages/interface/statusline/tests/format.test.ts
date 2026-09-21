@@ -247,8 +247,11 @@ describe("formatToolActivity", () => {
 });
 
 describe("formatFastBadge", () => {
-	it("keeps the fast badge neutral", () => {
-		assert.equal(formatFastBadge("", "emoji")?.parts[0]?.tone, "label");
+	it("keeps fast icons bright and plain labels quiet", () => {
+		assert.equal(formatFastBadge("", "emoji")?.parts[0]?.tone, "warn");
+		for (const mode of ["nerd", "ascii"] as const) {
+			assert.equal(formatFastBadge("enabled", mode)?.parts[0]?.tone, "warn");
+		}
 		assert.equal(formatFastBadge("", "plain")?.parts[0]?.tone, "label");
 	});
 });
