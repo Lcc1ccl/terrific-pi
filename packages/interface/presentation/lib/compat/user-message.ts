@@ -1,4 +1,5 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { stripVTControlCharacters } from "node:util";
 
 export interface CompatibilityTheme {
 	fg(color: string, text: string): string;
@@ -55,10 +56,10 @@ function splitPromptZones(lines: string[]): { lines: string[]; start: string; en
 	return { lines: clean, start: starts.join(""), end: ends.join("") };
 }
 
-function border(theme: CompatibilityTheme | undefined, value: string): string {
+function border(theme: CompatibilityTheme | undefined, value: string, heavy = false): string {
 	if (!theme) return value;
 	try {
-		return theme.fg("border", value);
+		return theme.fg(heavy ? "accent" : "border", heavy && theme.bold ? theme.bold(value) : value);
 	} catch {
 		return value;
 	}
@@ -86,22 +87,33 @@ function background(theme: CompatibilityTheme | undefined, value: string): strin
 	return clean;
 }
 
-function top(width: number, theme: CompatibilityTheme | undefined): string {
+function top(width: number, theme: CompatibilityTheme | undefined, heavy = false): string {
 	const inner = width - 2;
-	const label = truncateToWidth(TITLE, inner, "");
-	const fill = "─".repeat(Math.max(0, inner - visibleWidth(label)));
-	return background(theme, `${border(theme, "╭")}${title(theme, label)}${border(theme, `${fill}╮`)}`);
+	const label = truncateToWidth(heavy ? " ❯ You " : TITLE, inner, "");
+	const fill = (heavy ? "━" : "─").repeat(Math.max(0, inner - visibleWidth(label)));
+	return background(theme, `${border(theme, heavy ? "┏" : "╭", heavy)}${title(theme, label)}${border(theme, `${fill}${heavy ? "┓" : "╮"}`, heavy)}`);
 }
 
-function bottom(width: number, theme: CompatibilityTheme | undefined): string {
-	return background(theme, border(theme, `╰${"─".repeat(Math.max(0, width - 2))}╯`));
+function bottom(width: number, theme: CompatibilityTheme | undefined, heavy = false): string {
+	return background(theme, border(theme, `${heavy ? "┗" : "╰"}${(heavy ? "━" : "─").repeat(Math.max(0, width - 2))}${heavy ? "┛" : "╯"}`, heavy));
 }
 
-function body(line: string, width: number, theme: CompatibilityTheme | undefined): string {
+function body(line: string, width: number, theme: CompatibilityTheme | undefined, heavy = false): string {
 	const contentWidth = Math.max(1, width - 4);
 	const content = truncateToWidth(stripBackgroundCodes(line), contentWidth, "", true);
 	const padding = " ".repeat(Math.max(0, contentWidth - visibleWidth(content)));
-	return background(theme, `${border(theme, "│")} ${content}${padding} ${border(theme, "│")}`);
+	return background(theme, `${border(theme, heavy ? "┃" : "│", heavy)} ${content}${padding} ${border(theme, heavy ? "┃" : "│", heavy)}`);
+}
+
+/** Keep OMP user turns recognizable with a heavy, theme-owned enclosing frame. */
+export function renderUserMessageFrame(
+	instance: unknown,
+	width: number,
+	original: (this: unknown, width: number) => string[],
+	theme: CompatibilityTheme | undefined,
+	enabled: boolean,
+): string[] {
+	return renderUserMessageBox(instance, width, original, theme, enabled, true);
 }
 
 export function renderUserMessageBox(
@@ -110,6 +122,7 @@ export function renderUserMessageBox(
 	original: (this: unknown, width: number) => string[],
 	theme: CompatibilityTheme | undefined,
 	enabled: boolean,
+	heavy = false,
 ): string[] {
 	const safeWidth = Math.max(0, Math.floor(width));
 	if (!enabled || safeWidth < MIN_WIDTH) return original.call(instance, safeWidth);
@@ -117,11 +130,16 @@ export function renderUserMessageBox(
 		const originalLines = original.call(instance, Math.max(1, safeWidth - 4));
 		if (!Array.isArray(originalLines) || originalLines.length === 0) return original.call(instance, safeWidth);
 		const zones = splitPromptZones(originalLines);
+		// Replace only native outer padding; preserve intentional blank lines inside Markdown.
+		if (heavy) {
+			if (zones.lines.length && !stripVTControlCharacters(zones.lines[0]!).trim()) zones.lines.shift();
+			if (zones.lines.length && !stripVTControlCharacters(zones.lines.at(-1)!).trim()) zones.lines.pop();
+		}
 		return [
 			"",
-			`${zones.start}${top(safeWidth, theme)}`,
-			...zones.lines.map((line) => body(line, safeWidth, theme)),
-			`${zones.end}${bottom(safeWidth, theme)}`,
+			`${zones.start}${top(safeWidth, theme, heavy)}`,
+			...zones.lines.map((line) => body(line, safeWidth, theme, heavy)),
+			`${zones.end}${bottom(safeWidth, theme, heavy)}`,
 		];
 	} catch {
 		return original.call(instance, safeWidth);

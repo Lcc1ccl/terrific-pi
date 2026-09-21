@@ -95,7 +95,7 @@ export interface PresentationConfig {
 	workspace: boolean;
 	systemEvents: boolean;
 	artifacts: boolean;
-	/** Adds the native user-message frame through the guarded compatibility renderer. */
+	/** Adds an OMP heavy frame or classic frame through the guarded compatibility renderer. */
 	userMessageBox: boolean;
 	/** Uses the guarded compact transcript renderer without replacing tool definitions. */
 	compactTools: boolean;

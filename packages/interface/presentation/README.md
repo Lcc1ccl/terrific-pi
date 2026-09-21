@@ -18,7 +18,7 @@ No external transcript or tool-display fork is required.
 
 The default `omp` style changes transcript projection only:
 
-- User messages keep Pi's native full-width shaded band and OSC 133/633 prompt zones.
+- When `userMessageBox` is enabled, user messages use a complete heavy-line, bold accent-colored frame (`┏━┓`, `┃`, `┗━┛`) with a `❯ You` title. Pi still renders the Markdown at the inset width; only outer padding is replaced by the frame. Internal blank lines, native background and OSC 133/633 prompt zones are preserved. Disabling the setting restores the native shaded band.
 - Hidden thinking uses the OMP starburst pulse only while the assistant stream currently ends in thinking. Real streamed usage may add token count and rolling speed; final history removes the pulse, speed, hidden-thinking placeholder, and Pi's leading assistant spacer. Final assistant Markdown remains Pi-native.
 - Consecutive reads render as a path tree. Search, list, Bash, edit/write, and generic tools use bounded state blocks with privacy filtering before truncation. `process_update` remains native.
 - `Ctrl+O` (or the configured `app.tools.expand` binding) always restores Pi's native tool call/result view. OMP artifact anchors keep the collapsed tool block plus one request-level net file receipt; expanded output is native-only.
@@ -50,7 +50,7 @@ Configuration shares `$PI_CODING_AGENT_DIR/terrific.json` (normally `~/.pi/agent
 }
 ```
 
-`style` defaults to `"omp"`; use `"classic"` for the prior transcript projection. `userMessageBox` controls only the classic user frame, while `compactTools: false` restores native collapsed tool rows in either style. Runtime toggles are dynamic and file receipts remain available when compact tools are disabled.
+`style` defaults to `"omp"`; use `"classic"` for the prior transcript projection. `userMessageBox` controls the OMP heavy frame or classic user frame, while `compactTools: false` restores native collapsed tool rows in either style. Runtime toggles are dynamic and file receipts remain available when compact tools are disabled.
 
 Malformed JSON fails closed for this extension and is reported once. `/presentation` changes only the `presentation` section atomically.
 

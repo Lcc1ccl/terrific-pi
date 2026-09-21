@@ -8,7 +8,7 @@ import {
 	type ToolLifecycleEnd,
 	type ToolLifecycleStart,
 } from "./tool-render.ts";
-import { renderUserMessageBox, type CompatibilityTheme } from "./user-message.ts";
+import { renderUserMessageFrame, renderUserMessageBox, type CompatibilityTheme } from "./user-message.ts";
 import type { PresentationArtifactState } from "../types.ts";
 
 const REQUIRED_COMPONENT_METHODS = {
@@ -119,8 +119,8 @@ export function installPresentationCompatibility(
 			USER_PATCH_KEY,
 			1,
 			(original) => function presentationUserMessageRender(this: unknown, width: number): string[] {
-				if (ompStyleEnabled()) return original.call(this, Math.max(0, Math.floor(width)));
-				return renderUserMessageBox(
+				const renderUser = ompStyleEnabled() ? renderUserMessageFrame : renderUserMessageBox;
+				return renderUser(
 					this,
 					width,
 					original as (this: unknown, width: number) => string[],
