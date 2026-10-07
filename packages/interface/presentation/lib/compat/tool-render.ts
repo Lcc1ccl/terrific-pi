@@ -84,6 +84,7 @@ export interface ToolRenderController {
 	dispose(): void;
 }
 
+const NATIVE_TOOLS = new Set(["process_update", "subagent", "subagent_wait"]);
 const EXPLORATION = new Set(["read", "grep", "find", "ls"]);
 const SEARCH = new Set(["grep", "find"]);
 const MUTATION = new Set(["edit", "write"]);
@@ -873,6 +874,8 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 		},
 		render(instanceValue, width, original) {
 			const instance = instanceValue as ToolComponentLike;
+			// Stateful tools own their live UI and compact result presentation.
+			if (typeof instance.toolName === "string" && NATIVE_TOOLS.has(instance.toolName)) return original.call(instanceValue, width);
 			const state = upsertFromInstance(instance);
 			refreshTimer();
 			const artifactEnabled = options.isArtifactProjectionEnabled?.() ?? options.isEnabled();
@@ -884,7 +887,7 @@ export function createToolRenderController(options: ToolRenderOptions): ToolRend
 			const withArtifact = (lines: string[]): string[] => artifact && ompCompact && width > 0
 				? [...lines, truncateToWidth(artifactSummary(artifact, options.getTheme()), width, "…")]
 				: lines;
-			if ((!compactTools && !projectArtifact) || instance.toolName === "process_update") return original.call(instanceValue, width);
+			if (!compactTools && !projectArtifact) return original.call(instanceValue, width);
 			if (instance.expanded === true) {
 				const native = original.call(instanceValue, width);
 				if (ompStyle) return native;

@@ -45,6 +45,10 @@ type InspectorBreakdown = ContextBreakdown & { safeUsage?: SafeContextUsage };
 
 function buildBreakdown(ctx: ExtensionCommandContext): InspectorBreakdown {
 	const usage = ctx.getContextUsage();
+	const model = ctx.model && (ctx.modelRegistry?.find(ctx.model.provider, ctx.model.id) ?? ctx.model);
+	const contextWindow = model?.contextWindow ?? usage?.contextWindow ?? null;
+	const percent = usage?.tokens != null && contextWindow != null && contextWindow > 0
+		? usage.tokens / contextWindow * 100 : null;
 	const systemPrompt = ctx.getSystemPrompt?.() ?? "";
 	const sessionCtx = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId());
 	const messages = (sessionCtx.messages ?? []) as ClassifiableMessage[];
@@ -53,13 +57,13 @@ function buildBreakdown(ctx: ExtensionCommandContext): InspectorBreakdown {
 		systemPrompt,
 		messages,
 		totalTokens: usage?.tokens ?? null,
-		contextWindow: usage?.contextWindow ?? null,
-		percent: usage?.percent ?? null,
+		contextWindow,
+		percent,
 	});
 	const safeUsage = safeContextUsage(
 		usage?.tokens ?? null,
-		usage?.contextWindow ?? null,
-		typeof ctx.model?.maxTokens === "number" ? ctx.model.maxTokens : undefined,
+		contextWindow,
+		typeof model?.maxTokens === "number" ? model.maxTokens : undefined,
 	);
 	return { ...breakdown, ...(safeUsage ? { safeUsage } : {}) };
 }

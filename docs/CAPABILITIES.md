@@ -35,6 +35,10 @@ Dedicated status keys are not duplicated into generic progress. Presentation's O
 
 OMP user messages use a complete bold accent-colored heavy-line frame with a `❯ You` title when `userMessageBox` is enabled. Native Markdown renders at the inset width; outer padding is replaced while internal blank lines, theme background and OSC prompt zones are preserved. Disabling the setting restores the native band. This is Presentation-owned and does not alter Appearance or the global theme.
 
+Presentation leaves `process_update`, `subagent`, and `subagent_wait` on their native renderers so their owners retain live status and compact result behavior. In particular, async launch instructions are not repackaged into an OMP input-like card.
+
+Statusline context text and bars use occupied tokens divided by the current registry model's configured context window. `/context` uses the same model metadata and shows the conservative output/reserve budget separately. Main-session cost is an estimate recomputed per assistant message with that message's provider/model and current registry rates (including Pi's pricing tiers); unavailable models retain their stored cost. Model selection, session lifecycle refreshes, and `/statusline reload` refresh the totals without rewriting history.
+
 ## Configuration
 
 Statusline uses the host theme for its visual hierarchy: the model and final path component are bold accent anchors, reasoning keeps its native thinking color, and the cost amount uses `mdHeading` (gold in Tokyo Night). Parent paths, icons, units, currency symbols, idle state, and progress text are secondary; branch names and ordinary values are neutral. Fast icons retain the bright `warning` color (gold in Tokyo Night) as an enabled-mode indicator; the plain-text label stays secondary. Git diff signs remain visible without alarm colors. Block context bars and usage warning thresholds are unchanged. Non-minimal input/output totals form one space-separated group. This is a rendering-only policy: saved widget placement, Appearance ownership, and the editor bridge are unchanged; other themes retain their own hues.

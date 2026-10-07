@@ -133,6 +133,30 @@ async function settledRun(app: ReturnType<typeof harness>, ctx: any): Promise<vo
 }
 
 describe("statusline migration lifecycle", () => {
+	it("uses refreshed model limits and reprices usage on model selection and reload", async () => {
+		const { cwd } = config({ widgets: ["context", "cost"], iconMode: "plain", contextMode: "used" });
+		const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
+		const ctx = app.makeCtx(cwd) as any;
+		ctx.model = { provider: "custom", id: "model", contextWindow: 100_000, maxTokens: 10_000 };
+		let rate = 2;
+		ctx.modelRegistry.find = () => ({ ...ctx.model, contextWindow: 200_000, cost: { input: rate, output: 0, cacheRead: 0, cacheWrite: 0 } });
+		ctx.getContextUsage = () => ({ tokens: 50_000, contextWindow: 100_000, percent: 50 });
+		ctx.sessionManager.getBranch = () => [{ type: "message", message: {
+			...assistantMessage(), provider: "custom", model: "model",
+			usage: { input: 1_000_000, cost: { total: 0 } },
+		} }];
+		await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+		const footer = app.mountFooter();
+		assert.match(footer.render(120).join("\n"), /25% used/);
+		assert.match(footer.render(120).join("\n"), /\$2\.00/);
+		rate = 3;
+		await app.emit("model_select", {}, ctx);
+		assert.match(footer.render(120).join("\n"), /\$3\.00/);
+		rate = 4;
+		await app.commands.get("statusline").handler("reload", ctx);
+		assert.match(footer.render(120).join("\n"), /\$4\.00/);
+	});
+
 	it("falls back to Pi context usage when no positive safe-input budget exists", async () => {
 		const { cwd } = config({ widgets: ["context"], iconMode: "plain", contextMode: "used" });
 		const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));

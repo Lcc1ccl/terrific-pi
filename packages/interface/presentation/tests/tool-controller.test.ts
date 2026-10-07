@@ -400,6 +400,38 @@ test("OMP leaves process_update rendering entirely native", () => {
 	}
 });
 
+test("subagent launch and wait results retain their native renderer across lifecycle states", () => {
+	for (const omp of [false, true]) {
+		const controller = createToolRenderController({
+			isEnabled: () => true,
+			isOmpStyleEnabled: () => omp,
+			getTheme: () => theme,
+			now: () => 1_000,
+		});
+		try {
+			for (const name of ["subagent", "subagent_wait"]) {
+				const tool = instance(`${name}-async`, name, { async: true });
+				controller.start({ toolCallId: tool.toolCallId, toolName: name, args: {}, cwd: "/tmp" });
+				for (const result of [undefined, { content: [{ type: "text", text: "Async: scout [run-id]\nThe async run is detached and running in the background." }] }]) {
+					if (result) {
+						controller.end({ toolCallId: tool.toolCallId, toolName: name, result, isError: false });
+						Object.assign(tool, { isPartial: false, result });
+					}
+					for (const width of [40, 80, 120]) {
+						assert.deepEqual(controller.render(tool, width, function (actualWidth) {
+							assert.equal(this, tool);
+							assert.equal(actualWidth, width);
+							return ["native subagent status"];
+						}), ["native subagent status"]);
+					}
+				}
+			}
+		} finally {
+			controller.dispose();
+		}
+	}
+});
+
 test("file receipts remain attached to native rows when compact summaries are disabled", () => {
 	const controller = createToolRenderController({
 		isEnabled: () => false,

@@ -49,6 +49,20 @@ describe("aggregateSessionUsage", () => {
 		assert.ok(Math.abs(totals.cost - 0.15) < 1e-9);
 	});
 
+	it("reprices each message using its own provider/model without mutating stored usage", () => {
+		const entries = [
+			{ type: "message", message: { role: "assistant", provider: "a", model: "same", usage: { input: 1_000_000, output: 100_000, cacheRead: 200_000, cacheWrite: 50_000, cost: { total: 0 } } } },
+			{ type: "message", message: { role: "assistant", provider: "b", model: "same", usage: { input: 1_000_000, cost: { total: 99 } } } },
+			{ type: "message", message: { role: "assistant", provider: "missing", model: "old", usage: { cost: { total: 0.5 } } } },
+		];
+		const before = structuredClone(entries);
+		const findModel = (provider: string, _id: string) => provider === "missing" ? undefined : ({
+			cost: { input: provider === "a" ? 2 : 0, output: 10, cacheRead: 0.5, cacheWrite: 4 },
+		} as any);
+		assert.ok(Math.abs(aggregateSessionUsage(entries, findModel).cost - 3.8) < 1e-9);
+		assert.deepEqual(entries, before);
+	});
+
 	it("ignores auxiliary ledger entries", () => {
 		const entries = [{
 			type: "custom",

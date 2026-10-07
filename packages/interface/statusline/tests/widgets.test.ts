@@ -259,13 +259,13 @@ describe("buildWidgetSegments", () => {
 		}
 	});
 
-	it("uses the conservative safe-input percentage when available", () => {
+	it("uses the model-window percentage even when safe-input headroom is available", () => {
 		for (const widget of ["context", "contextBar"] as const) {
 			const segments = buildWidgetSegments(
 				{ ...baseSnapshot, context: { tokens: 340_000, contextWindow: 500_000, percent: 68, safePercent: 95.6 } },
 				{ ...DEFAULT_CONFIG, lines: line1([widget]), contextMode: "used" },
 			);
-			assert.match(segments[0]?.text ?? "", /96%/);
+			assert.match(segments[0]?.text ?? "", /68%/);
 		}
 	});
 

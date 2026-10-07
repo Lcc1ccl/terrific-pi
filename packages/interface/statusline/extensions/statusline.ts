@@ -49,12 +49,6 @@ import {
 	shouldTrackToolActivity,
 } from "../lib/widgets.ts";
 
-function safeContextPercent(tokens: number, contextWindow: number, maxOutputTokens: number): number | undefined {
-	if (![tokens, contextWindow, maxOutputTokens].every(Number.isFinite)) return undefined;
-	const safeInputLimit = contextWindow - Math.max(0, maxOutputTokens) - 16_384;
-	return safeInputLimit > 0 ? tokens / safeInputLimit * 100 : undefined;
-}
-
 function parseNumstat(output: string): BranchChangeStats {
 	let additions = 0;
 	let deletions = 0;
@@ -110,6 +104,7 @@ type QuotaContext = {
 };
 
 type UsageContext = {
+	modelRegistry: { find?: NonNullable<Parameters<typeof aggregateSessionUsage>[1]> };
 	sessionManager: {
 		getBranch(): Parameters<typeof aggregateSessionUsage>[0];
 	};
@@ -218,7 +213,7 @@ export default function statusline(pi: ExtensionAPI) {
 
 	const refreshUsage = (ctx: UsageContext) => {
 		const branch = ctx.sessionManager.getBranch();
-		usage = aggregateSessionUsage(branch);
+		usage = aggregateSessionUsage(branch, ctx.modelRegistry.find?.bind(ctx.modelRegistry));
 		requestRender();
 	};
 
@@ -422,6 +417,7 @@ export default function statusline(pi: ExtensionAPI) {
 			quotaContext = ctx;
 			const action = args.trim().toLowerCase();
 			if (action === "reload") {
+				refreshUsage(ctx);
 				const reloaded = reloadConfig();
 				if (!reloaded.ok) {
 					ctx.ui.notify(reloaded.error, "error");
@@ -555,9 +551,10 @@ export default function statusline(pi: ExtensionAPI) {
 			});
 			const currentSnapshot = (): StatusSnapshot => {
 				const context = ctx.getContextUsage();
-				const safePercent = context?.tokens !== null && context?.tokens !== undefined && typeof ctx.model?.maxTokens === "number"
-					? safeContextPercent(context.tokens, context.contextWindow, ctx.model.maxTokens)
-					: undefined;
+				const model = ctx.model && (ctx.modelRegistry.find?.(ctx.model.provider, ctx.model.id) ?? ctx.model);
+				const contextWindow = model?.contextWindow ?? context?.contextWindow ?? 0;
+				const percent = context?.tokens != null && contextWindow > 0
+					? context.tokens / contextWindow * 100 : null;
 				const thinking = ctx.model?.reasoning ? pi.getThinkingLevel() : "off";
 				const extensionStatuses = footerData.getExtensionStatuses();
 				const modeStatus = extensionStatuses.get(MODE_STATUS_KEY);
@@ -575,9 +572,8 @@ export default function statusline(pi: ExtensionAPI) {
 					context: context
 						? {
 							tokens: context.tokens,
-							contextWindow: context.contextWindow,
-							percent: context.percent,
-							...(safePercent !== undefined ? { safePercent } : {}),
+							contextWindow,
+							percent,
 						}
 						: undefined,
 					branch: footerData.getGitBranch(),
@@ -723,6 +719,7 @@ export default function statusline(pi: ExtensionAPI) {
 		scheduleProjectRefresh(ctx.cwd);
 	});
 	pi.on("model_select", async (_event, ctx) => {
+		refreshUsage(ctx);
 		quotaContext = ctx;
 		quotaMonitor.clear();
 		requestQuotaSync();

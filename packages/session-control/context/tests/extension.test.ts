@@ -25,6 +25,26 @@ it("reports safe input headroom after reserving the model output budget", async 
 	assert.match(notifications[0] ?? "", /Safe remaining 15,616/);
 });
 
+it("uses refreshed registry model limits instead of stale session usage limits", async () => {
+	let command: any;
+	contextExtension({ registerCommand(_name: string, value: unknown) { command = value; } } as never);
+	const notifications: string[] = [];
+	await command.handler("summary", {
+		cwd: "/tmp/context-model-limits",
+		hasUI: true,
+		mode: "rpc",
+		isProjectTrusted: () => false,
+		model: { provider: "custom", id: "model", contextWindow: 100_000, maxTokens: 10_000 },
+		modelRegistry: { find: () => ({ contextWindow: 200_000, maxTokens: 20_000 }) },
+		getContextUsage: () => ({ tokens: 50_000, contextWindow: 100_000, percent: 50 }),
+		getSystemPrompt: () => "system",
+		sessionManager: { getEntries: () => [], getLeafId: () => undefined },
+		ui: { notify(message: string) { notifications.push(message); } },
+	});
+	assert.match(notifications[0] ?? "", /Context 50,000 \/ 200,000 · 25\.0%/);
+	assert.match(notifications[0] ?? "", /Safe input 50,000 \/ 163,616/);
+});
+
 it("runs confirmed compaction only from the dedicated x action", async () => {
 	let command: any;
 	let compactCalls = 0;
