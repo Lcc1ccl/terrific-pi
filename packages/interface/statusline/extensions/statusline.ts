@@ -672,8 +672,10 @@ export default function statusline(pi: ExtensionAPI) {
 		const state = runStateForAssistantEvent(event.assistantMessageEvent.type);
 		if (state) setRunState(state);
 	});
-	pi.on("turn_end", async (event) => {
+	pi.on("turn_end", async (event, ctx) => {
 		if (runTrackingEnabled()) telemetryTracker.handle(event);
+		// message_end transformations are persisted only after all handlers finish.
+		refreshUsage(ctx);
 	});
 	pi.on("agent_end", async (event) => {
 		const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");

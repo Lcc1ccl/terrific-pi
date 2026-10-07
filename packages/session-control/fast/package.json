@@ -13,6 +13,7 @@
     "test": "node --test --experimental-strip-types tests/*.test.ts"
   },
   "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*"
   },
   "files": [

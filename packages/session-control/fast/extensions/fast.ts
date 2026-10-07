@@ -24,6 +24,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { calculateCost, type Api, type Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { formatFastStatus, type FastRequestStatus } from "../lib/status.ts";
@@ -320,6 +321,7 @@ export default function (pi: ExtensionAPI) {
 	let lastModelId: string | undefined;
 	let hasObservedModel = false;
 	let lastRequest: FastRequestStatus | undefined;
+	let pricingRequest: { model: Model<Api>; payload: unknown; responseTier?: string } | undefined;
 
 	const rememberModel = (api: string | undefined, modelId: string | undefined) => {
 		lastApi = api;
@@ -430,6 +432,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	const restore = (ctx: ExtensionContext) => {
+		pricingRequest = undefined;
 		lastRequest = undefined;
 		if (hasFastPreference()) {
 			preferred = loadFastEnabled();
@@ -446,6 +449,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_tree", async (_event, ctx) => {
+		pricingRequest = undefined;
 		// Preference is global; clear request-local evidence on branch changes.
 		lastRequest = undefined;
 		refresh(ctx);
@@ -460,6 +464,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Re-read the file at request boundaries so external edits are authoritative.
 	pi.on("before_agent_start", async (_event, ctx) => {
+		pricingRequest = undefined;
 		preferred = loadFastEnabled();
 		refresh(ctx);
 	});
@@ -478,6 +483,55 @@ export default function (pi: ExtensionAPI) {
 		const eligible = supportsFastModel(current.api, modelId);
 		const result = preferred && eligible ? injectPriority(event.payload) : undefined;
 		lastRequest = { api: current.api, modelId, eligible, injected: result !== undefined };
+		pricingRequest = eligible && ctx.model ? {
+			model: { ...ctx.model, cost: structuredClone(ctx.model.cost) },
+			payload: event.payload,
+		} : undefined;
 		return result;
 	});
+
+	// Pi 1.0.4 exposes raw response tiers. Older hosts retain the request-based estimate.
+	const onProviderStreamEvent = pi.on.bind(pi) as unknown as (
+		event: "provider_stream_event",
+		handler: (event: { provider: string; api: string; model: string; data: unknown }) => void,
+	) => void;
+	onProviderStreamEvent("provider_stream_event", (event) => {
+		if (!pricingRequest || event.provider !== pricingRequest.model.provider
+			|| event.api !== pricingRequest.model.api || event.model !== pricingRequest.model.id) return;
+		const response = isRecord(event.data) ? event.data.response : undefined;
+		if (isRecord(response) && typeof response.service_tier === "string" && response.service_tier) {
+			pricingRequest.responseTier = response.service_tier;
+		}
+	});
+
+	pi.on("message_end", (event) => {
+		if (event.message.role !== "assistant") return;
+		const request = pricingRequest;
+		pricingRequest = undefined;
+		const message = event.message;
+		if (!request || message.provider !== request.model.provider
+			|| message.model !== request.model.id || message.api !== request.model.api) return;
+		const requestedTier = isRecord(request.payload) && typeof request.payload.service_tier === "string"
+			? request.payload.service_tier : "default";
+		// Codex can echo "default" for priority/flex; match Pi's provider accounting.
+		const codexDefault = message.api === "openai-codex-responses" && request.responseTier === "default"
+			&& (requestedTier === "priority" || requestedTier === "flex");
+		const responseTier = codexDefault ? undefined : request.responseTier;
+		const serviceTier = responseTier ?? requestedTier;
+		const multiplier = serviceTier === "priority" || serviceTier === "fast"
+			? request.model.id === "gpt-5.5" ? 2.5 : 2
+			: serviceTier === "flex" ? 0.5 : 1;
+		// Rebuild from base rates: the provider may already have applied a tier multiplier.
+		const usage = { ...message.usage, cost: { ...message.usage.cost } };
+		calculateCost(request.model, usage);
+		for (const key of ["input", "output", "cacheRead", "cacheWrite", "total"] as const) usage.cost[key] *= multiplier;
+		return { message: {
+			...message,
+			usage,
+			terrificFastPricing: { version: 1, serviceTier, multiplier, source: responseTier === undefined ? "request" : "response" },
+		} };
+	});
+
+	pi.on("agent_end", () => { pricingRequest = undefined; });
+	pi.on("session_shutdown", () => { pricingRequest = undefined; });
 }

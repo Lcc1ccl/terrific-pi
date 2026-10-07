@@ -63,6 +63,17 @@ describe("aggregateSessionUsage", () => {
 		assert.deepEqual(entries, before);
 	});
 
+	it("ignores unsupported pricing metadata and does not multiply stored fallback costs", () => {
+		for (const pricing of [{ version: 2, multiplier: 2 }, { version: 1, multiplier: -1 }, { version: 1, multiplier: Infinity }]) {
+			const entries = [{ type: "message", message: {
+				role: "assistant", provider: "custom", model: "model", terrificFastPricing: pricing,
+				usage: { input: 1_000_000, cost: { total: 4 } },
+			} }];
+			assert.equal(aggregateSessionUsage(entries, () => ({ cost: { input: 2, output: 0, cacheRead: 0, cacheWrite: 0 } }) as any).cost, 2);
+			assert.equal(aggregateSessionUsage(entries).cost, 4);
+		}
+	});
+
 	it("ignores auxiliary ledger entries", () => {
 		const entries = [{
 			type: "custom",

@@ -157,6 +157,23 @@ describe("statusline migration lifecycle", () => {
 		assert.match(footer.render(120).join("\n"), /\$4\.00/);
 	});
 
+	it("refreshes persisted Fast pricing at turn_end before agent_settled", async () => {
+		const { cwd } = config({ widgets: ["cost"], iconMode: "plain" });
+		const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));
+		const ctx = app.makeCtx(cwd) as any;
+		ctx.modelRegistry.find = () => ({ cost: { input: 2, output: 0, cacheRead: 0, cacheWrite: 0 } });
+		await app.emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+		const footer = app.mountFooter();
+		const message = { ...assistantMessage(), provider: "custom", model: "model",
+			usage: { input: 1_000_000, cost: { total: 4 } },
+			terrificFastPricing: { version: 1, multiplier: 2 },
+		};
+		await app.emit("message_end", { type: "message_end", message }, ctx);
+		ctx.sessionManager.getBranch = () => [{ type: "message", message }];
+		await app.emit("turn_end", { type: "turn_end" }, ctx);
+		assert.match(footer.render(120).join("\n"), /\$4\.00/);
+	});
+
 	it("falls back to Pi context usage when no positive safe-input budget exists", async () => {
 		const { cwd } = config({ widgets: ["context"], iconMode: "plain", contextMode: "used" });
 		const app = harness(async () => ({ code: 1, stdout: "", stderr: "" }));

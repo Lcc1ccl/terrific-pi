@@ -50,6 +50,9 @@ Notes:
 
 - Not a thinking-level control (`Shift+Tab` / `/thinking` is separate)
 - Priority pricing is roughly 2× standard (gpt-5.5 ~2.5× in pi-ai accounting)
+- Each new eligible assistant message persists `terrificFastPricing` v1 with its service tier, multiplier, and evidence source. Pi 1.0.4 response tiers take precedence; without response evidence, billing uses the dispatched request as an estimate. Codex's `default` response fallback follows pi-ai's priority/flex accounting.
+- Stored costs are rebuilt from the request's standard model rates, then multiplied once. Statusline repricing uses the saved per-message multiplier with current registry rates, so toggling Fast does not reclassify previous requests. Configure standard rates in `models.json`, not rates that already include Priority markup.
+- Old messages without this metadata are not retroactively classified as Fast. Third-party proxy billing remains an estimate unless its pricing matches the configured rates and service-tier multiplier.
 - Injects into the outbound request body only; third-party proxies must forward `service_tier` for real Priority processing
 - `/fast status` reports Preferred, current Eligible, and Injected for the last observed main provider request. Before any request, Injected is `not observed`.
 - Status badge reflects **active** state (preference ∩ GPT id ∩ openai-family API), not raw preference alone
